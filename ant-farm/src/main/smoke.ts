@@ -1,6 +1,7 @@
 // The automated smoke test, run inside the real app (ANT_FARM_SMOKE=<folder>) with the window never shown: it drives
 // the page and the window like a player would, saves screenshots, writes result.json and quits.
-// scripts/smoke.mjs starts it twice: a full run, then a 'reopen' run that checks the settings survived the restart.
+// scripts/smoke.mjs starts it twice: a full run, then a 'reopen' run that checks the settings and the colony survived
+// the restart.
 import { app, nativeTheme, screen, type BrowserWindow } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -47,7 +48,13 @@ export async function runSmoke(c: SmokeContext): Promise<void> {
     if (c.win.webContents.isLoading()) await new Promise<void>((r) => { c.win.webContents.once('did-finish-load', () => r()); });
     check('page loads with its test hooks', await until(() => js('!!window.farmTest')));
 
+    const colonyFile = path.join(app.getPath('userData'), 'colony.json');
+    const savedTick = (): number => { try { return JSON.parse(fs.readFileSync(colonyFile, 'utf8')).tick; } catch { return -1; } };
+
     if (mode === 'reopen') {
+      const t0 = savedTick();
+      check('the colony was saved when the app quit', t0 > 0, t0);
+      check('the colony comes back where it was left', await until(async () => { const x = await state(); return x.ready && x.tick >= t0; }), { saved: t0, now: (await state()).tick });
       const s = c.store.get();
       check('settings survive a restart', s.palette === 'graphite' && s.size === 'large' && s.dock === 'tl' && s.calm === 0.4, s);
       check('the window reopens where it was left', docked('tl', 640, 360), c.win.getBounds());
@@ -63,13 +70,11 @@ export async function runSmoke(c: SmokeContext): Promise<void> {
     check('first run: Desktop Blend, small, bottom right', c.store.get().palette === 'blend' && docked('br', 320, 180), c.win.getBounds());
     await shot('small-blend-dark');
 
-    // the test buttons feed the farm
+    // the map: Ridiculous by default, and only the chunks near the colony and the screen are in memory
+    check('the map is Ridiculous by default', st.mapSize === 'ridiculous' && st.W === 65536 && st.H === 16384, { size: st.mapSize, W: st.W, H: st.H });
+    check('only a few chunks are loaded', st.chunks.loaded < 400, st.chunks);
+    check('no cheat controls anywhere', !/\+5k|Task done|Wide room|Watch Claude Code/.test(await js<string>('farmTest.text()')) && !(await js<boolean>('!!document.getElementById("fTokens")')));
     const e0 = st.energy;
-    await js('farmTest.click("fTokens")');
-    st = await state();
-    check('+5k tokens raises energy', st.energy > e0 && st.tokens > 0, { before: e0, after: st.energy });
-    await js('farmTest.click("fTask")');
-    check('task done queues a gallery', (await state()).counts.tasks === 1);
 
     // the real feed: a Claude Code transcript line appears; the line already there must not replay
     const file = path.join(c.claudeDir, 'demo-project', 'session-1.jsonl');
@@ -77,9 +82,35 @@ export async function runSmoke(c: SmokeContext): Promise<void> {
       message: { id: 'msg_smoke_2', model: 'claude-test', stop_reason: 'end_turn', content: [{ type: 'text', text: 'not read' }],
         usage: { input_tokens: 1200, output_tokens: 800, cache_read_input_tokens: 4000, cache_creation_input_tokens: 300 } } };
     fs.appendFileSync(file, JSON.stringify(line) + '\n');
-    const fed = await until(async () => (await state()).counts.tasks >= 2, 6000);
+    const fed = await until(async () => (await state()).counts.tasks >= 1, 6000);
     st = await state();
-    check('a new transcript line feeds tokens and a finished turn', fed && st.counts.tokens === 2, st.counts);
+    check('a new transcript line feeds tokens and a finished turn', fed && st.counts.tokens === 1 && st.tokens > 0, st.counts);
+    check('real tokens are the only thing that raises energy', st.energy > e0, { before: e0, after: st.energy });
+
+    // the camera: two-finger scroll pans 1:1, a pinch zooms, A follows the colony again
+    const c0 = (await state()).cam;
+    await js('farmTest.wheel({ deltaX: 120, deltaY: 0, deltaMode: 0 })');
+    st = await state();
+    check('a two-finger scroll pans 1:1 and pauses the auto camera', !st.auto && Math.abs((st.cam.x - c0.x) * st.cam.s - 120) < 1, { before: c0, after: st.cam });
+    await js('farmTest.wheel({ deltaX: 0, deltaY: -40, deltaMode: 0, ctrlKey: true })');
+    check('a pinch zooms in', await until(async () => (await state()).cam.s > c0.s * 1.3, 2000), (await state()).cam);
+    await js('farmTest.key("a")');
+    check('A gives the camera back to the colony', await until(async () => (await state()).auto));
+
+    // far across the map: the chunks there are made on demand, then let go; memory stays bounded
+    for (const [x, y] of [[40000, 9000], [60000, 15000], [8000, 12000]]) {
+      await js(`farmTest.look(${x}, ${y})`);
+      await until(async () => { const v = (await state()).view; return !!v && v.waiting === 0 && v.visible > 0; }, 3000);
+    }
+    await wait(1500);
+    st = await state();
+    check('far corners draw, and memory stays bounded', st.view.waiting === 0 && st.chunks.loaded < 1500 && st.heapMB < 400, { view: st.view, chunks: st.chunks, heapMB: Math.round(st.heapMB) });
+    check('a frame stays cheap on the Ridiculous map', st.drawMs < 16, { drawMs: +st.drawMs.toFixed(2), tickMs: +st.tickMs.toFixed(3) });
+    await shot('small-far-away');
+    await js('farmTest.key("a")');
+    await js('farmTest.key("i")');
+    await shot('small-stats');
+    await js('farmTest.key("i")');
 
     // settings menu
     await js('farmTest.key(",")');
@@ -88,6 +119,8 @@ export async function runSmoke(c: SmokeContext): Promise<void> {
       `(() => { const p = document.getElementById('panel').getBoundingClientRect(), c = document.querySelector('.pal canvas').getBoundingClientRect();
         return { n: document.querySelectorAll('.pal').length, w: c.width / p.width, text: document.getElementById('panel').innerText.includes('Calm') }; })()`);
     check('the menu shows small palette previews and its controls', grid.n === 7 && grid.w < 0.5 && grid.text, grid);
+    const text = await js<string>('farmTest.text()');
+    check('the menu shows the colony and the map size', /Ants/.test(text) && /Food stored/.test(text) && /Oldest ant/.test(text) && /Ridiculous/.test(text), text.slice(0, 400));
     check('the feed status shows in the menu', /Watching \d+ Claude Code transcripts/.test(await js<string>('farmTest.feed()')), await js('farmTest.feed()'));
     await shot('small-settings');
     await js('farmTest.clickPalette("graphite")');
@@ -157,6 +190,8 @@ export async function runSmoke(c: SmokeContext): Promise<void> {
     c.update({ palette: 'graphite', size: 'large', dock: 'tl', calm: 0.4 });
     await js('farmTest.key("Escape")');
     await shot('large-graphite-calm');
+    await js('farmTest.save()');
+    check('the colony is saved to its file', await until(() => savedTick() > 0), savedTick());
   } catch (e) {
     check('no errors', false, String((e as Error).stack || e));
   } finally {

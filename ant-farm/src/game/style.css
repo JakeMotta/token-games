@@ -10,7 +10,7 @@ body { font: 11px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe 
   outline: 1px solid var(--f-line); outline-offset: -1px; color: var(--f-ink);
 }
 .farm.full { border-radius: 0; outline: none; }
-#view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; cursor: grab; }
+#view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; cursor: grab; touch-action: none; }
 #view:active { cursor: grabbing; }
 
 /* title bar: drags the window; dims while the farm is calm */
@@ -88,3 +88,13 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--f-hot); out
 .docks button { padding: 1px 5px; }
 
 @media (prefers-reduced-motion: reduce) { .floater { animation-duration: 0.01s; } }
+
+/* the colony's health, in Settings */
+.health { display: grid; gap: 2px; }
+.hrow { display: flex; justify-content: space-between; gap: 8px; }
+.hrow span:first-child { color: var(--f-dim); }
+
+/* the stats overlay (I): frame cost and what is in memory */
+.stats { position: absolute; left: 6px; bottom: 6px; margin: 0; padding: 4px 6px; font: 9.5px/1.35 ui-monospace, Menlo, monospace;
+  color: var(--f-ink); background: var(--f-panel); border: 1px solid var(--f-line); border-radius: 4px; pointer-events: none; white-space: pre; }
+.stats[hidden], .wbtn[hidden] { display: none; }

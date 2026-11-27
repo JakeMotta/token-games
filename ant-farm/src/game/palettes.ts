@@ -16,7 +16,12 @@ interface PaletteDef {
   ramps?: Record<RampName, string[]>; ui?: UiColours; dark?: Variant; light?: Variant;
 }
 export interface Resolved { id: PaletteId; name: string; note: string; identity: boolean; ui: UiColours; ramps: Record<RampName, RGB[]> | null; mid: RGB }
-export interface Mapper { id: PaletteId; palette: Resolved; calm: number; dark: boolean; apply(src: Uint32Array, kind: Uint8Array, out: Uint32Array): void }
+export interface Mapper {
+  id: PaletteId; palette: Resolved; calm: number; dark: boolean;
+  apply(src: Uint32Array, kind: Uint8Array, out: Uint32Array): void; // incremental: for one buffer painted again and again
+  map(kind: number, c: number): number; // one colour, memoised
+  paint(src: Uint32Array, kind: Uint8Array, out: Uint32Array): void; // a whole tile, no per-pixel memory
+}
 
 // Which ramp each kind (world.ts K) uses, and the lightness range its source colours span (so the ramp's ends are
 // reached).
@@ -155,5 +160,21 @@ export function mapper(id: string, o: { dark?: boolean; calm?: number } = {}): M
       out[i] = v;
     }
   }
-  return { id: p.id, palette: p, calm, dark: !!o.dark, apply };
+  function map(kd: number, s: number): number {
+    if (p.identity && calm === 0) return s;
+    const key = kd * 16777216 + (s & 0xffffff);
+    let v = cache.get(key);
+    if (v === undefined) { v = mapColour(p, kd, s, calm); cache.set(key, v); }
+    return v;
+  }
+  function paint(src: Uint32Array, kind: Uint8Array, out: Uint32Array): void {
+    if (p.identity && calm === 0) { out.set(src); return; }
+    let ls = -1, lk = -1, lv = 0;
+    for (let i = 0; i < src.length; i++) {
+      const s = src[i], kd = kind[i];
+      if (s !== ls || kd !== lk) { ls = s; lk = kd; lv = map(kd, s); }
+      out[i] = lv;
+    }
+  }
+  return { id: p.id, palette: p, calm, dark: !!o.dark, apply, map, paint };
 }

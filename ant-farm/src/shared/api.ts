@@ -11,7 +11,7 @@ export interface FarmState {
   smoke: boolean; // the automated smoke test is driving: draw even though the window is hidden
 }
 
-export interface FeedStatus { on: boolean; watching: boolean; files: number; root: string }
+export interface FeedStatus { watching: boolean; files: number; root: string; error?: string }
 
 // Commands the main process sends the page (tray menu, global shortcut, window changes).
 export type FarmCommand = 'settings' | 'fullscreen-on' | 'fullscreen-off';
@@ -26,6 +26,9 @@ export interface FarmApi {
   resizeDrag(d: ResizeDrag): void;
   setGrab(on: boolean): void; // while click-through is on: take the mouse back (Alt held)
   hide(): void;
+  saveColony(data: unknown): Promise<boolean>; // the farm, to colony.json in the app's data folder
+  saveColonyNow(data: unknown): boolean; // the same, synchronously, for when the page is closing
+  loadColony(): Promise<unknown>; // what was saved last, or null
   quit(): void;
   onSettings(fn: (s: Settings) => void): void;
   onDark(fn: (dark: boolean) => void): void;
@@ -37,5 +40,5 @@ export interface FarmApi {
 export const CH = {
   state: 'farm:state', set: 'farm:set', reset: 'farm:reset', fullscreen: 'farm:fullscreen', resize: 'farm:resize',
   grab: 'farm:grab', hide: 'farm:hide', quit: 'farm:quit', settings: 'farm:settings', dark: 'farm:dark', event: 'farm:event', feed: 'farm:feed',
-  command: 'farm:command',
+  command: 'farm:command', save: 'farm:save', saveNow: 'farm:save-now', load: 'farm:load',
 } as const;

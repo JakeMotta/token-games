@@ -13,7 +13,7 @@ import { watchClaudeCode, type Feed } from '../feed/claude-code';
 import { boundsFor, clampToArea, gripCorner, nearestDock, resizeFromGrip, type Area, type Corner } from './geometry';
 import { antBitmap } from './icon';
 import { runSmoke } from './smoke';
-import { SettingsStore } from './store';
+import { ColonyFile, SettingsStore } from './store';
 import { trayMenu, type TrayAction, type TrayItem } from './tray';
 
 const SMOKE = process.env.ANT_FARM_SMOKE || '';
@@ -26,8 +26,9 @@ if (process.env.ANT_FARM_USER_DATA) app.setPath('userData', process.env.ANT_FARM
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let store: SettingsStore;
+let colony: ColonyFile;
 let feed: Feed | null = null;
-let feedStatus: FeedStatus = { on: false, watching: false, files: 0, root: CLAUDE_DIR };
+let feedStatus: FeedStatus = { watching: false, files: 0, root: CLAUDE_DIR };
 let lastPlaced: Bounds | null = null; // the bounds we set last, so our own moves aren't taken for the player's
 let fullPrev: Bounds | null = null; // the window before full screen
 let moveTimer: NodeJS.Timeout | null = null;
@@ -70,7 +71,6 @@ function update(patch: Partial<Settings>, opts: { place?: boolean } = {}): Setti
   if (prev.clickThrough !== next.clickThrough) applyClickThrough(next.clickThrough);
   if (prev.opacity !== next.opacity) win?.setOpacity(next.opacity);
   if (prev.alwaysOnTop !== next.alwaysOnTop) applyOnTop(next.alwaysOnTop);
-  if (prev.claudeFeed !== next.claudeFeed) setFeed(next.claudeFeed);
   send(CH.settings, next);
   refreshTray();
   return next;
@@ -81,7 +81,7 @@ function applyAll(s: Settings): void {
   applyClickThrough(s.clickThrough);
   win?.setOpacity(s.opacity);
   applyOnTop(s.alwaysOnTop);
-  setFeed(s.claudeFeed);
+  startFeed();
   send(CH.settings, s);
   refreshTray();
 }
@@ -95,14 +95,13 @@ function resetAll(): Settings {
 
 // ---------- the Claude Code feed ----------
 
-function setFeed(on: boolean): void {
-  if (on && !feed) {
-    feed = watchClaudeCode({ root: CLAUDE_DIR, onEvent: forward });
-  } else if (!on && feed) {
-    feed.stop();
-    feed = null;
+// Always on: the farm's only source of energy and food. If it can't start, the page says so quietly.
+function startFeed(): void {
+  let error: string | undefined;
+  if (!feed) {
+    try { feed = watchClaudeCode({ root: CLAUDE_DIR, onEvent: forward }); } catch (e) { error = 'The Claude Code feed could not start: ' + (e as Error).message; }
   }
-  feedStatus = { on, watching: !!feed && feed.watching(), files: feed ? feed.files() : 0, root: CLAUDE_DIR };
+  feedStatus = { watching: !!feed && feed.watching(), files: feed ? feed.files() : 0, root: CLAUDE_DIR, error };
   send(CH.feed, feedStatus);
 }
 
@@ -265,6 +264,9 @@ function wireIpc(): void {
   ipcMain.on(CH.grab, (_e, on: boolean) => { if (store.get().clickThrough) win?.setIgnoreMouseEvents(!on, { forward: true }); });
   ipcMain.on(CH.hide, () => { win?.hide(); });
   ipcMain.on(CH.quit, () => app.quit());
+  ipcMain.handle(CH.save, (_e, data: unknown) => colony.save(data));
+  ipcMain.on(CH.saveNow, (e, data: unknown) => { e.returnValue = colony.save(data); });
+  ipcMain.handle(CH.load, () => colony.load());
 }
 
 if (!SMOKE && !app.requestSingleInstanceLock()) {
@@ -275,6 +277,7 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
     if (IS_MAC) app.dock?.hide(); // a menu-bar app: no Dock icon
     Menu.setApplicationMenu(null);
     store = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'));
+    colony = new ColonyFile(path.join(app.getPath('userData'), 'colony.json'));
     wireIpc();
     createWindow();
     nativeTheme.on('updated', () => send(CH.dark, nativeTheme.shouldUseDarkColors));

@@ -43,11 +43,31 @@ export class SettingsStore {
   }
 
   private save(): void {
-    try {
-      fs.mkdirSync(path.dirname(this.file), { recursive: true });
-      const tmp = this.file + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(this.cur, null, 2) + '\n');
-      fs.renameSync(tmp, this.file);
-    } catch { /* a read-only disk: keep running on the in-memory settings */ }
+    writeAtomic(this.file, JSON.stringify(this.cur, null, 2) + '\n'); // a read-only disk: keep running on the in-memory settings
   }
+}
+
+// The colony itself (ants, their birth times, food, what was dug), saved by the page now and then and on hide, so the
+// farm and its ants' ages carry on across restarts. Only the chunks the colony changed are in it, so it stays small.
+export class ColonyFile {
+  constructor(readonly file: string) {}
+
+  load(): unknown {
+    try { return JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch { return null; } // none yet, or broken: a new farm
+  }
+
+  save(data: unknown): boolean {
+    return !!data && typeof data === 'object' && writeAtomic(this.file, JSON.stringify(data));
+  }
+}
+
+// Write a whole file or nothing: a crash mid-write leaves the old file.
+function writeAtomic(file: string, text: string): boolean {
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = file + '.tmp';
+    fs.writeFileSync(tmp, text);
+    fs.renameSync(tmp, file);
+    return true;
+  } catch { return false; }
 }

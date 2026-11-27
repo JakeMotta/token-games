@@ -1,16 +1,27 @@
-// The ant farm simulation: the world grid, its physics and the colony. Deterministic per seed: the same seed and the
-// same token events always build and play the same farm. No DOM and no Electron, so it runs headless in the tests.
-// Ported from the prototype (prototype/ant-farm/sim.js); the token conversion now goes through tokens.ts.
+// The ant farm simulation: the world, its physics and the colony. Deterministic per seed: the same seed, the same
+// token events and the same clock always build and play the same farm. No DOM and no Electron, so it runs headless
+// in the tests.
+//
+// The map can be enormous (MAP_SIZES), so nothing here is proportional to it. Cells live in 64 × 64 chunks made from
+// the seed on demand (chunks.ts); a cell's index packs its row and column, k = y << XB | x. Path-finding runs over a
+// copy of the window around the colony, falling sand only in chunks where something moved, and the collapse checks
+// only where something changed. A part of the map nobody looks at and the colony never touched costs nothing.
 import {
-  AIR, DIRT, ROCK, LOOSE, FOOD, CRUMB, GLASS, SOLID, DIGGABLE, FALLS, CEILING, K, LAYERS, LayerName, PAL,
-  DIG_TICKS, DROP_TICKS, BROOD_STAGES, MAX_ENERGY, IDLE_REGEN, mulberry32, rgb, hexRgb, shadeHex, scaleCol, noise1, Rng,
+  AIR, DIRT, ROCK, LOOSE, FOOD, CRUMB, GLASS, SOLID, DIGGABLE, FALLS, CEILING, K, LAYERS, LAYER_OF_SRC, PAL, SRC,
+  DIG_TICKS, DROP_TICKS, BROOD_STAGES, MAX_ENERGY, MAP_SIZES, type MapSize, mulberry32, rgb, hexRgb, scaleCol, hash01, noiseAt,
+  jitterShade, COLOURS, LOOSE_COLOURS, WALL_COLOURS, type Rng, LOOSE_CRUMB_CAP, MAX_CRUMB_QUEUE, STORE_CAP,
+  ANT_LIFESPAN_MS, LIFESPAN_JITTER, QUEEN_LIFESPAN_MS, ANT_MEAL_MS, STARVE_DEATH_MS, STARVE_GRACE_MS, MIN_SURVIVORS, DYING_TICKS,
 } from './world';
+import { CS, CM, CELLS, ChunkStore, applyDiff, type Chunk, type ChunkStats } from './chunks';
 import { TokenMeter } from './tokens';
 import type { FarmEvent } from '../shared/events';
 
 export interface SimOptions {
-  seed?: number; W?: number; H?: number; span?: number; rocks?: boolean; food?: boolean; pockets?: number;
+  seed?: number; size?: MapSize; W?: number; H?: number; span?: number; rocks?: boolean; food?: boolean;
   colony?: boolean; workers?: number; energy?: number;
+  now?: () => number; // the wall clock in ms (ants age by it); Date.now unless a test passes its own
+  restore?: SaveData | null; // a saved farm to carry on with
+  chunkCap?: number; // unchanged chunks kept in memory
 }
 export interface Point { x: number; y: number }
 export interface Room { cx: number; cy: number; rx: number; ry: number; shape: 'dome' | 'flat' }
@@ -26,28 +37,50 @@ export interface Brood { id: number; x: number; y: number; age: number; stage: n
 export interface Ant {
   id: number; x: number; y: number; hx: number; hy: number; role: Role; job: Job | null; carry: 'grain' | 'food' | 'brood' | null;
   carryCol: number; busy: number; acc: number; speed: number; walk: number; stuckT: number; brood: Brood | null;
+  born: number; dies: number; // wall-clock ms
+  dying?: number; // ticks left of its fade-out
   dumpX?: number | null; dumpAt?: number; home?: boolean; eggT?: number;
 }
 export interface Strain { y: number; x0: number; x1: number; lim: number; t: number }
-export interface CollapseEvent { type: 'collapse'; tick: number; y: number; x0: number; x1: number }
-export interface Field { dist: Int32Array; ver: number; at: number; sources: () => number[] }
+export type SimEvent =
+  | { type: 'collapse'; tick: number; y: number; x0: number; x1: number }
+  | { type: 'died'; tick: number; cause: 'age' | 'hunger'; queen: boolean }
+  | { type: 'queen'; tick: number } // a worker took over from an old queen
+  | { type: 'founded'; tick: number }; // a new queen arrived at an empty farm
+export interface Field { dist: Int32Array; x0: number; y0: number; w: number; h: number; ver: number; at: number; sources: () => number[] }
 export interface PaintOptions { kind?: Uint8Array; ants?: boolean }
 export interface Box { x0: number; y0: number; x1: number; y1: number }
-export interface Stats { dug: number; stored: number; eaten: number; laid: number; born: number; collapses: number; crumbsSpawned: number; tokens: number; tasks: number }
+export interface Stats {
+  dug: number; stored: number; eaten: number; laid: number; born: number; collapses: number; crumbsSpawned: number; tokens: number; tasks: number;
+  died: number; starved: number;
+}
 export interface Counts { air: number; dirt: number; rock: number; loose: number; food: number; crumb: number; carriedGrain: number; carriedFood: number }
+export interface Life { last: number; hunger: number; starve: number; starvingSince: number; lastTokens: number }
+export type Mood = 'fed' | 'hungry' | 'starving' | 'empty';
+export interface Health { workers: number; queen: boolean; brood: number; food: number; loose: number; oldestMs: number; queenAgeMs: number; mood: Mood; starvingMs: number }
+export type Put = (x: number, y: number, c: number, kind: number, alpha: number) => void;
+
+export interface SaveData {
+  v: 1; seed: number; W: number; H: number; tick: number; energy: number; crumbQueue: number; galleryQueue: { w: number }[];
+  scent: number; box: Box; nest: Point; nextId: number; rng: number; stats: Stats; life: Life; meter: [number, number][];
+  ants: Partial<Ant>[]; brood: Brood[]; projects: Partial<Project>[]; royal: number; broodRoom: number;
+  pockets: [number, number, number][]; chunks: [number, string][];
+}
 
 export interface Sim {
-  seed: number; W: number; H: number;
-  type: Uint8Array; col: Uint32Array; bg: Uint32Array; span: Uint8Array; pocket: Int16Array; surf: Int16Array;
-  pockets: Pocket[]; ex: number; nest: Point; tick: number; version: number; rnd: Rng;
-  ants: Ant[]; brood: Brood[]; projects: Project[]; strains: Strain[]; events: CollapseEvent[];
+  seed: number; W: number; H: number; XB: number; R: number; // R is the row stride of a cell index
+  surf: Int16Array; pockets: Map<number, Pocket>; ex: number; nest: Point; tick: number; version: number; rnd: Rng;
+  ants: Ant[]; brood: Brood[]; projects: Project[]; strains: Strain[]; events: SimEvent[];
   energy: number; crumbQueue: number; galleryQueue: { w: number; x?: number; y?: number }[]; scent: number;
-  royal: Project | null; broodRoom: Project | null; box: Box;
-  sandAwake: boolean; lastCheckVer: number; lastIslandVer: number; moves: number; falling: number; crumbsOut: number;
-  stats: Stats; fields: Map<string, Field>; nextId: number; meter: TokenMeter;
+  royal: Project | null; broodRoom: Project | null; box: Box; view: Box | null;
+  sandAwake: boolean; moves: number; falling: number; crumbsOut: number;
+  stats: Stats; fields: Map<string, Field>; nextId: number; meter: TokenMeter; life: Life; chunks: ChunkStore; now: () => number;
+  typeAt(k: number): number;
+  colAt(k: number): number;
   setCell(k: number, t: number, c?: number): void;
   idx(x: number, y: number): number;
   walkable(k: number): boolean;
+  pocketsIn(b: Box): Pocket[];
   newProject(kind: ProjectKind, startK: number, goal: Point | null, room: Room | null): Project;
   nextCells(p: Project): number[];
   addAnt(x: number, y: number, role?: Role): Ant;
@@ -57,169 +90,299 @@ export interface Sim {
   feed(ev: FarmEvent | null | undefined): void;
   isBusy(): boolean;
   interestBox(): { x: number; y: number; w: number; h: number };
-  count(): Counts;
+  setView(b: Box | null): void;
+  maintain(): void;
+  chunkStats(): ChunkStats;
+  stored(): number;
+  health(): Health;
+  count(b?: Box): Counts;
   hash(): number;
+  paintChunk(cx: number, cy: number, px: Uint32Array, kind: Uint8Array): void;
+  overlay(b: Box, put: Put): void;
   paint(px: Uint32Array, o?: PaintOptions): void;
+  save(): SaveData;
 }
 
+const SMALL = 4_194_304; // a map up to this many cells is counted, hashed and painted whole
+
 export function createSim(opts: SimOptions = {}): Sim {
-  const seed = (opts.seed == null ? 1 : opts.seed) >>> 0;
-  const W = opts.W || 420, H = opts.H || 260;
-  const N = W * H;
-  const rnd = mulberry32(seed);
+  const R0 = opts.restore && opts.restore.v === 1 ? opts.restore : null;
+  const seed = ((R0 ? R0.seed : opts.seed) ?? 1) >>> 0;
+  const sz = opts.size ? MAP_SIZES[opts.size] : null;
+  const W = R0 ? R0.W : opts.W || (sz ? sz.W : 420), H = R0 ? R0.H : opts.H || (sz ? sz.H : 260);
+  let XB = 0; while ((1 << XB) < W) XB++;
+  const R = 1 << XB, XM = R - 1;
+  const now = opts.now || Date.now;
+  const rnd = mulberry32(R0 ? R0.rng : seed);
   const ri = (a: number, b: number): number => a + Math.floor(rnd() * (b - a + 1));
+  const idx = (x: number, y: number): number => (y << XB) | x;
+  const inside = (x: number, y: number): boolean => x > 0 && y > 0 && x < W - 1 && y < H - 1;
 
-  const type = new Uint8Array(N);
-  const col = new Uint32Array(N);   // a grain's colour travels with it
-  const bg = new Uint32Array(N);    // back wall shown where a cell is dug out
-  const span = new Uint8Array(N);   // flat-ceiling limit of the layer this cell sits in
-  const pocket = new Int16Array(N).fill(-1);
-  const occ = new Uint8Array(N);    // ants standing in a cell: grains rest on them instead of filling it
-  const surf = new Int16Array(W);   // original ground line
+  // ---------- the map, made from the seed one cell at a time ----------
+  const base = Math.round(Math.min(H, 260) * 0.17);
+  const surf = new Int16Array(W), wob = new Int8Array(W);
+  for (let x = 0; x < W; x++) {
+    surf[x] = Math.round(base + noiseAt(seed, 1, x, 37) * 4 + noiseAt(seed, 2, x, 11) * 1.2);
+    wob[x] = Math.round(noiseAt(seed, 3, x, 23) * 3);
+  }
+  // soil layers by depth below the ground line
+  const band = new Uint8Array(H + 8);
+  {
+    const br = mulberry32(seed ^ 0x5bd1e995), rr = (a: number, b: number) => a + Math.floor(br() * (b - a + 1));
+    const order = [SRC.LOAM, SRC.SAND, SRC.LOAM, SRC.CLAY, SRC.SAND, SRC.DEEP, SRC.CLAY, SRC.LOAM];
+    let d = rr(4, 7), oi = rr(0, 3);
+    band.fill(SRC.TOPSOIL, 0, d);
+    while (d < band.length) { const n = rr(14, 38); band.fill(order[oi++ % order.length], d, Math.min(band.length, d + n)); d += n; }
+  }
+  const ex = Math.max(8, Math.min(W - 9, Math.round(W / 2 + (hash01(seed, 7, 7, 7) - 0.5) * Math.min(W, 420) * 0.3))); // nest entrance column
+  const spanOf = (x: number, y: number): number => opts.span || LAYERS[LAYER_OF_SRC[band[Math.max(0, Math.min(H, y - surf[x] + wob[x]))]]].span;
 
-  // ---------- world generation ----------
-  const sn = noise1(rnd, W, 37), sn2 = noise1(rnd, W, 11);
-  for (let x = 0; x < W; x++) surf[x] = Math.round(H * 0.17 + sn[x] * 4 + sn2[x] * 1.2);
-
-  const bands: { name: LayerName; d: number }[] = [{ name: 'topsoil', d: ri(4, 7) }];
-  let depth = bands[0].d;
-  const order: LayerName[] = ['loam', 'sand', 'loam', 'clay', 'sand', 'deep', 'clay', 'loam'];
-  let oi = ri(0, 3);
-  while (depth < H) { const name = order[oi++ % order.length]; const d = ri(14, 38); bands.push({ name, d }); depth += d; }
-  const bandAt = (d: number): LayerName => { let acc = 0; for (const b of bands) { acc += b.d; if (d < acc) return b.name; } return 'deep'; };
-  const wob = noise1(rnd, W, 23);
-
-  const [skr, skg, skb] = hexRgb(PAL.skyTop), [slr, slg, slb] = hexRgb(PAL.skyLow);
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const k = y * W + x;
-      if (x === 0 || x === W - 1 || y === H - 1) { type[k] = GLASS; col[k] = bg[k] = shadeHex(PAL.glass, 1, 0); continue; }
-      if (y < surf[x]) {
-        const f = Math.min(1, y / Math.max(1, surf[x]));
-        type[k] = AIR; bg[k] = rgb(skr + (slr - skr) * f, skg + (slg - skg) * f, skb + (slb - skb) * f);
-        continue;
+  // Rocks: at most one per 64-cell square, more likely deeper down. Food pockets: at most one per 96-cell square.
+  // Each blob stays inside its own square, so a cell only ever asks its own square.
+  interface Blob { x: number; y: number; r: number; kind: number }
+  const NONE: Blob = { x: 0, y: 0, r: 0, kind: -1 };
+  const rockCache = new Map<number, Blob>(), podCache = new Map<number, Blob>();
+  const PR = 96, pcw = Math.ceil(W / PR);
+  function rockOf(rx: number, ry: number): Blob {
+    const key = ry * 65536 + rx;
+    let b = rockCache.get(key);
+    if (b) return b;
+    b = NONE;
+    if (opts.rocks !== false) {
+      const depth = ry * 64 - base, chance = depth < 0 ? 0 : 0.22 + 0.25 * Math.min(1, depth / 2000);
+      if (hash01(seed, rx, ry, 11) < chance) {
+        const x = rx * 64 + 8 + Math.floor(hash01(seed, rx, ry, 12) * 48), y = ry * 64 + 8 + Math.floor(hash01(seed, rx, ry, 13) * 48);
+        const ok = x >= 10 && x < W - 10 && y < H - 8 && y >= surf[x] + 12 && !(Math.abs(x - ex) < 30 && y < surf[ex] + 45);
+        if (ok) b = { x, y, r: 2 + hash01(seed, rx, ry, 14) * 4, kind: SRC.ROCK };
       }
-      const d = y - surf[x];
-      const name = bandAt(Math.max(0, d + Math.round(wob[x] * 3)));
-      const L = LAYERS[name];
-      const j = (rnd() - 0.5) * 14 + ((x * 7 + y * 13) % 5 === 0 ? -6 : 0);
-      type[k] = DIRT;
-      col[k] = d === 0 ? shadeHex(PAL.grass, 1, j) : shadeHex(L.col, 1, j);
-      bg[k] = shadeHex(L.col, 0.36, j * 0.3);
-      span[k] = opts.span || L.span;
+    }
+    if (rockCache.size > 8192) rockCache.clear();
+    rockCache.set(key, b);
+    return b;
+  }
+  function podOf(id: number): Blob {
+    let b = podCache.get(id);
+    if (b) return b;
+    b = NONE;
+    if (opts.food !== false) {
+      const px = id % pcw, py = (id - px) / pcw;
+      if (hash01(seed, px, py, 21) < 0.8) {
+        const x = px * PR + 12 + Math.floor(hash01(seed, px, py, 22) * 72), y = py * PR + 12 + Math.floor(hash01(seed, px, py, 23) * 72);
+        const ok = x >= 8 && x < W - 9 && y < H - 8 && y >= surf[x] + 18 && Math.hypot(x - ex, y - surf[ex]) >= 30;
+        if (ok) b = { x, y, r: 1.6 + hash01(seed, px, py, 24) * 1.8, kind: hash01(seed, px, py, 25) < 0.6 ? SRC.SEED : SRC.FUNGUS };
+      }
+    }
+    if (podCache.size > 8192) podCache.clear();
+    podCache.set(id, b);
+    return b;
+  }
+  const podId = (x: number, y: number): number => ((y / PR) | 0) * pcw + ((x / PR) | 0);
+  function inBlob(b: Blob, x: number, y: number, salt: number): boolean {
+    if (b.kind < 0) return false;
+    const dx = x - b.x, dy = y - b.y, d2 = dx * dx + dy * dy;
+    if (d2 > (b.r * 1.15 + 0.5) * (b.r * 1.15 + 0.5)) return false;
+    const rr = b.r * (0.85 + 0.3 * hash01(seed, x, y, salt));
+    return d2 <= rr * rr;
+  }
+  // One cell as made: type | colour code << 8.
+  function cellAt(x: number, y: number): number {
+    if (x <= 0 || x >= W - 1 || y >= H - 1 || y < 0) return GLASS;
+    const s = surf[x];
+    if (y < s) return AIR;
+    if (y > s && inBlob(rockOf(x >> 6, y >> 6), x, y, 15)) return ROCK | ((SRC.ROCK << 8 | Math.floor(hash01(seed, x, y, 16) * 256)) << 8);
+    const pod = podOf(podId(x, y));
+    if (y > s && inBlob(pod, x, y, 26)) return FOOD | ((pod.kind << 8 | Math.floor(hash01(seed, x, y, 27) * 256)) << 8);
+    const j = (hash01(seed, x, y, 17) - 0.5) * 14 + ((x * 7 + y * 13) % 5 === 0 ? -6 : 0);
+    const src = y === s ? SRC.GRASS : band[Math.max(0, Math.min(H, y - s + wob[x]))];
+    return DIRT | ((src << 8 | jitterShade(j)) << 8);
+  }
+  function genChunk(cx: number, cy: number, t: Uint8Array, c: Uint16Array): void {
+    const x0 = cx << CS, y0 = cy << CS;
+    for (let ly = 0, i = 0; ly < 64; ly++) for (let lx = 0; lx < 64; lx++, i++) {
+      const x = x0 + lx, y = y0 + ly;
+      if (x >= W || y >= H) { t[i] = GLASS; c[i] = 0; continue; }
+      const v = cellAt(x, y);
+      t[i] = v & 255; c[i] = v >>> 8;
     }
   }
+  const store = new ChunkStore(W, H, genChunk), cw = store.cw;
 
-  const ex = Math.round(W / 2 + (rnd() - 0.5) * W * 0.3); // nest entrance column
-
-  function blob(cx: number, cy: number, r: number, fn: (k: number, x: number, y: number) => void) {
-    const R = Math.ceil(r + 1);
-    for (let y = cy - R; y <= cy + R; y++) for (let x = cx - R; x <= cx + R; x++) {
-      if (x < 1 || x > W - 2 || y < 1 || y > H - 2) continue;
-      const dx = x - cx, dy = y - cy, rr = r * (0.85 + 0.3 * rnd());
-      if (dx * dx + dy * dy <= rr * rr) fn(y * W + x, x, y);
-    }
+  // ---------- cell access ----------
+  function T(k: number): number {
+    if (k < 0) return GLASS;
+    const x = k & XM, y = k >> XB;
+    if (x >= W || y >= H) return GLASS;
+    return store.get((y >> CS) * cw + (x >> CS)).type![((y & CM) << CS) | (x & CM)];
+  }
+  function C(k: number): number {
+    const x = k & XM, y = k >> XB;
+    return store.get((y >> CS) * cw + (x >> CS)).col![((y & CM) << CS) | (x & CM)];
+  }
+  function write(k: number, t: number, c?: number): void {
+    const x = k & XM, y = k >> XB, ch = store.get((y >> CS) * cw + (x >> CS)), i = ((y & CM) << CS) | (x & CM);
+    ch.type![i] = t; if (c !== undefined) ch.col![i] = c;
+    ch.modified = true; ch.ver++;
+    mark(x, y);
   }
 
-  if (opts.rocks !== false) {
-    const nRocks = ri(6, 12);
-    for (let i = 0; i < nRocks; i++) {
-      const x = ri(10, W - 10), y = ri(surf[Math.min(W - 1, x)] + 12, H - 8);
-      if (Math.abs(x - ex) < 30 && y < surf[ex] + 45) continue;
-      blob(x, y, 2 + rnd() * 4, (k) => { if (type[k] === DIRT) { type[k] = ROCK; col[k] = shadeHex(PAL.rock, 0.85 + rnd() * 0.3, 0); } });
-    }
+  // where things changed since the last collapse checks, and which chunks have grains that may fall
+  const dirty: Box = { x0: 1, y0: 1, x1: 0, y1: 0 }, idirty: Box = { x0: 1, y0: 1, x1: 0, y1: 0 };
+  const awake = new Set<number>();
+  function grow(b: Box, x: number, y: number) {
+    if (b.x0 > b.x1) { b.x0 = b.x1 = x; b.y0 = b.y1 = y; return; }
+    if (x < b.x0) b.x0 = x; if (x > b.x1) b.x1 = x; if (y < b.y0) b.y0 = y; if (y > b.y1) b.y1 = y;
+  }
+  function mark(x: number, y: number) {
+    grow(dirty, x, y); grow(idirty, x, y);
+    // this chunk, and its neighbours when the cell is on an edge (a grain above may now fall into it)
+    const a = (Math.max(0, y - 1) >> CS) * cw, b = (Math.min(H - 1, y + 1) >> CS) * cw, l = Math.max(0, x - 1) >> CS, r = Math.min(W - 1, x + 1) >> CS;
+    awake.add(a + l); awake.add(a + r); awake.add(b + l); awake.add(b + r);
   }
 
-  const pockets: Pocket[] = [];
-  if (opts.food !== false) {
-    const nFood = opts.pockets || ri(10, 16);
-    for (let tries = 0; pockets.length < nFood && tries < 400; tries++) {
-      const x = ri(8, W - 9), y = ri(surf[x] + 18, H - 8);
-      if (Math.hypot(x - ex, y - surf[ex]) < 30) continue;
-      if (pockets.some((p) => Math.hypot(p.x - x, p.y - y) < 28)) continue;
-      const kind = rnd() < 0.6 ? 'seed' : 'fungus';
-      const p: Pocket = { id: pockets.length, x, y, kind, total: 0, remaining: 0, claimed: false };
-      blob(x, y, 1.6 + rnd() * 1.8, (k) => {
-        if (type[k] !== DIRT) return;
-        type[k] = FOOD; pocket[k] = p.id; p.total++;
-        col[k] = shadeHex(kind === 'seed' ? PAL.seed : PAL.fungus, 0.85 + rnd() * 0.3, 0);
-      });
-      p.remaining = p.total;
-      if (p.total) pockets.push(p); // an empty pocket's id is reused by the next one
-    }
-  }
+  const occ = new Map<number, number>(); // ants standing in a cell: grains rest on them instead of filling it
+  const occAdd = (k: number, d: number) => { const n = (occ.get(k) || 0) + d; if (n > 0) occ.set(k, n); else occ.delete(k); };
 
   // ---------- simulation state ----------
   const sim = {
-    seed, W, H, type, col, bg, span, pocket, surf, pockets, ex, nest: { x: ex + 5, y: 0 },
+    seed, W, H, XB, R, surf, pockets: new Map<number, Pocket>(), ex, nest: { x: ex + 5, y: 0 },
     tick: 0, version: 0, rnd,
     ants: [], brood: [], projects: [], strains: [], events: [],
     energy: opts.energy == null ? 320 : opts.energy,
     crumbQueue: 0, galleryQueue: [], scent: 40,
-    royal: null, broodRoom: null,
+    royal: null, broodRoom: null, view: null,
     box: { x0: ex - 1, y0: surf[ex] - 1, x1: ex + 1, y1: surf[ex] + 1 }, // everything the colony has touched
-    sandAwake: false, lastCheckVer: -1, lastIslandVer: -1, moves: 0, falling: 0, crumbsOut: 0,
-    stats: { dug: 0, stored: 0, eaten: 0, laid: 0, born: 0, collapses: 0, crumbsSpawned: 0, tokens: 0, tasks: 0 },
+    sandAwake: false, moves: 0, falling: 0, crumbsOut: 0,
+    stats: { dug: 0, stored: 0, eaten: 0, laid: 0, born: 0, collapses: 0, crumbsSpawned: 0, tokens: 0, tasks: 0, died: 0, starved: 0 },
     fields: new Map<string, Field>(),
     nextId: 1,
     meter: new TokenMeter(),
+    life: { last: now(), hunger: 0, starve: 0, starvingSince: 0, lastTokens: 0 },
+    chunks: store, now,
   } as unknown as Sim;
-
-  const idx = (x: number, y: number): number => y * W + x;
-  const inside = (x: number, y: number): boolean => x > 0 && y > 0 && x < W - 1 && y < H - 1;
 
   function touch(x: number, y: number) {
     const b = sim.box;
     if (x < b.x0) b.x0 = x; if (x > b.x1) b.x1 = x; if (y < b.y0) b.y0 = y; if (y > b.y1) b.y1 = y;
   }
+  function pocketAt(id: number): Pocket | null {
+    let p = sim.pockets.get(id);
+    if (p) return p;
+    const b = podOf(id);
+    if (b.kind < 0) return null;
+    p = { id, x: b.x, y: b.y, kind: b.kind === SRC.SEED ? 'seed' : 'fungus', total: 0, remaining: 0, claimed: false };
+    for (let y = b.y - 5; y <= b.y + 5; y++) for (let x = b.x - 5; x <= b.x + 5; x++) if ((cellAt(x, y) & 255) === FOOD && podId(x, y) === id) p.total++;
+    if (!p.total) return null;
+    p.remaining = p.total;
+    sim.pockets.set(id, p);
+    return p;
+  }
+  sim.pocketsIn = function (b: Box): Pocket[] {
+    const out: Pocket[] = [];
+    for (let py = Math.max(0, Math.floor(b.y0 / PR)); py <= Math.min(Math.ceil(H / PR) - 1, Math.floor(b.y1 / PR)); py++)
+      for (let px = Math.max(0, Math.floor(b.x0 / PR)); px <= Math.min(pcw - 1, Math.floor(b.x1 / PR)); px++) {
+        const p = pocketAt(py * pcw + px); if (p) out.push(p);
+      }
+    return out;
+  };
   function setCell(k: number, t: number, c?: number) {
-    const old = type[k];
-    if (old === FOOD && t !== FOOD && pocket[k] >= 0) { sim.pockets[pocket[k]].remaining--; pocket[k] = -1; }
-    type[k] = t; if (c !== undefined) col[k] = c;
-    sim.version++; sim.sandAwake = true;
-    touch(k % W, (k / W) | 0);
+    if (T(k) === FOOD && t !== FOOD) { const x = k & XM, y = k >> XB, p = pocketAt(podId(x, y)); if (p) p.remaining--; }
+    write(k, t, c);
+    sim.version++;
+    touch(k & XM, k >> XB);
   }
   function swap(a: number, b: number) {
-    const t = type[a]; type[a] = type[b]; type[b] = t;
-    const c = col[a]; col[a] = col[b]; col[b] = c;
+    const ta = T(a), ca = C(a), tb = T(b), cb = C(b);
+    write(a, tb, cb); write(b, ta, ca);
   }
+  sim.typeAt = T;
+  sim.colAt = C;
   sim.setCell = setCell;
   sim.idx = idx;
 
   function walkable(k: number): boolean {
-    if (type[k] !== AIR) return false;
-    const x = k % W, y = (k / W) | 0;
-    if (!inside(x, y)) return false;
-    return SOLID[type[k - 1]] || SOLID[type[k + 1]] || SOLID[type[k - W]] || SOLID[type[k + W]] ||
-      SOLID[type[k - W - 1]] || SOLID[type[k - W + 1]] || SOLID[type[k + W - 1]] || SOLID[type[k + W + 1]];
+    if (T(k) !== AIR) return false;
+    if (!inside(k & XM, k >> XB)) return false;
+    return SOLID[T(k - 1)] || SOLID[T(k + 1)] || SOLID[T(k - R)] || SOLID[T(k + R)] ||
+      SOLID[T(k - R - 1)] || SOLID[T(k - R + 1)] || SOLID[T(k + R - 1)] || SOLID[T(k + R + 1)];
   }
   sim.walkable = walkable;
   // A diagonal step needs one of the two side cells open: no squeezing through a pinhole.
   function canStep(k: number, dx: number, dy: number): boolean {
     if (dx === 0 || dy === 0) return true;
-    return type[k + dx] === AIR || type[k + dy * W] === AIR;
+    return T(k + dx) === AIR || T(k + dy * R) === AIR;
   }
   const D8: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
 
-  // ---------- distance fields (BFS over walkable air) ----------
-  const queue = new Int32Array(N);
+  // ---------- the window: a flat copy of the cells around the colony, for path-finding ----------
+  // Whole chunks around everything touched and every ant, 64 cells of margin. Copied again only when the world changed.
+  interface Snap { x0: number; y0: number; w: number; h: number; t: Uint8Array; ver: number }
+  let snap: Snap = { x0: 0, y0: 0, w: 0, h: 0, t: new Uint8Array(0), ver: -1 };
+  function windowBox(): Box {
+    let { x0, y0, x1, y1 } = sim.box;
+    for (const a of sim.ants) { if (a.x < x0) x0 = a.x; if (a.x > x1) x1 = a.x; if (a.y < y0) y0 = a.y; if (a.y > y1) y1 = a.y; }
+    const M = 64;
+    return {
+      x0: Math.max(0, (x0 - M) >> CS) << CS, y0: Math.max(0, (y0 - M) >> CS) << CS,
+      x1: ((Math.min(W - 1, x1 + M) >> CS) << CS) + 63, y1: ((Math.min(H - 1, y1 + M) >> CS) << CS) + 63,
+    };
+  }
+  function getSnap(): Snap {
+    const b = windowBox(), w = b.x1 - b.x0 + 1, h = b.y1 - b.y0 + 1;
+    if (snap.ver === sim.version && snap.x0 === b.x0 && snap.y0 === b.y0 && snap.w === w && snap.h === h) return snap;
+    const t = snap.t.length === w * h ? snap.t : new Uint8Array(w * h);
+    for (let cy = b.y0 >> CS; cy <= b.y1 >> CS; cy++) for (let cx = b.x0 >> CS; cx <= b.x1 >> CS; cx++) {
+      const ct = store.get(cy * cw + cx).type!, ox = (cx << CS) - b.x0, oy = (cy << CS) - b.y0;
+      for (let ly = 0; ly < 64; ly++) t.set(ct.subarray(ly << CS, (ly + 1) << CS), (oy + ly) * w + ox);
+    }
+    snap = { x0: b.x0, y0: b.y0, w, h, t, ver: sim.version };
+    return snap;
+  }
+  // walkable, in the window: open air inside the map, off the window's edge, touching something solid
+  function walkL(s: Snap, i: number): boolean {
+    const t = s.t, w = s.w;
+    if (t[i] !== AIR) return false;
+    const lx = i % w, ly = (i - lx) / w;
+    if (lx < 1 || ly < 1 || lx >= w - 1 || ly >= s.h - 1) return false;
+    const x = lx + s.x0, y = ly + s.y0;
+    if (x <= 0 || y <= 0 || x >= W - 1 || y >= H - 1) return false;
+    return SOLID[t[i - 1]] || SOLID[t[i + 1]] || SOLID[t[i - w]] || SOLID[t[i + w]] ||
+      SOLID[t[i - w - 1]] || SOLID[t[i - w + 1]] || SOLID[t[i + w - 1]] || SOLID[t[i + w + 1]];
+  }
+
+  // ---------- distance fields (BFS over walkable air in the window) ----------
+  let queue = new Int32Array(0);
   function computeField(f: Field) {
+    const s = getSnap(), n = s.w * s.h, w = s.w, t = s.t;
+    if (f.dist.length !== n) f.dist = new Int32Array(n);
+    if (queue.length < n) queue = new Int32Array(n);
     const dist = f.dist; dist.fill(-1);
+    f.x0 = s.x0; f.y0 = s.y0; f.w = s.w; f.h = s.h;
     let qh = 0, qt = 0;
-    for (const s of f.sources()) if (s >= 0 && s < N && dist[s] < 0 && walkable(s)) { dist[s] = 0; queue[qt++] = s; }
+    for (const k of f.sources()) {
+      const lx = (k & XM) - s.x0, ly = (k >> XB) - s.y0;
+      if (k < 0 || lx < 0 || ly < 0 || lx >= w || ly >= s.h) continue;
+      const i = ly * w + lx;
+      if (dist[i] < 0 && walkL(s, i)) { dist[i] = 0; queue[qt++] = i; }
+    }
     while (qh < qt) {
-      const k = queue[qh++], d = dist[k] + 1;
-      for (const [dx, dy] of D8) {
-        const n = k + dx + dy * W;
-        if (dist[n] >= 0 || type[n] !== AIR || !canStep(k, dx, dy) || !walkable(n)) continue;
-        dist[n] = d; queue[qt++] = n;
+      const i = queue[qh++], d = dist[i] + 1;
+      for (let j = 0; j < 8; j++) {
+        const dx = D8[j][0], dy = D8[j][1], m = i + dx + dy * w;
+        if (dist[m] >= 0 || t[m] !== AIR) continue;
+        if (dx !== 0 && dy !== 0 && t[i + dx] !== AIR && t[i + dy * w] !== AIR) continue;
+        if (!walkL(s, m)) continue;
+        dist[m] = d; queue[qt++] = m;
       }
     }
     f.ver = sim.version; f.at = sim.tick;
   }
+  function distAt(f: Field, k: number): number {
+    const lx = (k & XM) - f.x0, ly = (k >> XB) - f.y0;
+    return lx < 0 || ly < 0 || lx >= f.w || ly >= f.h ? -1 : f.dist[ly * f.w + lx];
+  }
   function field(key: string, sources: () => number[]): Field {
     let f = sim.fields.get(key);
-    if (!f) { f = { dist: new Int32Array(N), ver: -1, at: -99, sources }; sim.fields.set(key, f); computeField(f); return f; }
+    if (!f) { f = { dist: new Int32Array(0), x0: 0, y0: 0, w: 0, h: 0, ver: -1, at: -99, sources }; sim.fields.set(key, f); computeField(f); return f; }
     f.sources = sources;
     if (f.ver !== sim.version && sim.tick - f.at >= 4) computeField(f);
     return f;
@@ -232,14 +395,14 @@ export function createSim(opts: SimOptions = {}): Sim {
   // Move one cell down the field. Returns 'arrived', 'moved' or 'stuck'. Never more than one cell.
   function follow(a: Ant, f: Field): 'arrived' | 'moved' | 'stuck' {
     const k = idx(a.x, a.y);
-    let d = f.dist[k];
+    let d = distAt(f, k);
     if (d === 0) return 'arrived';
-    if (d < 0 && sim.tick - f.at > 0) { computeField(f); d = f.dist[k]; if (d === 0) return 'arrived'; }
+    if (d < 0 && sim.tick - f.at > 0) { computeField(f); d = distAt(f, k); if (d === 0) return 'arrived'; }
     if (d < 0) return 'stuck';
     let best = -1, bestD = d, ties = 0;
     for (const [dx, dy] of D8) {
-      const n = k + dx + dy * W, nd = f.dist[n];
-      if (nd < 0 || nd > bestD || type[n] !== AIR || !canStep(k, dx, dy) || !walkable(n)) continue;
+      const n = k + dx + dy * R, nd = distAt(f, n);
+      if (nd < 0 || nd > bestD || T(n) !== AIR || !canStep(k, dx, dy) || !walkable(n)) continue;
       if (nd < bestD) { bestD = nd; best = n; ties = 1; } else if (nd === bestD && best >= 0 && nd < d) { ties++; if (rnd() < 1 / ties) best = n; }
     }
     if (best < 0 || bestD >= d) { if (sim.tick - f.at > 0) computeField(f); return 'stuck'; }
@@ -247,11 +410,11 @@ export function createSim(opts: SimOptions = {}): Sim {
     return 'moved';
   }
   function moveTo(a: Ant, k: number) {
-    const nx = k % W, ny = (k / W) | 0;
+    const nx = k & XM, ny = k >> XB;
     a.hx = Math.sign(nx - a.x); a.hy = Math.sign(ny - a.y);
     const old = idx(a.x, a.y);
-    occ[old]--; occ[k]++;
-    if (FALLS[type[old - W]] || FALLS[type[old - W - 1]] || FALLS[type[old - W + 1]]) sim.sandAwake = true;
+    occAdd(old, -1); occAdd(k, 1);
+    if (FALLS[T(old - R)] || FALLS[T(old - R - 1)] || FALLS[T(old - R + 1)]) mark(a.x, a.y - 1);
     a.x = nx; a.y = ny; a.walk++; sim.moves++;
   }
 
@@ -271,16 +434,16 @@ export function createSim(opts: SimOptions = {}): Sim {
   function newProject(kind: ProjectKind, startK: number, goal: Point | null, room: Room | null): Project {
     const p: Project = {
       id: sim.nextId++, kind, head: startK, goal, room, phase: goal ? 'tunnel' : 'room',
-      ang: Math.atan2(goal ? goal.y - ((startK / W) | 0) : 1, goal ? goal.x - startK % W : 0),
+      ang: Math.atan2(goal ? goal.y - (startK >> XB) : 1, goal ? goal.x - (startK & XM) : 0),
       cells: room ? roomCells(room) : null, work: -1, done: false, stuck: 0, diggers: 0,
     };
     sim.projects.push(p);
     return p;
   }
   sim.newProject = newProject;
-  const hasAirNear = (k: number): boolean => { for (const [dx, dy] of D8) if (walkable(k + dx + dy * W)) return true; return false; };
+  const hasAirNear = (k: number): boolean => { for (const [dx, dy] of D8) if (walkable(k + dx + dy * R)) return true; return false; };
   function canDig(p: Project, k: number): boolean {
-    const t = type[k];
+    const t = T(k);
     if (p.kind === 'clear') return t === LOOSE;
     return DIGGABLE[t];
   }
@@ -289,25 +452,25 @@ export function createSim(opts: SimOptions = {}): Sim {
     p.cands = [];
     for (let guard = 0; guard < 6 && !p.done; guard++) {
       if (p.phase === 'tunnel') {
-        const hx = p.head % W, hy = (p.head / W) | 0;
+        const hx = p.head & XM, hy = p.head >> XB;
         const dx = Math.round(Math.cos(p.ang)), dy = Math.round(Math.sin(p.ang));
         const nx = hx + dx, ny = hy + dy;
-        if (!inside(nx, ny) || type[idx(nx, ny)] === ROCK || type[idx(nx, ny)] === GLASS || ny < surf[nx] - 1) {
+        if (!inside(nx, ny) || T(idx(nx, ny)) === ROCK || T(idx(nx, ny)) === GLASS || ny < surf[nx] - 1) {
           p.stuck++; p.ang += (p.stuck % 2 ? 1 : -1) * (Math.PI / 4) * Math.ceil(p.stuck / 2);
           if (p.stuck > 10) { p.done = true; p.failed = true; }
           continue;
         }
-        const face = [idx(nx, ny), idx(nx - dy, ny + dx), idx(nx + dy, ny - dx), idx(nx + dx, ny + dy)];
+        const face = [[nx, ny], [nx - dy, ny + dx], [nx + dy, ny - dx], [nx + dx, ny + dy]];
         let solidFace = false;
-        for (const k of face) {
-          const fx = k % W, fy = (k / W) | 0;
-          if (!inside(fx, fy) || fy < surf[fx] || !DIGGABLE[type[k]]) continue;
+        for (const [fx, fy] of face) {
+          const k = idx(fx, fy);
+          if (!inside(fx, fy) || fy < surf[fx] || !DIGGABLE[T(k)]) continue;
           if (hasAirNear(k)) p.cands.push(k);
           solidFace = true;
         }
         if (solidFace && !p.cands.length) {
           // face not yet touching air (the tip turned a corner): open the cells around the step first
-          for (const [ox, oy] of D8) { const k = idx(nx + ox, ny + oy); if (inside(nx + ox, ny + oy) && (ny + oy) >= surf[nx + ox] && DIGGABLE[type[k]] && hasAirNear(k)) p.cands.push(k); }
+          for (const [ox, oy] of D8) { const k = idx(nx + ox, ny + oy); if (inside(nx + ox, ny + oy) && (ny + oy) >= surf[nx + ox] && DIGGABLE[T(k)] && hasAirNear(k)) p.cands.push(k); }
           if (!p.cands.length) { p.stuck++; p.ang += (p.stuck % 2 ? 1 : -1) * (Math.PI / 4); if (p.stuck > 10) { p.done = true; p.failed = true; } continue; }
         }
         if (solidFace) return p.cands; // the rest of the face opens up once the near cells are out
@@ -323,10 +486,10 @@ export function createSim(opts: SimOptions = {}): Sim {
       // room / harvest / clear: dig the earliest listed cell that touches open air
       for (const k of p.cells!) if (canDig(p, k) && hasAirNear(k) && p.cands.push(k) >= 8) break;
       if (p.cands.length) return p.cands;
-      if (p.kind === 'food' && sim.pockets[p.pocket!].remaining > 0) {
+      if (p.kind === 'food' && (pocketAt(p.pocket!)?.remaining ?? 0) > 0) {
         // pocket cells not yet exposed: tunnel on toward the rest of it
-        const left = p.cells!.find((k) => type[k] === FOOD);
-        if (left != null) { p.phase = 'tunnel'; p.goal = { x: left % W, y: (left / W) | 0 }; continue; }
+        const left = p.cells!.find((k) => T(k) === FOOD);
+        if (left != null) { p.phase = 'tunnel'; p.goal = { x: left & XM, y: left >> XB }; continue; }
       }
       if (!p.cells!.some((k) => canDig(p, k))) p.done = true;
       return p.cands;
@@ -335,73 +498,94 @@ export function createSim(opts: SimOptions = {}): Sim {
   }
   sim.nextCells = nextCells;
 
-  function underground(k: number): boolean { const x = k % W, y = (k / W) | 0; return y > surf[x]; }
+  function underground(k: number): boolean { return (k >> XB) > surf[k & XM]; }
   function nearestTunnel(gx: number, gy: number): { k: number; d: number } {
     let best = -1, bd = Infinity;
-    const b = sim.box;
+    const b = sim.box, s = getSnap();
+    const r = sim.royal && sim.royal.done && sim.royal.room; // keep new tunnels out of the queen's floor
     for (let y = Math.max(1, b.y0); y <= Math.min(H - 2, b.y1); y++) for (let x = Math.max(1, b.x0); x <= Math.min(W - 2, b.x1); x++) {
-      const k = idx(x, y);
-      if (type[k] !== AIR || y <= surf[x] + 1 || !walkable(k)) continue;
-      const r = sim.royal && sim.royal.done && sim.royal.room; // keep new tunnels out of the queen's floor
+      const i = (y - s.y0) * s.w + (x - s.x0);
+      if (s.t[i] !== AIR || y <= surf[x] + 1 || !walkL(s, i)) continue;
       if (r && Math.abs(x - r.cx) <= r.rx + 2 && Math.abs(y - r.cy) <= r.ry + 2) continue;
       const d = (x - gx) * (x - gx) + (y - gy) * (y - gy);
-      if (d < bd) { bd = d; best = k; }
+      if (d < bd) { bd = d; best = idx(x, y); }
     }
     return { k: best, d: Math.sqrt(bd) };
   }
 
   // ---------- the colony ----------
-  function addAnt(x: number, y: number, role?: Role): Ant {
-    const a: Ant = { id: sim.nextId++, x, y, hx: 1, hy: 0, role: role || 'worker', job: null, carry: null, carryCol: 0, busy: 0,
-      acc: rnd(), speed: role === 'queen' ? 0.25 : 0.75 + rnd() * 0.2, walk: 0, stuckT: 0, brood: null };
-    sim.ants.push(a); occ[idx(x, y)]++;
+  function lifespan(role: Role): number {
+    return (role === 'queen' ? QUEEN_LIFESPAN_MS : ANT_LIFESPAN_MS) * (1 + (rnd() * 2 - 1) * LIFESPAN_JITTER);
+  }
+  function addAnt(x: number, y: number, role?: Role, born = now()): Ant {
+    const r = role || 'worker';
+    const a: Ant = { id: sim.nextId++, x, y, hx: 1, hy: 0, role: r, job: null, carry: null, carryCol: 0, busy: 0,
+      acc: rnd(), speed: r === 'queen' ? 0.25 : 0.75 + rnd() * 0.2, walk: 0, stuckT: 0, brood: null, born, dies: born + lifespan(r) };
+    sim.ants.push(a); occAdd(idx(x, y), 1);
     return a;
   }
-  sim.addAnt = addAnt;
-  const queen = () => sim.ants.find((a) => a.role === 'queen');
+  sim.addAnt = (x, y, role) => addAnt(x, y, role);
+  const queen = () => sim.ants.find((a) => a.role === 'queen' && !a.dying);
 
-  if (opts.colony !== false) {
+  // A queen and a few workers at the entrance, with a little food. A founding colony's workers are of mixed ages.
+  function found(workers: number) {
     const sy = surf[ex] - 1;
     // The queen waits beside the entrance (not over the shaft) until her chamber is dug.
-    let qy = surf[sim.nest.x] - 1; while (qy < H - 2 && type[idx(sim.nest.x, qy + 1)] === AIR) qy++;
+    let qy = surf[sim.nest.x] - 1; while (qy < H - 2 && T(idx(sim.nest.x, qy + 1)) === AIR) qy++;
     sim.nest.y = qy;
     addAnt(sim.nest.x, qy, 'queen');
-    for (let i = 0; i < (opts.workers || 6); i++) { const x = ex + ri(-6, 6); let y = sy; while (y < H - 2 && type[idx(x, y + 1)] === AIR) y++; addAnt(x, y, 'worker'); }
-    for (let i = 0; i < 4; i++) { const k = idx(ex + ri(-3, 3), sy - 6 - i); if (type[k] === AIR) { setCell(k, CRUMB, shadeHex(PAL.crumb, 0.9 + rnd() * 0.2, 0)); sim.stats.crumbsSpawned++; } }
+    const t = now();
+    for (let i = 0; i < workers; i++) {
+      const x = ex + ri(-6, 6); let y = sy; while (y < H - 2 && T(idx(x, y + 1)) === AIR) y++;
+      addAnt(x, y, 'worker', t - rnd() * ANT_LIFESPAN_MS * 0.5);
+    }
+  }
+  if (opts.colony !== false && !R0) {
+    found(opts.workers || 6);
+    const sy = surf[ex] - 1;
+    for (let i = 0; i < 4; i++) { const k = idx(ex + ri(-3, 3), sy - 6 - i); if (T(k) === AIR) { setCell(k, CRUMB, SRC.CRUMB << 8 | ri(64, 192)); sim.stats.crumbsSpawned++; } }
   }
 
   // Food is stored at a fixed place: beside the entrance, then on the royal chamber floor.
   const storeRoom = () => (sim.royal && sim.royal.done ? sim.royal.room : null);
   const storeSources = () => { const r = storeRoom(); return r ? near(r.cx, r.cy + r.ry - 1, 3) : near(sim.nest.x, sim.nest.y, 2); };
-  const isStored = (x: number, y: number): boolean => {
+  const storeRect = (): Box => {
     const r = storeRoom();
-    if (r) return Math.abs(x - r.cx) <= r.rx + 2 && Math.abs(y - r.cy) <= r.ry + 2;
-    return Math.abs(x - sim.nest.x) <= 6 && Math.abs(y - sim.nest.y) <= 4;
+    return r ? { x0: r.cx - r.rx - 2, y0: r.cy - r.ry - 2, x1: r.cx + r.rx + 2, y1: r.cy + r.ry + 2 } : { x0: sim.nest.x - 6, y0: sim.nest.y - 4, x1: sim.nest.x + 6, y1: sim.nest.y + 4 };
   };
+  const isStored = (x: number, y: number): boolean => { const b = storeRect(); return x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1; };
+  function storedCells(): number[] {
+    const b = storeRect(), out: number[] = [];
+    for (let y = Math.max(1, b.y0); y <= Math.min(H - 2, b.y1); y++) for (let x = Math.max(1, b.x0); x <= Math.min(W - 2, b.x1); x++) if (T(idx(x, y)) === CRUMB) out.push(idx(x, y));
+    return out;
+  }
+  sim.stored = () => storedCells().length;
 
-  // Surface: anywhere on the open ground away from the hole.
+  // Surface: anywhere on the open ground away from the hole, within the window.
   function surfaceSources(): number[] {
-    const out: number[] = [];
-    for (let x = 2; x < W - 2; x++) {
+    const out: number[] = [], s = getSnap();
+    for (let x = Math.max(2, s.x0 + 1); x < Math.min(W - 2, s.x0 + s.w - 1); x++) {
       if (Math.abs(x - ex) < 4) continue;
-      for (let y = 1; y < surf[x] + 1; y++) { const k = idx(x, y); if (type[k] !== AIR) { if (y > 1) out.push(idx(x, y - 1)); break; } }
+      for (let y = Math.max(1, s.y0 + 1); y < Math.min(surf[x] + 1, s.y0 + s.h); y++) {
+        if (s.t[(y - s.y0) * s.w + (x - s.x0)] !== AIR) { if (y > 1) out.push(idx(x, y - 1)); break; }
+      }
     }
     return out;
   }
   function crumbSources(): number[] {
-    const out: number[] = [];
-    const b = sim.box;
-    for (let y = Math.max(1, b.y0 - 2); y <= Math.min(H - 2, b.y1 + 2); y++) for (let x = 1; x < W - 1; x++) {
-      const k = idx(x, y);
-      if (type[k] === CRUMB && type[k + W] !== AIR && !isStored(x, y)) for (const [dx, dy] of D8) out.push(k + dx + dy * W);
+    const out: number[] = [], s = getSnap(), b = sim.box;
+    for (let y = Math.max(s.y0 + 1, b.y0 - 2); y <= Math.min(s.y0 + s.h - 2, b.y1 + 2); y++) for (let x = s.x0 + 1; x < s.x0 + s.w - 1; x++) {
+      const i = (y - s.y0) * s.w + (x - s.x0);
+      if (s.t[i] === CRUMB && s.t[i + s.w] !== AIR && !isStored(x, y)) for (const [dx, dy] of D8) out.push(idx(x + dx, y + dy));
     }
     return out;
   }
   function looseCrumbs() {
     let n = 0;
-    const b = sim.box;
-    for (let y = 1; y < H - 1; y++) for (let x = Math.max(1, b.x0 - 60); x <= Math.min(W - 2, b.x1 + 60); x++) {
-      const k = idx(x, y); if (type[k] === CRUMB && type[k + W] !== AIR && !isStored(x, y)) n++;
+    const b = sim.box, s = getSnap();
+    for (let y = Math.max(1, s.y0 + 1); y <= Math.min(b.y1 + 60, s.y0 + s.h - 2); y++) for (let x = Math.max(1, b.x0 - 60, s.x0); x <= Math.min(W - 2, b.x1 + 60, s.x0 + s.w - 1); x++) {
+      const i = (y - s.y0) * s.w + (x - s.x0);
+      if (s.t[i] === CRUMB && s.t[i + s.w] !== AIR && !isStored(x, y)) n++;
     }
     return n;
   }
@@ -410,12 +594,12 @@ export function createSim(opts: SimOptions = {}): Sim {
   function dropNear(a: Ant, t: number, c: number, preferDx?: number): boolean {
     const k = idx(a.x, a.y);
     const tries: [number, number][] = [[preferDx || a.hx || 1, 0], [-(preferDx || a.hx || 1), 0], [0, -1], [preferDx || 1, -1], [-(preferDx || 1), -1]];
-    for (const [dx, dy] of tries) { const n = k + dx + dy * W; if (type[n] === AIR && inside(n % W, (n / W) | 0)) { setCell(n, t, c); return true; } }
+    for (const [dx, dy] of tries) { const n = k + dx + dy * R; if (T(n) === AIR && inside(n & XM, n >> XB)) { setCell(n, t, c); return true; } }
     return false;
   }
 
   function assign(a: Ant) {
-    const workers = sim.ants.filter((b) => b.role === 'worker');
+    const workers = sim.ants.filter((b) => b.role === 'worker' && !b.dying);
     // brood waiting by the queen gets carried down to the brood room
     if (sim.broodRoom && sim.broodRoom.done) {
       const b = sim.brood.find((e) => !e.inRoom && !e.nurse);
@@ -438,19 +622,20 @@ export function createSim(opts: SimOptions = {}): Sim {
     if (a.job && a.job.type === 'nurse') { const b = sim.brood.find((e) => e.id === a.job!.id); if (b && b.nurse === a.id && a.carry !== 'brood') b.nurse = 0; }
     a.job = null;
   }
+  const inView = (a: Ant): boolean => { const v = sim.view; return !v || (a.x >= v.x0 && a.x <= v.x1 && a.y >= v.y0 && a.y <= v.y1); };
 
   function stepAnt(a: Ant): void {
     const k = idx(a.x, a.y);
     // Buried (a cell was filled under it): climb to open air next to it, else pick the grain up,
     // else shove it upward.
-    if (type[k] !== AIR) {
-      for (const [dx, dy] of [[0, -1], [-1, -1], [1, -1], [-1, 0], [1, 0]] as [number, number][]) { const n = k + dx + dy * W; if (type[n] === AIR && inside(n % W, (n / W) | 0)) { moveTo(a, n); return; } }
-      if (!a.carry && a.role !== 'queen' && DIGGABLE[type[k]]) { a.carry = type[k] === CRUMB || type[k] === FOOD ? 'food' : 'grain'; a.carryCol = col[k]; setCell(k, AIR); return; }
-      for (let y = a.y - 1; y > 0; y--) { const n = idx(a.x, y); if (type[n] === AIR) { const t = type[k], c = col[k]; setCell(k, AIR); setCell(n, t, c); return; } }
+    if (T(k) !== AIR) {
+      for (const [dx, dy] of [[0, -1], [-1, -1], [1, -1], [-1, 0], [1, 0]] as [number, number][]) { const n = k + dx + dy * R; if (T(n) === AIR && inside(n & XM, n >> XB)) { moveTo(a, n); return; } }
+      if (!a.carry && a.role !== 'queen' && DIGGABLE[T(k)]) { a.carry = T(k) === CRUMB || T(k) === FOOD ? 'food' : 'grain'; a.carryCol = C(k); setCell(k, AIR); return; }
+      for (let y = a.y - 1; y > 0; y--) { const n = idx(a.x, y); if (T(n) === AIR) { const t = T(k), c = C(k); setCell(k, AIR); setCell(n, t, c); return; } }
       return;
     }
     // Nothing to hold on to: fall one cell.
-    if (!walkable(k)) { if (type[k + W] === AIR) moveTo(a, k + W); return; }
+    if (!walkable(k)) { if (T(k + R) === AIR) moveTo(a, k + R); return; }
     if (a.busy > 0) { a.busy--; return; }
     a.acc += a.speed * (sim.energy >= 1 || a.carry ? 1 : 0.5);
     if (a.acc < 1) return;
@@ -475,14 +660,16 @@ export function createSim(opts: SimOptions = {}): Sim {
     if (a.carry === 'food') {
       const r = follow(a, field('store', storeSources));
       if (r === 'arrived') {
+        // a full store: the forager eats what it brought
+        if (sim.stored() >= STORE_CAP) { a.carry = null; a.busy = DROP_TICKS; sim.stats.eaten++; sim.life.hunger = Math.max(0, sim.life.hunger - 1); return; }
         // set food down only where it will stay put (not over a hole it would roll down)
         let put = false;
         for (const [dx, dy] of <[number, number][]>[[a.hx || 1, 0], [-(a.hx || 1), 0], [0, -1], [1, -1], [-1, -1]]) {
-          const n = k + dx + dy * W;
-          if (type[n] === AIR && type[n + W] !== AIR && !occ[n] && isStored(n % W, (n / W) | 0)) { setCell(n, CRUMB, a.carryCol); put = true; break; }
+          const n = k + dx + dy * R;
+          if (T(n) === AIR && T(n + R) !== AIR && !occ.has(n) && isStored(n & XM, n >> XB)) { setCell(n, CRUMB, a.carryCol); put = true; break; }
         }
         if (put) { a.carry = null; a.busy = DROP_TICKS; sim.stats.stored++; }
-        else { const [dx, dy] = D8[Math.floor(rnd() * 8)]; const n = k + dx + dy * W; if (walkable(n) && canStep(k, dx, dy) && isStored(n % W, (n / W) | 0)) moveTo(a, n); }
+        else { const [dx, dy] = D8[Math.floor(rnd() * 8)]; const n = k + dx + dy * R; if (walkable(n) && canStep(k, dx, dy) && isStored(n & XM, n >> XB)) moveTo(a, n); }
       }
       else if (r === 'stuck') blocked(a);
       return;
@@ -491,14 +678,15 @@ export function createSim(opts: SimOptions = {}): Sim {
     const j = a.job!;
     if (j.type === 'rest') {
       if ((j.t = j.t! - 1) <= 0) { release(a); return; }
-      if (rnd() < 0.15) { const [dx, dy] = D8[Math.floor(rnd() * 8)]; const n = k + dx + dy * W; if (walkable(n) && canStep(k, dx, dy) && underground(n) === underground(k)) moveTo(a, n); }
+      // a resting ant nobody can see stays put: no work for the simulation, no difference to anyone
+      if (inView(a) && rnd() < 0.15) { const [dx, dy] = D8[Math.floor(rnd() * 8)]; const n = k + dx + dy * R; if (walkable(n) && canStep(k, dx, dy) && underground(n) === underground(k)) moveTo(a, n); }
       return;
     }
     if (j.type === 'forage') {
       if (sim.crumbsOut <= 0) { release(a); return; }
       const r = follow(a, field('crumbs', crumbSources));
       if (r === 'arrived') {
-        for (const [dx, dy] of D8) { const n = k + dx + dy * W; if (type[n] === CRUMB && !isStored(n % W, (n / W) | 0)) { a.carry = 'food'; a.carryCol = col[n]; setCell(n, AIR); a.busy = DIG_TICKS; sim.crumbsOut--; break; } }
+        for (const [dx, dy] of D8) { const n = k + dx + dy * R; if (T(n) === CRUMB && !isStored(n & XM, n >> XB)) { a.carry = 'food'; a.carryCol = C(n); setCell(n, AIR); a.busy = DIG_TICKS; sim.crumbsOut--; break; } }
         release(a);
       } else if (r === 'stuck') { release(a); blocked(a, true); }
       return;
@@ -523,16 +711,16 @@ export function createSim(opts: SimOptions = {}): Sim {
       if (!p || p.done || sim.energy < 1) { release(a); return; }
       const cands = nextCells(p);
       if (!cands.length) { release(a); return; }
-      const c = cands.find((n) => Math.max(Math.abs(n % W - a.x), Math.abs(((n / W) | 0) - a.y)) <= 1);
+      const c = cands.find((n) => Math.max(Math.abs((n & XM) - a.x), Math.abs((n >> XB) - a.y)) <= 1);
       if (c !== undefined) {
-        const cx = c % W, cy = (c / W) | 0, t = type[c];
-        a.carry = t === FOOD || t === CRUMB ? 'food' : 'grain'; a.carryCol = col[c];
+        const cx = c & XM, cy = c >> XB, t = T(c);
+        a.carry = t === FOOD || t === CRUMB ? 'food' : 'grain'; a.carryCol = C(c);
         a.hx = Math.sign(cx - a.x); a.hy = Math.sign(cy - a.y);
         setCell(c, AIR); sim.energy -= 1; sim.stats.dug++; a.busy = DIG_TICKS;
         release(a);
         return;
       }
-      const r = follow(a, field('work:' + p.id, () => (p.cands!.length ? p.cands!.flatMap((n) => near(n % W, (n / W) | 0, 1)) : [p.head])));
+      const r = follow(a, field('work:' + p.id, () => (p.cands!.length ? p.cands!.flatMap((n) => near(n & XM, n >> XB, 1)) : [p.head])));
       if (r === 'stuck') { if (++a.stuckT > 8) { a.stuckT = 0; release(a); blocked(a, true); } }
       else a.stuckT = 0;
     }
@@ -544,9 +732,9 @@ export function createSim(opts: SimOptions = {}): Sim {
     if (!now && ++a.stuckT < 20) return;
     a.stuckT = 0;
     for (const [dx, dy] of [[0, -1], [-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1], [0, 1]] as [number, number][]) {
-      const n = k + dx + dy * W;
-      if (type[n] !== LOOSE) continue;
-      if (!a.carry) { a.carry = 'grain'; a.carryCol = col[n]; setCell(n, AIR); sim.stats.dug++; a.busy = DIG_TICKS; return; }
+      const n = k + dx + dy * R;
+      if (T(n) !== LOOSE) continue;
+      if (!a.carry) { a.carry = 'grain'; a.carryCol = C(n); setCell(n, AIR); sim.stats.dug++; a.busy = DIG_TICKS; return; }
     }
     // Holding a grain and walled in underground: set it down and dig instead.
     // (Never next to the entrance: it would only roll back down the shaft.)
@@ -557,10 +745,10 @@ export function createSim(opts: SimOptions = {}): Sim {
     const k = idx(a.x, a.y);
     const opts2: [number, number][] = [[s, 1], [s, 0], [s, -1], [0, -1]];
     for (const [dx, dy] of opts2) {
-      const n = k + dx + dy * W;
-      if (walkable(n) && canStep(k, dx, dy) && type[n + W] !== AIR) { moveTo(a, n); return; }
+      const n = k + dx + dy * R;
+      if (walkable(n) && canStep(k, dx, dy) && T(n + R) !== AIR) { moveTo(a, n); return; }
     }
-    for (const [dx, dy] of opts2) { const n = k + dx + dy * W; if (walkable(n) && canStep(k, dx, dy)) { moveTo(a, n); return; } }
+    for (const [dx, dy] of opts2) { const n = k + dx + dy * R; if (walkable(n) && canStep(k, dx, dy)) { moveTo(a, n); return; } }
     if (Math.abs(a.x - ex) > 10) a.dumpX = a.x; // can't go further: drop here
     else a.dumpX = ex - (a.dumpX! - ex); // try the other side
   }
@@ -577,7 +765,7 @@ export function createSim(opts: SimOptions = {}): Sim {
     if (a.eggT >= 10 && pop < sim.cap()) {
       a.eggT = 0;
       const crumbs: number[] = [];
-      for (let y = a.y - 4; y <= a.y + 4; y++) for (let x = a.x - 6; x <= a.x + 6; x++) if (inside(x, y) && type[idx(x, y)] === CRUMB) crumbs.push(idx(x, y));
+      for (let y = a.y - 4; y <= a.y + 4; y++) for (let x = a.x - 6; x <= a.x + 6; x++) if (inside(x, y) && T(idx(x, y)) === CRUMB) crumbs.push(idx(x, y));
       if (crumbs.length >= 2) {
         setCell(crumbs[0], AIR); setCell(crumbs[1], AIR); sim.stats.eaten += 2;
         sim.brood.push({ id: sim.nextId++, x: a.x, y: a.y, age: 0, stage: 0, inRoom: false, nurse: 0, carried: false });
@@ -585,17 +773,82 @@ export function createSim(opts: SimOptions = {}): Sim {
       }
     }
   }
-  sim.cap = () => Math.min(90, 10 + 8 * sim.projects.filter((p) => p.done && p.room && !p.failed).length);
+  // the population the colony's rooms can hold
+  sim.cap = () => Math.min(120, 10 + 8 * sim.projects.filter((p) => p.done && p.room && !p.failed).length);
 
   function stepBrood() {
+    const hungry = sim.life.starvingSince > 0; // a starving colony's brood waits
     for (let i = sim.brood.length - 1; i >= 0; i--) {
       const b = sim.brood[i];
       if (b.carried) { const n = sim.ants.find((a) => a.brood === b); if (n) { b.x = n.x; b.y = n.y; } continue; }
-      if (type[idx(b.x, b.y + 1)] === AIR) { b.y++; continue; } // settles one cell per tick
-      if (type[idx(b.x, b.y)] !== AIR) { b.y--; continue; }
+      if (T(idx(b.x, b.y + 1)) === AIR) { b.y++; continue; } // settles one cell per tick
+      if (T(idx(b.x, b.y)) !== AIR) { b.y--; continue; }
+      if (hungry) continue;
       b.age += b.inRoom ? 1 : 0.4;
       while (b.stage < 3 && b.age >= BROOD_STAGES[b.stage]) b.stage++;
       if (b.stage >= 3) { sim.brood.splice(i, 1); addAnt(b.x, b.y, 'worker'); sim.stats.born++; }
+    }
+  }
+
+  // ---------- life: age, hunger, starvation, by the wall clock ----------
+  function event(e: SimEvent) { sim.events.push(e); if (sim.events.length > 50) sim.events.shift(); }
+  function die(a: Ant, cause: 'age' | 'hunger', at: number) {
+    release(a);
+    a.dying = DYING_TICKS;
+    // what it held stays in the world: soil and food are never lost
+    if (a.carry === 'grain' && !dropNear(a, LOOSE, a.carryCol)) setCell(idx(a.x, a.y - 1), LOOSE, a.carryCol);
+    if (a.carry === 'food' && !dropNear(a, CRUMB, a.carryCol)) setCell(idx(a.x, a.y - 1), CRUMB, a.carryCol);
+    if (a.carry === 'brood' && a.brood) { a.brood.carried = false; a.brood.nurse = 0; }
+    a.carry = null; a.brood = null;
+    if (cause === 'age') sim.stats.died++; else sim.stats.starved++;
+    event({ type: 'died', tick: sim.tick, cause, queen: a.role === 'queen' });
+    if (a.role !== 'queen') return;
+    // the youngest worker takes over, and heads for the royal chamber
+    const heir = sim.ants.filter((b) => b.role === 'worker' && !b.dying).sort((p, q) => q.born - p.born)[0];
+    if (!heir) return;
+    release(heir);
+    heir.role = 'queen'; heir.speed = 0.25; heir.home = false; heir.dies = at + lifespan('queen');
+    event({ type: 'queen', tick: sim.tick });
+  }
+  function eatStored(): boolean {
+    const cells = storedCells();
+    if (!cells.length) return false;
+    setCell(cells[0], AIR); sim.stats.eaten++;
+    return true;
+  }
+  function liveSlice(from: number, to: number) {
+    const L = sim.life, dt = to - from;
+    for (const a of sim.ants) if (!a.dying && a.dies <= to) die(a, 'age', to);
+    const alive = sim.ants.filter((a) => !a.dying).length;
+    if (!alive) { L.hunger = 0; L.starve = 0; L.starvingSince = 0; return; }
+    L.hunger += (alive * dt) / ANT_MEAL_MS;
+    while (L.hunger >= 1 && eatStored()) L.hunger -= 1;
+    if (L.hunger < 1) { L.starvingSince = 0; L.starve = 0; return; }
+    // the store is empty: the colony starves, slowly, and not while food is on its way
+    L.hunger = Math.min(L.hunger, 3);
+    if (!L.starvingSince) L.starvingSince = to;
+    if (to - L.lastTokens < STARVE_DEATH_MS) return;
+    L.starve += dt;
+    while (L.starve >= STARVE_DEATH_MS) {
+      L.starve -= STARVE_DEATH_MS;
+      const workers = sim.ants.filter((b) => b.role === 'worker' && !b.dying), grace = to - L.starvingSince > STARVE_GRACE_MS;
+      if (workers.length > MIN_SURVIVORS || (grace && workers.length)) die(workers.sort((p, q) => p.born - q.born)[0], 'hunger', to);
+      else if (grace) { const q = queen(); if (q) die(q, 'hunger', to); }
+    }
+  }
+  // Catch up to the clock in slices of at most ten minutes, so a farm left closed for a week ages the same way.
+  function live() {
+    const t = now(), L = sim.life;
+    if (t < L.last) { L.last = t; return; }
+    if (t - L.last < 1000) return;
+    for (let from = L.last; from < t;) { const to = Math.min(t, from + 600_000); liveSlice(from, to); from = to; }
+    L.last = t;
+  }
+  function bury() {
+    for (let i = sim.ants.length - 1; i >= 0; i--) {
+      const a = sim.ants[i];
+      if (a.dying === undefined || --a.dying > 0) continue;
+      sim.ants.splice(i, 1); occAdd(idx(a.x, a.y), -1);
     }
   }
 
@@ -605,7 +858,7 @@ export function createSim(opts: SimOptions = {}): Sim {
     // Housekeeping: grains that slid or fell into a finished room get carried back out.
     if (sim.tick % 100 === 1) for (const r of sim.projects) {
       if (!r.done || r.failed || !r.room || r.kind === 'clear' || r.kind === 'food') continue;
-      let n = 0; for (const k of r.cells!) if (type[k] === LOOSE) n++;
+      let n = 0; for (const k of r.cells!) if (T(k) === LOOSE) n++;
       if (n >= 6 && !open.some((p) => p.kind === 'clear' && p.room!.cx === r.room!.cx && p.room!.cy === r.room!.cy)) {
         const c = newProject('clear', -1, null, r.room); c.cells!.sort((a, b) => a - b); return;
       }
@@ -627,12 +880,15 @@ export function createSim(opts: SimOptions = {}): Sim {
       const g = sim.galleryQueue.shift()!;
       // beside a random stretch of existing tunnel, so the hall starts digging straight away
       const spots: number[] = [];
-      const b = sim.box;
-      for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) { const k = idx(x, y); if (type[k] === AIR && y > surf[x] + 8 && walkable(k)) spots.push(k); }
+      const b = sim.box, s = getSnap();
+      for (let y = Math.max(1, b.y0); y <= Math.min(H - 2, b.y1); y++) for (let x = Math.max(1, b.x0); x <= Math.min(W - 2, b.x1); x++) {
+        const i = (y - s.y0) * s.w + (x - s.x0);
+        if (s.t[i] === AIR && y > surf[x] + 8 && walkL(s, i)) spots.push(idx(x, y));
+      }
       if (!spots.length) { sim.galleryQueue.unshift(g); return; }
       const sp = spots[Math.floor(rnd() * spots.length)], side = rnd() < 0.5 ? -1 : 1;
-      g.x = Math.max(4 + (g.w >> 1), Math.min(W - 5 - (g.w >> 1), sp % W + side * ((g.w >> 1) + 3)));
-      g.y = Math.min(H - 8, ((sp / W) | 0) - 1);
+      g.x = Math.max(4 + (g.w >> 1), Math.min(W - 5 - (g.w >> 1), (sp & XM) + side * ((g.w >> 1) + 3)));
+      g.y = Math.min(H - 8, (sp >> XB) - 1);
       newProject('gallery', sp, { x: g.x - side * ((g.w >> 1) - 1), y: g.y + 1 }, { cx: g.x, cy: g.y, rx: g.w >> 1, ry: 2, shape: 'flat' });
       return;
     }
@@ -640,28 +896,26 @@ export function createSim(opts: SimOptions = {}): Sim {
     const max = Math.min(4, 1 + Math.floor(workers / 6));
     if (open.length >= max) return;
     if (!sim.royal.done) return;
+    // only pockets the colony could smell: near what it has dug
+    const b = sim.box, sc = sim.scent;
     let best: Pocket | null = null, bd = Infinity, bst: { k: number; d: number } | null = null;
-    for (const p of sim.pockets) {
+    for (const p of sim.pocketsIn({ x0: b.x0 - sc, y0: b.y0 - sc, x1: b.x1 + sc, y1: b.y1 + sc })) {
       if (p.claimed || p.remaining <= 0) continue;
       const st = nearestTunnel(p.x, p.y);
       if (st.k >= 0 && st.d <= sim.scent && st.d < bd) { bd = st.d; best = p; bst = st; }
     }
     if (best) {
       best.claimed = true;
-      const cells: number[] = [];
-      for (let k = 0; k < N; k++) if (pocket[k] === best.id) cells.push(k);
       const pr = newProject('food', bst!.k, { x: best.x, y: best.y }, null);
-      pr.cells = cells.sort((a, b) => Math.hypot(a % W - best.x, ((a / W) | 0) - best.y) - Math.hypot(b % W - best.x, ((b / W) | 0) - best.y));
+      pr.cells = pocketCells(best);
       pr.pocket = best.id;
       return;
     }
     if (open.length === 0) {
       // nothing smelled: push a scouting tunnel out and widen the colony's sense of smell
-      const b = sim.box;
-      const tries = 30;
-      for (let i = 0; i < tries; i++) {
+      for (let i = 0; i < 30; i++) {
         const x = ri(b.x0, b.x1), y = ri(b.y0, b.y1), k = idx(x, y);
-        if (type[k] !== AIR || y <= surf[x] + 3 || !walkable(k)) continue;
+        if (T(k) !== AIR || y <= surf[x] + 3 || !walkable(k)) continue;
         const ang = Math.PI * (0.1 + rnd() * 0.8) + (rnd() < 0.3 ? (rnd() < 0.5 ? -0.9 : 0.9) : 0), len = ri(22, 40);
         const gx = Math.max(6, Math.min(W - 7, Math.round(x + Math.cos(ang) * len))), gy = Math.max(surf[gx] + 8, Math.min(H - 6, Math.round(y + Math.sin(ang) * len)));
         newProject('scout', k, { x: gx, y: gy }, null);
@@ -670,39 +924,80 @@ export function createSim(opts: SimOptions = {}): Sim {
       }
     }
   }
+  function pocketCells(p: Pocket): number[] {
+    const cells: number[] = [];
+    for (let y = p.y - 5; y <= p.y + 5; y++) for (let x = p.x - 5; x <= p.x + 5; x++) if (inside(x, y) && podId(x, y) === p.id && T(idx(x, y)) === FOOD) cells.push(idx(x, y));
+    return cells.sort((a, b) => Math.hypot((a & XM) - p.x, (a >> XB) - p.y) - Math.hypot((b & XM) - p.x, (b >> XB) - p.y));
+  }
 
   // ---------- physics ----------
+  // Falling sand, only in chunks where something moved or changed. Rows bottom-up across the whole map, like one
+  // scan of the full grid, but skipping every chunk that is asleep. Away from the colony and the camera, an awake
+  // chunk only steps every 8th tick: grains there still settle, just more coarsely.
+  function hot(cx: number, cy: number): boolean {
+    const x0 = cx << CS, y0 = cy << CS, x1 = x0 + 63, y1 = y0 + 63, b = sim.box, v = sim.view, M = 64;
+    if (x1 >= b.x0 - M && x0 <= b.x1 + M && y1 >= b.y0 - M && y0 <= b.y1 + M) return true;
+    return !v || (x1 >= v.x0 && x0 <= v.x1 && y1 >= v.y0 && y0 <= v.y1);
+  }
   function stepSand() {
-    if (!sim.sandAwake) return;
-    let moved = 0;
-    const flip = sim.tick & 1;
-    for (let y = H - 2; y >= 1; y--) {
-      for (let i = 1; i < W - 1; i++) {
-        const x = flip ? W - 1 - i : i, k = y * W + x;
-        if (!FALLS[type[k]]) continue;
-        const b = k + W;
-        if (type[b] === AIR && !occ[b]) { swap(k, b); moved++; continue; }
-        const d = rnd() < 0.5 ? -1 : 1;
-        if (type[k + d] === AIR && type[b + d] === AIR && !occ[b + d]) { swap(k, b + d); moved++; continue; }
-        if (type[k - d] === AIR && type[b - d] === AIR && !occ[b - d]) { swap(k, b - d); moved++; }
-      }
+    if (!awake.size) { sim.sandAwake = false; sim.falling = 0; return; }
+    const list: number[] = [], later: number[] = [];
+    for (const ci of awake) {
+      const cx = ci % cw, cy = (ci - cx) / cw;
+      if (sim.tick % 8 && !hot(cx, cy)) later.push(ci); else list.push(ci);
     }
-    if (moved) { sim.version++; }
-    sim.sandAwake = moved > 0;
+    awake.clear();
+    for (const ci of later) awake.add(ci);
+    const flip = sim.tick & 1;
+    // bottom row of chunks first; in each row, chunks in scan order
+    list.sort((a, b) => {
+      const ay = (a / cw) | 0, by = (b / cw) | 0;
+      return by - ay || (flip ? b - a : a - b);
+    });
+    let moved = 0;
+    for (let g = 0; g < list.length;) {
+      const cy = (list[g] / cw) | 0;
+      let e = g; while (e < list.length && ((list[e] / cw) | 0) === cy) e++;
+      for (let ly = 63; ly >= 0; ly--) {
+        const y = (cy << CS) + ly;
+        if (y < 1 || y > H - 2) continue;
+        for (let c = g; c < e; c++) {
+          const cx = list[c] % cw;
+          for (let i = 0; i < 64; i++) {
+            const x = (cx << CS) + (flip ? 63 - i : i);
+            if (x < 1 || x > W - 2) continue;
+            const k = (y << XB) | x;
+            if (!FALLS[T(k)]) continue;
+            const b = k + R;
+            if (T(b) === AIR && !occ.has(b)) { swap(k, b); moved++; continue; }
+            const d = rnd() < 0.5 ? -1 : 1;
+            if (T(k + d) === AIR && T(b + d) === AIR && !occ.has(b + d)) { swap(k, b + d); moved++; continue; }
+            if (T(k - d) === AIR && T(b - d) === AIR && !occ.has(b - d)) { swap(k, b - d); moved++; }
+          }
+        }
+      }
+      g = e;
+    }
+    if (moved) sim.version++;
+    sim.sandAwake = awake.size > 0;
     sim.falling = moved;
   }
 
   // A flat ceiling wider than its layer's span strains, cracks for a moment, then its middle drops.
+  // Only rows near what changed since the last check; a run is followed to its real ends.
   function checkCeilings() {
-    const b = sim.box;
-    for (let y = Math.max(1, b.y0 - 1); y <= Math.min(H - 3, b.y1); y++) {
-      let x = 1;
-      while (x < W - 1) {
-        const k = y * W + x;
-        if (CEILING[type[k]] && type[k + W] === AIR && y >= surf[x]) {
+    const d = { ...dirty };
+    dirty.x0 = 1; dirty.x1 = 0;
+    const ceil = (x: number, y: number) => CEILING[T(idx(x, y))] && T(idx(x, y + 1)) === AIR;
+    for (let y = Math.max(1, d.y0 - 2); y <= Math.min(H - 3, d.y1 + 1); y++) {
+      let x = Math.max(1, d.x0 - 2);
+      while (x > 1 && ceil(x - 1, y)) x--;
+      const xe = Math.min(W - 2, d.x1 + 2);
+      while (x <= xe) {
+        if (ceil(x, y) && y >= surf[x]) {
           const x0 = x;
-          while (x < W - 1 && CEILING[type[y * W + x]] && type[y * W + x + W] === AIR) x++;
-          const x1 = x - 1, L = x1 - x0 + 1, lim = span[y * W + ((x0 + x1) >> 1)] || 14;
+          while (x < W - 1 && ceil(x, y)) x++;
+          const x1 = x - 1, L = x1 - x0 + 1, lim = spanOf((x0 + x1) >> 1, y) || 14;
           if (L > lim && !sim.strains.some((s) => s.y === y && s.x0 <= x1 && s.x1 >= x0)) {
             const recent = sim.events.some((e) => e.type === 'collapse' && sim.tick - e.tick < 60 && Math.abs(e.y - y) < 6);
             sim.strains.push({ y, x0, x1, lim, t: recent ? 8 : 40 });
@@ -719,13 +1014,12 @@ export function createSim(opts: SimOptions = {}): Sim {
       const m = Math.max(1, Math.floor(s.lim / 4));
       let n = 0;
       for (let x = s.x0 + m; x <= s.x1 - m; x++) {
-        const k = s.y * W + x;
-        if (CEILING[type[k]] && type[k + W] === AIR) { setCell(k, type[k] === FOOD ? CRUMB : LOOSE); n++; }
+        const k = idx(x, s.y);
+        if (CEILING[T(k)] && T(k + R) === AIR) { setCell(k, T(k) === FOOD ? CRUMB : LOOSE); n++; }
       }
       if (!n) continue;
       sim.stats.collapses++;
-      sim.events.push({ type: 'collapse', tick: sim.tick, y: s.y, x0: s.x0 + m, x1: s.x1 - m });
-      if (sim.events.length > 50) sim.events.shift();
+      event({ type: 'collapse', tick: sim.tick, y: s.y, x0: s.x0 + m, x1: s.x1 - m });
       const open = sim.projects.find((p) => p.kind === 'clear' && !p.done && Math.abs(p.room!.cy - s.y) < 10 && Math.abs(p.room!.cx - ((s.x0 + s.x1) >> 1)) < 20);
       if (!open) {
         const p = newProject('clear', -1, null, { cx: (s.x0 + s.x1) >> 1, cy: s.y + 6, rx: ((s.x1 - s.x0) >> 1) + 6, ry: 9, shape: 'flat' });
@@ -733,47 +1027,60 @@ export function createSim(opts: SimOptions = {}): Sim {
       }
     }
   }
-  // Soil no longer connected to the glass frame by solid cells comes loose.
+  // Soil no longer held up falls (the Dwarf Fortress rule). Checked around what changed: soil connected to the glass
+  // or to the edge of that region counts as held. (An island bigger than the region would wait for a later check.)
   function checkIslands() {
-    const seen = new Uint8Array(N);
+    const x0 = Math.max(0, idirty.x0 - 64), y0 = Math.max(0, idirty.y0 - 64), x1 = Math.min(W - 1, idirty.x1 + 64), y1 = Math.min(H - 1, idirty.y1 + 64);
+    idirty.x0 = 1; idirty.x1 = 0;
+    const w = x1 - x0 + 1, h = y1 - y0 + 1, n = w * h, t = new Uint8Array(n), seen = new Uint8Array(n);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) t[y * w + x] = T(idx(x0 + x, y0 + y));
+    const holds = (i: number) => SOLID[t[i]] && !FALLS[t[i]];
+    if (queue.length < n) queue = new Int32Array(n);
     let qh = 0, qt = 0;
-    for (let k = 0; k < N; k++) if (type[k] === GLASS) { seen[k] = 1; queue[qt++] = k; }
+    for (let i = 0; i < n; i++) {
+      const x = i % w, y = (i - x) / w;
+      if (t[i] === GLASS || ((x === 0 || y === 0 || x === w - 1 || y === h - 1) && holds(i))) { seen[i] = 1; queue[qt++] = i; }
+    }
     while (qh < qt) {
-      const k = queue[qh++];
-      for (const n of [k - 1, k + 1, k - W, k + W]) {
-        if (n < 0 || n >= N || seen[n] || !SOLID[type[n]] || FALLS[type[n]]) continue;
-        seen[n] = 1; queue[qt++] = n;
+      const i = queue[qh++], x = i % w;
+      for (const m of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
+        if (m < 0 || m >= n || seen[m] || !holds(m)) continue;
+        seen[m] = 1; queue[qt++] = m;
       }
     }
-    for (let k = 0; k < N; k++) {
-      if (seen[k] || !SOLID[type[k]] || FALLS[type[k]]) continue;
-      setCell(k, type[k] === FOOD ? CRUMB : LOOSE);
+    for (let i = 0; i < n; i++) {
+      if (seen[i] || !holds(i)) continue;
+      const x = i % w, y = (i - x) / w;
+      setCell(idx(x0 + x, y0 + y), t[i] === FOOD ? CRUMB : LOOSE);
     }
   }
 
   // ---------- public API ----------
   sim.step = function () {
     sim.tick++;
+    store.tick = sim.tick;
     sim.moves = 0;
-    sim.energy = Math.min(MAX_ENERGY, sim.energy + IDLE_REGEN);
-    if (sim.crumbQueue >= 1 && sim.tick % 5 === 0) {
+    live();
+    if (sim.crumbQueue >= 1 && sim.tick % 5 === 0 && sim.crumbsOut < LOOSE_CRUMB_CAP) {
       const x = Math.max(2, Math.min(W - 3, ex + (rnd() < 0.5 ? -1 : 1) * ri(8, 50)));
       const k = idx(x, 2);
-      if (type[k] === AIR) { setCell(k, CRUMB, shadeHex(PAL.crumb, 0.9 + rnd() * 0.2, 0)); sim.crumbQueue--; sim.stats.crumbsSpawned++; }
+      if (T(k) === AIR) { setCell(k, CRUMB, SRC.CRUMB << 8 | ri(0, 255)); sim.crumbQueue--; sim.stats.crumbsSpawned++; sim.crumbsOut++; }
     }
     if (sim.tick % 20 === 1) { plan(); sim.crumbsOut = looseCrumbs(); }
-    for (let i = 0; i < sim.ants.length; i++) stepAnt(sim.ants[i]);
+    for (let i = 0; i < sim.ants.length; i++) if (sim.ants[i].dying === undefined) stepAnt(sim.ants[i]);
+    bury();
     stepBrood();
     stepSand();
-    if (sim.tick % 5 === 0 && sim.version !== sim.lastCheckVer) { sim.lastCheckVer = sim.version; checkCeilings(); }
+    if (sim.tick % 5 === 0 && dirty.x0 <= dirty.x1) checkCeilings();
     stepStrains();
-    if (sim.tick % 60 === 0 && sim.version !== sim.lastIslandVer) { sim.lastIslandVer = sim.version; checkIslands(); }
+    if (sim.tick % 60 === 0 && idirty.x0 <= idirty.x1) checkIslands();
     for (const [key, f] of sim.fields) if (sim.tick - f.at > 400) sim.fields.delete(key);
     if (sim.projects.length > 40) sim.projects = sim.projects.filter((p) => !p.done || p === sim.royal || p === sim.broodRoom);
+    if (sim.tick % 20 === 0) sim.maintain();
   };
   sim.run = function (n: number) { for (let i = 0; i < n; i++) sim.step(); };
 
-  // Agent activity in. See docs/ant-farm-design.md, "How tokens feed the farm".
+  // Agent activity in: the only source of energy and food. See docs/ant-farm-design.md, "How tokens feed the farm".
   sim.feed = function (ev) {
     if (!ev) return;
     if (ev.type === 'tokens') {
@@ -781,14 +1088,18 @@ export function createSim(opts: SimOptions = {}): Sim {
       const c = sim.meter.add(ev, ev.ts);
       sim.stats.tokens += c.weighted;
       sim.energy = Math.min(MAX_ENERGY, sim.energy + c.energy);
-      sim.crumbQueue += c.crumbs;
+      sim.crumbQueue = Math.min(MAX_CRUMB_QUEUE, sim.crumbQueue + c.crumbs);
+      if (c.weighted > 0) {
+        sim.life.lastTokens = now(); // food is on its way: nobody starves while it comes
+        if (!sim.ants.some((a) => !a.dying)) { found(2); event({ type: 'founded', tick: sim.tick }); }
+      }
     } else if (ev.type === 'task_done') {
       sim.stats.tasks++;
       sim.galleryQueue.push({ w: Math.max(6, Math.min(40, ev.width || ri(10, 18))) });
     }
   };
 
-  sim.isBusy = () => sim.moves > 2 || sim.sandAwake || sim.strains.length > 0;
+  sim.isBusy = () => sim.moves > 2 || sim.sandAwake || sim.strains.length > 0 || sim.ants.some((a) => a.dying !== undefined);
 
   // Area worth looking at: everything touched, the ants, and the ground around the nest.
   sim.interestBox = function () {
@@ -800,9 +1111,49 @@ export function createSim(opts: SimOptions = {}): Sim {
     return { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
   };
 
-  sim.count = function () {
+  sim.setView = (b) => { sim.view = b; };
+  sim.maintain = function () {
+    const w = windowBox(), v = sim.view;
+    const keep = (c: Chunk) => {
+      const x0 = c.cx << CS, y0 = c.cy << CS, x1 = x0 + 63, y1 = y0 + 63;
+      if (x1 >= w.x0 && x0 <= w.x1 && y1 >= w.y0 && y0 <= w.y1) return true;
+      return !!v && x1 >= v.x0 - 64 && x0 <= v.x1 + 64 && y1 >= v.y0 - 64 && y0 <= v.y1 + 64;
+    };
+    store.maintain(keep, opts.chunkCap ?? 256);
+  };
+  sim.chunkStats = () => store.stats();
+
+  sim.health = function (): Health {
+    const t = now(), live = sim.ants.filter((a) => !a.dying), q = live.find((a) => a.role === 'queen');
+    const workers = live.filter((a) => a.role === 'worker');
+    const food = sim.stored(), L = sim.life;
+    const mood: Mood = !live.length ? 'empty' : L.starvingSince ? 'starving' : L.hunger >= 0.5 && food < Math.max(2, live.length / 4) ? 'hungry' : 'fed';
+    return {
+      workers: workers.length, queen: !!q, brood: sim.brood.length, food, loose: sim.crumbsOut,
+      oldestMs: workers.reduce((m, a) => Math.max(m, t - a.born), 0), queenAgeMs: q ? t - q.born : 0,
+      mood, starvingMs: L.starvingSince ? t - L.starvingSince : 0,
+    };
+  };
+
+  // ---------- reading the map: counts, hash, pictures ----------
+  const rt = new Uint8Array(CELLS), rc = new Uint16Array(CELLS);
+  function eachChunk(b: Box, fn: (cx: number, cy: number, t: Uint8Array, c: Uint16Array) => void) {
+    for (let cy = Math.max(0, b.y0 >> CS); cy <= Math.min(store.ch - 1, b.y1 >> CS); cy++)
+      for (let cx = Math.max(0, b.x0 >> CS); cx <= Math.min(cw - 1, b.x1 >> CS); cx++) { store.read(cy * cw + cx, rt, rc); fn(cx, cy, rt, rc); }
+  }
+  const whole = (): Box => ({ x0: 0, y0: 0, x1: W - 1, y1: H - 1 });
+  const around = (): Box => { const b = sim.box; return { x0: b.x0 - 64, y0: b.y0 - 64, x1: b.x1 + 64, y1: b.y1 + 64 }; };
+
+  // Cells of each type: the whole map when it's small, else the region around the colony (or the given box).
+  sim.count = function (b?: Box) {
+    const r = b || (W * H <= SMALL ? whole() : around());
     const c = [0, 0, 0, 0, 0, 0, 0];
-    for (let k = 0; k < N; k++) c[type[k]]++;
+    eachChunk(r, (cx, cy, t) => {
+      for (let ly = 0; ly < 64; ly++) {
+        const y = (cy << CS) + ly; if (y < r.y0 || y > r.y1 || y >= H) continue;
+        for (let lx = 0; lx < 64; lx++) { const x = (cx << CS) + lx; if (x >= r.x0 && x <= r.x1 && x < W) c[t[(ly << CS) | lx]]++; }
+      }
+    });
     let grain = 0, food = 0;
     for (const a of sim.ants) { if (a.carry === 'grain') grain++; if (a.carry === 'food') food++; }
     return { air: c[AIR], dirt: c[DIRT], rock: c[ROCK], loose: c[LOOSE], food: c[FOOD], crumb: c[CRUMB], carriedGrain: grain, carriedFood: food };
@@ -810,65 +1161,177 @@ export function createSim(opts: SimOptions = {}): Sim {
 
   sim.hash = function () {
     let h = 2166136261;
-    for (let k = 0; k < N; k++) { h ^= type[k]; h = Math.imul(h, 16777619); }
-    for (const a of sim.ants) { h ^= a.x * 31 + a.y; h = Math.imul(h, 16777619); }
+    const mix = (v: number) => { h ^= v; h = Math.imul(h, 16777619); };
+    if (W * H <= SMALL) eachChunk(whole(), (_x, _y, t) => { for (let i = 0; i < CELLS; i++) mix(t[i]); });
+    else {
+      const cis = [...store.map.values()].filter((c) => c.modified).map((c) => c.ci).sort((a, b) => a - b);
+      for (const ci of cis) { mix(ci); store.read(ci, rt, rc); for (let i = 0; i < CELLS; i++) mix(rt[i]); }
+    }
+    for (const a of sim.ants) mix(a.x * 31 + a.y);
     return h >>> 0;
   };
 
-  // Paint the world into a W*H RGBA buffer (one pixel per cell). The ants come too unless o.ants is false
-  // (the page can draw them as sprites on top instead: see game/render.ts). With o.kind (a W*H Uint8Array) it also
-  // writes what each pixel shows (K.*), so a palette can recolour soil, food and ants separately: see game/palettes.ts.
-  sim.paint = function (px: Uint32Array, o?: PaintOptions) {
-    const kind = o && o.kind;
-    // loose grains (spoil, rubble) show a shade lighter than packed soil, like fresh-dug earth
-    for (let k = 0; k < N; k++) { const t = type[k]; px[k] = t === AIR ? bg[k] : t === LOOSE ? scaleCol(col[k], 1.18) : col[k]; }
-    if (kind) {
-      for (let k = 0; k < N; k++) {
-        const t = type[k], x = k % W, y = (k - x) / W;
-        kind[k] = t === AIR ? (y < surf[x] ? K.SKY : K.WALL) : t === DIRT ? (y === surf[x] ? K.GRASS : K.SOIL) : t === LOOSE ? K.LOOSE
-          : t === ROCK ? K.ROCK : t === FOOD || t === CRUMB ? K.FOOD : K.GLASS;
+  // One chunk's terrain as colours and what each pixel shows (K.*), for a tile of the picture (game/render.ts).
+  // Reads without loading: drawing a far corner of the map doesn't keep it in memory.
+  const [skr, skg, skb] = hexRgb(PAL.skyTop), [slr, slg, slb] = hexRgb(PAL.skyLow);
+  sim.paintChunk = function (cx, cy, px, kind) {
+    store.read(cy * cw + cx, rt, rc);
+    for (let ly = 0, i = 0; ly < 64; ly++) {
+      const y = (cy << CS) + ly;
+      for (let lx = 0; lx < 64; lx++, i++) {
+        const x = (cx << CS) + lx, t = rt[i];
+        if (x >= W || y >= H) { px[i] = COLOURS[0]; kind[i] = K.GLASS; continue; }
+        const s = surf[x];
+        if (t === AIR) {
+          if (y < s) {
+            const f = Math.min(1, y / Math.max(1, s));
+            px[i] = rgb(skr + (slr - skr) * f, skg + (slg - skg) * f, skb + (slb - skb) * f); kind[i] = K.SKY;
+          } else {
+            const j = (hash01(seed, x, y, 17) - 0.5) * 14 + ((x * 7 + y * 13) % 5 === 0 ? -6 : 0);
+            px[i] = WALL_COLOURS[band[Math.max(0, Math.min(H, y - s + wob[x]))] * 256 + jitterShade(j)]; kind[i] = K.WALL;
+          }
+        } else if (t === LOOSE) { px[i] = LOOSE_COLOURS[rc[i]]; kind[i] = K.LOOSE; }
+        else {
+          px[i] = COLOURS[rc[i]];
+          kind[i] = t === DIRT ? (y === s ? K.GRASS : K.SOIL) : t === ROCK ? K.ROCK : t === FOOD || t === CRUMB ? K.FOOD : K.GLASS;
+        }
       }
     }
+  };
+
+  // What moves on top of the terrain inside a box: cracks in a straining ceiling, brood and ants (a dying ant fading).
+  const BROOD = [rgb(238, 232, 214), rgb(226, 212, 182), rgb(201, 179, 140)];
+  const body = rgb(158, 76, 54), gaster = rgb(104, 49, 36), head = rgb(122, 58, 42), legs = rgb(70, 36, 28);
+  const qBody = rgb(196, 116, 80), qGaster = rgb(140, 72, 52);
+  sim.overlay = function (b, put) {
+    const inB = (x: number, y: number) => x >= b.x0 - 3 && x <= b.x1 + 3 && y >= b.y0 - 3 && y <= b.y1 + 3;
+    const p = (x: number, y: number, c: number, k: number, al: number) => { if (inside(x, y)) put(x, y, c, k, al); };
     for (const s of sim.strains) {
+      if (s.x1 < b.x0 || s.x0 > b.x1 || s.y < b.y0 || s.y - 2 > b.y1) continue;
       // hairline cracks spreading through the sagging ceiling, darker as it nears failure
       const f = 1 - s.t / 40;
       for (let x = s.x0; x <= s.x1; x++) {
         const h = (x * 7 + s.y * 3) % 5;
         for (let dy = 0; dy < 3; dy++) {
-          const k = (s.y - dy) * W + x;
-          if (type[k] !== AIR && (h === dy || (dy === 0 && (x + (sim.tick >> 2)) % 3 === 0)) && h + dy < 2 + f * 4) { px[k] = scaleCol(col[k], 0.45); if (kind) kind[k] = K.CRACK; }
+          const k = idx(x, s.y - dy);
+          if (T(k) !== AIR && (h === dy || (dy === 0 && (x + (sim.tick >> 2)) % 3 === 0)) && h + dy < 2 + f * 4) p(x, s.y - dy, scaleCol(COLOURS[C(k)], 0.45), K.CRACK, 1);
         }
       }
     }
-    let kNow: number = K.BROOD;
-    const put = (x: number, y: number, c: number) => { if (x > 0 && y > 0 && x < W - 1 && y < H - 1) { px[y * W + x] = c; if (kind) kind[y * W + x] = kNow; } };
-    const BROOD = [rgb(238, 232, 214), rgb(226, 212, 182), rgb(201, 179, 140)];
-    for (const b of sim.brood) {
-      if (b.carried) continue;
-      put(b.x, b.y, BROOD[Math.min(2, b.stage)]);
-      if (b.stage > 0) put(b.x + (b.id & 1 ? 1 : -1), b.y, BROOD[Math.min(2, b.stage)]);
+    for (const e of sim.brood) {
+      if (e.carried || !inB(e.x, e.y)) continue;
+      p(e.x, e.y, BROOD[Math.min(2, e.stage)], K.BROOD, 1);
+      if (e.stage > 0) p(e.x + (e.id & 1 ? 1 : -1), e.y, BROOD[Math.min(2, e.stage)], K.BROOD, 1);
     }
-    if (o && o.ants === false) return;
-    const body = rgb(158, 76, 54), gaster = rgb(104, 49, 36), head = rgb(122, 58, 42), legs = rgb(70, 36, 28);
-    const qBody = rgb(196, 116, 80), qGaster = rgb(140, 72, 52);
     for (const a of sim.ants) {
+      if (!inB(a.x, a.y)) continue;
+      const al = a.dying === undefined ? 1 : a.dying / DYING_TICKS;
       const hx = a.hx || 0, hy = a.hy || 0;
       const dx = hx === 0 && hy === 0 ? 1 : hx, dy = hx === 0 && hy === 0 ? 0 : hy;
       if (a.role === 'queen') {
-        kNow = K.QUEEN;
-        put(a.x - 2 * dx, a.y - 2 * dy, qGaster); put(a.x - dx, a.y - dy, qGaster);
-        put(a.x - dx + dy, a.y - dy - dx, qGaster);
-        put(a.x, a.y, qBody); put(a.x + dx, a.y + dy, head);
+        p(a.x - 2 * dx, a.y - 2 * dy, qGaster, K.QUEEN, al); p(a.x - dx, a.y - dy, qGaster, K.QUEEN, al);
+        p(a.x - dx + dy, a.y - dy - dx, qGaster, K.QUEEN, al);
+        p(a.x, a.y, qBody, K.QUEEN, al); p(a.x + dx, a.y + dy, head, K.QUEEN, al);
         continue;
       }
-      kNow = K.ANT;
-      put(a.x - dx, a.y - dy, gaster); put(a.x, a.y, body); put(a.x + dx, a.y + dy, head);
-      if ((a.walk >> 1) & 1) put(a.x - dy, a.y + dx, legs);
-      kNow = a.carry === 'food' ? K.LOAD_FOOD : a.carry === 'grain' ? K.LOAD_GRAIN : K.BROOD;
-      if (a.carry === 'grain' || a.carry === 'food') put(a.x + 2 * dx, a.y + 2 * dy, a.carryCol);
-      else if (a.carry === 'brood' && a.brood) put(a.x + 2 * dx, a.y + 2 * dy, BROOD[Math.min(2, a.brood.stage)]);
+      p(a.x - dx, a.y - dy, gaster, K.ANT, al); p(a.x, a.y, body, K.ANT, al); p(a.x + dx, a.y + dy, head, K.ANT, al);
+      if ((a.walk >> 1) & 1 && a.dying === undefined) p(a.x - dy, a.y + dx, legs, K.ANT, al);
+      if (a.carry === 'grain' || a.carry === 'food') p(a.x + 2 * dx, a.y + 2 * dy, COLOURS[a.carryCol], a.carry === 'food' ? K.LOAD_FOOD : K.LOAD_GRAIN, al);
+      else if (a.carry === 'brood' && a.brood) p(a.x + 2 * dx, a.y + 2 * dy, BROOD[Math.min(2, a.brood.stage)], K.BROOD, al);
     }
   };
 
+  // The whole map into a W*H buffer (one pixel per cell), for small maps and tests. The ants come too unless o.ants
+  // is false; with o.kind it also writes what each pixel shows, so a palette can recolour each kind.
+  sim.paint = function (px: Uint32Array, o?: PaintOptions) {
+    if (W * H > SMALL) throw new Error('paint() is for small maps: draw a big one chunk by chunk');
+    const kind = o && o.kind, tp = new Uint32Array(CELLS), tk = new Uint8Array(CELLS);
+    for (let cy = 0; cy < store.ch; cy++) for (let cx = 0; cx < cw; cx++) {
+      sim.paintChunk(cx, cy, tp, tk);
+      for (let ly = 0; ly < 64; ly++) {
+        const y = (cy << CS) + ly; if (y >= H) break;
+        const x0 = cx << CS, n = Math.min(64, W - x0);
+        px.set(tp.subarray(ly << CS, (ly << CS) + n), y * W + x0);
+        if (kind) kind.set(tk.subarray(ly << CS, (ly << CS) + n), y * W + x0);
+      }
+    }
+    sim.overlay(whole(), (x, y, c, k, al) => {
+      if (al < 0.5 || (o && o.ants === false && k !== K.CRACK && k !== K.BROOD)) return;
+      px[y * W + x] = c; if (kind) kind[y * W + x] = k;
+    });
+  };
+
+  // ---------- saving and restoring ----------
+  sim.save = function (): SaveData {
+    const b64 = (u: Uint8Array) => { let s = ''; for (let i = 0; i < u.length; i += 8192) s += String.fromCharCode(...u.subarray(i, i + 8192)); return btoa(s); };
+    return {
+      v: 1, seed, W, H, tick: sim.tick, energy: sim.energy, crumbQueue: sim.crumbQueue, galleryQueue: sim.galleryQueue.map((g) => ({ w: g.w })),
+      scent: sim.scent, box: { ...sim.box }, nest: { ...sim.nest }, nextId: sim.nextId, rng: rnd.state(), stats: { ...sim.stats },
+      life: { ...sim.life }, meter: sim.meter.save(),
+      ants: sim.ants.filter((a) => a.dying === undefined).map((a) => ({
+        id: a.id, x: a.x, y: a.y, hx: a.hx, hy: a.hy, role: a.role, born: a.born, dies: a.dies, speed: a.speed, home: a.home,
+        carry: a.carry === 'brood' ? null : a.carry, carryCol: a.carryCol,
+      })),
+      brood: sim.brood.map((e) => ({ ...e, carried: false, nurse: 0 })),
+      projects: sim.projects.map((p) => ({
+        id: p.id, kind: p.kind, head: p.head, goal: p.goal, room: p.room, phase: p.phase, ang: p.ang, done: p.done, stuck: p.stuck,
+        failed: p.failed, pocket: p.pocket, cells: p.kind === 'food' ? p.cells : null,
+      })),
+      royal: sim.royal ? sim.royal.id : 0, broodRoom: sim.broodRoom ? sim.broodRoom.id : 0,
+      pockets: [...sim.pockets.values()].map((p) => [p.id, p.remaining, p.claimed ? 1 : 0]),
+      chunks: store.saveChanged().map(([ci, d]) => [ci, b64(d)]),
+    };
+  };
+
+  if (R0) {
+    const u8 = (s: string) => Uint8Array.from(atob(s), (ch) => ch.charCodeAt(0));
+    for (const [ci, d] of R0.chunks) {
+      const p = u8(d);
+      store.restore(ci, p);
+      const cx = ci % cw, cy = (ci - cx) / cw;
+      // the restored soil might still be settling
+      const t = new Uint8Array(CELLS), c = new Uint16Array(CELLS);
+      genChunk(cx, cy, t, c); applyDiff(p, t, c);
+      if (t.some((v) => FALLS[v])) awake.add(ci);
+    }
+    Object.assign(sim, {
+      tick: R0.tick, energy: R0.energy, crumbQueue: R0.crumbQueue, galleryQueue: R0.galleryQueue, scent: R0.scent,
+      box: R0.box, nest: R0.nest, nextId: R0.nextId, stats: { ...sim.stats, ...R0.stats }, life: { ...sim.life, ...R0.life },
+    });
+    store.tick = sim.tick;
+    sim.meter.load(R0.meter);
+    for (const [id, remaining, claimed] of R0.pockets) { const p = pocketAt(id); if (p) { p.remaining = remaining; p.claimed = !!claimed; } }
+    for (const q of R0.projects) {
+      const p: Project = {
+        id: q.id!, kind: q.kind!, head: q.head!, goal: q.goal ?? null, room: q.room ?? null, phase: q.phase!, ang: q.ang!, done: !!q.done,
+        stuck: q.stuck || 0, failed: q.failed, pocket: q.pocket, work: -1, diggers: 0,
+        cells: q.cells ?? (q.room ? roomCells(q.room) : null),
+      };
+      if (p.kind === 'clear' && p.cells) p.cells.sort((a, b) => a - b);
+      sim.projects.push(p);
+      if (p.id === R0.royal) sim.royal = p;
+      if (p.id === R0.broodRoom) sim.broodRoom = p;
+    }
+    for (const q of R0.ants) {
+      const a: Ant = {
+        id: q.id!, x: q.x!, y: q.y!, hx: q.hx ?? 1, hy: q.hy ?? 0, role: q.role!, job: null, carry: q.carry ?? null, carryCol: q.carryCol || 0,
+        busy: 0, acc: 0, speed: q.speed!, walk: 0, stuckT: 0, brood: null, born: q.born!, dies: q.dies!, home: q.home,
+      };
+      sim.ants.push(a); occAdd(idx(a.x, a.y), 1);
+    }
+    sim.brood = R0.brood.map((e) => ({ ...e }));
+    sim.version = 1;
+  }
+
   return sim;
+}
+
+// A saved farm from disk or anywhere else: checked just enough that a broken file starts a new farm instead of crashing.
+export function readSave(raw: unknown, seed: number, W: number, H: number): SaveData | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const s = raw as SaveData;
+  if (s.v !== 1 || s.seed !== seed || s.W !== W || s.H !== H) return null;
+  if (!Array.isArray(s.ants) || !Array.isArray(s.chunks) || !Array.isArray(s.projects) || !Array.isArray(s.brood) || !Array.isArray(s.pockets)) return null;
+  if (!s.life || typeof s.life.last !== 'number' || !s.box || !s.nest) return null;
+  return s;
 }

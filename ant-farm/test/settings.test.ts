@@ -10,13 +10,13 @@ import { trayMenu } from '../src/main/tray';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ant-farm-test-'));
 
-test('defaults: Desktop Blend, small, bottom right, on top, Claude Code feed on', () => {
+test('defaults: Desktop Blend, small, bottom right, on top, the Ridiculous map', () => {
   const s = defaultSettings(5);
   assert.equal(s.palette, 'blend');
   assert.equal(s.size, 'small'); assert.equal(s.width, 320);
   assert.equal(s.dock, 'br');
   assert.equal(s.alwaysOnTop, true); assert.equal(s.clickThrough, false); assert.equal(s.opacity, 1);
-  assert.equal(s.claudeFeed, true); assert.equal(s.calm, 0); assert.equal(s.fadeIdle, false); assert.equal(s.reducedMotion, false);
+  assert.equal(s.mapSize, 'ridiculous'); assert.equal(s.calm, 0); assert.equal(s.fadeIdle, false); assert.equal(s.reducedMotion, false);
   assert.equal(s.seed, 5);
 });
 
@@ -31,6 +31,9 @@ test('sanitize keeps good values, replaces bad ones and drops unknown keys', () 
   assert.equal(s.bounds, null);
   assert.ok(!('hacked' in s));
   assert.deepEqual(sanitize('garbage', base), base);
+  assert.equal(sanitize({ mapSize: 'huge' }, base).mapSize, 'huge');
+  assert.equal(sanitize({ mapSize: 'infinite' }, base).mapSize, 'ridiculous', 'an unknown map size falls back to Ridiculous');
+  assert.ok(!('claudeFeed' in sanitize({ claudeFeed: false }, base)), 'the feed is not a setting: it always watches');
 });
 
 test('a size preset sets the width; custom keeps the dragged width', () => {
@@ -96,4 +99,5 @@ test('the menu-bar menu reflects the settings', () => {
   assert.equal(m.find((i) => i.label?.startsWith('Large'))!.checked, true);
   const dock = m.find((i) => i.label === 'Dock')!;
   assert.equal(dock.submenu!.find((i) => i.checked)!.label, 'Bottom right');
+  assert.ok(!m.some((i) => /Claude Code/.test(i.label || '')), 'no switch to stop watching Claude Code');
 });

@@ -10,6 +10,10 @@ export type Dock = (typeof DOCKS)[number];
 export const SIZES = ['small', 'large', 'custom'] as const;
 export type SizePreset = (typeof SIZES)[number];
 
+// How big the farm's map is (see MAP_SIZES in sim/world.ts). Changing it starts a new farm.
+export const MAP_SIZE_IDS = ['large', 'huge', 'ridiculous'] as const;
+export type MapSizeId = (typeof MAP_SIZE_IDS)[number];
+
 export interface Bounds { x: number; y: number; width: number; height: number }
 
 export interface Settings {
@@ -24,7 +28,7 @@ export interface Settings {
   dock: Dock; // a corner of the work area, or 'free' where it was dropped
   bounds: Bounds | null; // where the window was last, for 'free'
   alwaysOnTop: boolean;
-  claudeFeed: boolean; // watch Claude Code's usage
+  mapSize: MapSizeId;
   seed: number; // the farm's map
 }
 
@@ -36,7 +40,7 @@ export function defaultSettings(seed = 1): Settings {
   return {
     palette: 'blend', calm: 0, fadeIdle: false, reducedMotion: false,
     size: 'small', width: PRESET_WIDTH.small, clickThrough: false, opacity: 1, dock: 'br', bounds: null,
-    alwaysOnTop: true, claudeFeed: true, seed: seed >>> 0,
+    alwaysOnTop: true, mapSize: 'ridiculous', seed: seed >>> 0,
   };
 }
 
@@ -70,7 +74,7 @@ export function sanitize(raw: unknown, base: Settings = defaultSettings()): Sett
     dock: oneOf(DOCKS, r.dock, base.dock),
     bounds: r.bounds === undefined ? base.bounds : cleanBounds(r.bounds),
     alwaysOnTop: bool(r.alwaysOnTop, base.alwaysOnTop),
-    claudeFeed: bool(r.claudeFeed, base.claudeFeed),
+    mapSize: oneOf(MAP_SIZE_IDS, r.mapSize, base.mapSize),
     seed: typeof r.seed === 'number' && Number.isFinite(r.seed) ? r.seed >>> 0 : base.seed,
   };
 }

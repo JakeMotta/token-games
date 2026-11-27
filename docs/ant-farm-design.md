@@ -6,10 +6,10 @@ A playable prototype lives in [`prototype/ant-farm/`](../prototype/ant-farm/). I
 
 ## The design in one page
 
-- **One grid, one rule set.** The world is a fixed grid of cells, 420 × 260 to start. A cell is air, dirt, rock, loose grain, food, crumb or glass. Nothing teleports. Each tick, an ant moves at most one cell, and it moves only through air it can cling to. Each grain an ant digs is the same grain it carries and drops, and it keeps its colour. Soil is conserved exactly, and the tests check that.
+- **One grid, one rule set.** The world is a fixed grid of cells, 65,536 × 16,384 by default (Large and Huge are smaller settings), kept in 64 × 64 chunks that exist only once the colony or the camera reaches them; the rest is generated from the seed on demand. A cell is air, dirt, rock, loose grain, food, crumb or glass. Nothing teleports. Each tick, an ant moves at most one cell, and it moves only through air it can cling to. Each grain an ant digs is the same grain it carries and drops, and it keeps its colour. Soil is conserved exactly, and the tests check that.
 - **Ants follow jobs, the colony picks the projects.** A small planner chooses what to dig next: the royal chamber, the brood room, tunnels to food it can smell, scouting tunnels, galleries, and clearing rubble. Ants take free slots on those projects, and otherwise forage, nurse or rest. This keeps the behaviour readable to a watcher, where pure pheromone emergence would read as noise at this scale. The research supports a hybrid: real nests come from local rules plus a building pheromone (Khuong et al. 2016), but the player needs to see purpose.
 - **Physics is falling sand plus a span rule.** Loose grains and crumbs fall and pile at about 45°. Packed soil holds up a flat ceiling only up to its layer's span. Past that, the ceiling cracks for about 2 s and then its middle drops as loose rubble. The new, narrower ceiling is checked again, so a bad room settles into a dome on its own. Soil cut off from the frame falls (the Dwarf Fortress rule).
-- **Tokens are fuel, not score.** Each weighted token adds energy (one grain dug per 40 tokens) and food (one crumb per 500 tokens). Food crumbs fall from the sky at the entrance. Digging spends energy. With no tokens, the colony slows down and rests, but it never dies of a quiet afternoon. A finished agent task orders a new gallery.
+- **Tokens are fuel, not score.** Each weighted token adds energy (one grain dug per 15 tokens) and food (one crumb per 2,500 tokens). Food crumbs fall from the sky at the entrance and foragers carry them to the store. Digging spends energy, and ants eat stored food. Ants live about 48 real hours and the queen about 14 days, on the wall clock, saved between launches. With no tokens, the colony goes hungry and slowly starves, but the queen and her last two workers hold out for a week, so it never dies of a quiet afternoon or a weekend off. Real usage is the only source: there are no cheat buttons. A finished agent task orders a new gallery.
 - **The camera frames the farm, not the map.** Auto mode eases to fit everything the colony has touched, snapping to whole-pixel scales. The view zooms out as the farm grows. Wheel zooms at the cursor, drag pans, and a double-click or the A key returns to auto.
 - **Calm by default.** The sim runs at 20 Hz in a fixed box. Frames render at 30 fps while things move, about 8 fps when calm, and zero when hidden. All motion stays inside the glass.
 
@@ -151,11 +151,11 @@ The farm is meant to sit in a corner of the screen while an agent works, like a 
 
 | Target | Budget | Prototype today |
 | --- | --- | --- |
-| Sim tick, 420 × 260 grid, up to 90 ants | ≤ 0.5 ms | ~0.15 ms with 25 ants (Node, M-series Mac) |
+| Sim tick, any map size, up to 90 ants | ≤ 0.5 ms | ~0.1 ms on the 65,536 × 16,384 map (Node, M-series Mac, `npm run bench`) |
 | Sim rate | 20 Hz, fixed step, at most 80 catch-up steps per frame | as specified |
 | Render | 30 fps while anything moves, ~8 fps when calm, 0 when hidden | as specified; calm rate not yet measured in a real window |
-| Draw cost | one W × H `putImageData` and one scaled `drawImage` per frame | as specified |
-| Memory | under 30 MB for the page | not measured |
+| Draw cost | only chunks on screen; each 64 × 64 tile repainted when it changes, at most 8 ms of tiles a frame | ~0.6 ms a frame including three ticks |
+| Memory | under 30 MB for the page, at any map size | ~10 MB JS heap in the app; under 1 MB of chunks in the bench |
 | Always-on overlay | readable at 320 × 180, one slim title bar | checked by screenshot (`overlay.html`) |
 
 If the map grows past about 1000 × 600, split it into 64 × 64 chunks that sleep when nothing in them changed, the way Noita does. Then move the sim to a Web Worker with an OffscreenCanvas. Neither is needed at the first-playable size.

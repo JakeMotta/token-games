@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import { createSim, type Counts, type SimOptions } from '../src/sim/sim';
 import { AIR, DIRT, LOOSE } from '../src/sim/world';
 import { TOKENS_PER_CRUMB, TOKENS_PER_ENERGY } from '../src/sim/tokens';
-import { fakeEvent } from '../src/shared/events';
 
 const soil = (c: Counts) => c.dirt + c.loose + c.rock + c.carriedGrain;
 const food = (c: Counts) => c.food + c.crumb + c.carriedFood;
@@ -12,7 +11,7 @@ const tokens = (input: number, output: number, cache_read = 0) => ({ v: 1 as con
 
 // An empty world (no colony) with flat soil from row 20 down, for physics tests.
 function lab(opts: SimOptions = {}) {
-  const sim = createSim({ seed: 1, W: 80, H: 60, colony: false, food: false, rocks: false, pockets: 0, ...opts });
+  const sim = createSim({ seed: 1, W: 80, H: 60, colony: false, food: false, rocks: false, ...opts });
   for (let y = 1; y < sim.H - 1; y++) for (let x = 1; x < sim.W - 1; x++) sim.setCell(sim.idx(x, y), y >= 20 ? DIRT : AIR);
   return sim;
 }
@@ -38,25 +37,12 @@ test('the same token events at the same ticks replay the same farm', () => {
   assert.notEqual(a.hash(), (() => { const s = createSim({ seed: 21 }); s.run(1200); return s.hash(); })(), 'events change the farm');
 });
 
-test('the TypeScript port plays exactly like the prototype', () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Proto = require('../../prototype/ant-farm/sim.js');
-  for (const seed of [3, 7]) {
-    const a = createSim({ seed }), b = Proto.createSim({ seed });
-    assert.equal(a.hash(), b.hash(), 'same map for seed ' + seed);
-    a.run(1500); b.run(1500);
-    a.feed(tokens(3000, 2000)); b.feed(tokens(3000, 2000));
-    a.feed({ v: 1, source: 'test', type: 'task_done', ts: 1 }); b.feed({ v: 1, type: 'task_done' });
-    a.run(1500); b.run(1500);
-    assert.equal(a.hash(), b.hash(), 'same play for seed ' + seed);
-  }
-});
-
 test('the map is seeded with soil layers, rock and food pockets', () => {
   const sim = createSim({ seed: 4 });
   const c = sim.count();
   assert.ok(c.dirt > 20000 && c.rock > 50 && c.food > 50, JSON.stringify(c));
-  assert.ok(sim.pockets.length >= 4);
+  const pockets = sim.pocketsIn({ x0: 0, y0: 0, x1: sim.W - 1, y1: sim.H - 1 });
+  assert.ok(pockets.length >= 4, 'pockets: ' + pockets.length);
 });
 
 test('dug soil and food are never created or destroyed', () => {
@@ -83,7 +69,7 @@ test('ants move at most one cell per tick and stand in open air', () => {
     }
     prev = new Map(sim.ants.map((a) => [a.id, [a.x, a.y]]));
   }
-  const inSoil = sim.ants.filter((a) => sim.type[sim.idx(a.x, a.y)] !== AIR).length;
+  const inSoil = sim.ants.filter((a) => sim.typeAt(sim.idx(a.x, a.y)) !== AIR).length;
   assert.ok(inSoil <= 1, inSoil + ' ants inside soil');
 });
 
@@ -92,7 +78,7 @@ test('loose grains fall and pile into a slope', () => {
   for (let y = 5; y < 15; y++) sim.setCell(sim.idx(40, y), LOOSE);
   sim.run(200);
   const heights: number[] = [];
-  for (let x = 34; x <= 46; x++) { let h = 0; for (let y = 19; y > 0 && sim.type[sim.idx(x, y)] === LOOSE; y--) h++; heights.push(h); }
+  for (let x = 34; x <= 46; x++) { let h = 0; for (let y = 19; y > 0 && sim.typeAt(sim.idx(x, y)) === LOOSE; y--) h++; heights.push(h); }
   assert.equal(heights.reduce((s, h) => s + h, 0), 10, 'all grains landed: ' + heights);
   assert.ok(Math.max(...heights) <= 4, 'spread out, not a column: ' + heights);
   for (let i = 1; i < heights.length; i++) assert.ok(Math.abs(heights[i] - heights[i - 1]) <= 2, 'slope: ' + heights);
@@ -109,7 +95,7 @@ test('collapse: a ceiling wider than the soil can span cracks and falls in', () 
   sim.run(120);
   assert.ok(sim.stats.collapses >= 1, 'collapsed');
   assert.ok(sim.events.some((e) => e.type === 'collapse'), 'reported as an event');
-  let loose = 0; for (let x = 20; x < 44; x++) if (sim.type[sim.idx(x, 33)] === LOOSE) loose++;
+  let loose = 0; for (let x = 20; x < 44; x++) if (sim.typeAt(sim.idx(x, 33)) === LOOSE) loose++;
   assert.ok(loose > 0, 'rubble on the floor');
   assert.equal(soil(sim.count()), soil(cavity(24, 12).count()), 'collapse conserves soil');
 });
@@ -125,7 +111,7 @@ test('collapse: soil cut off from the frame falls as loose grains', () => {
   for (let y = 20; y < 59; y++) for (let x = 1; x < 79; x++) sim.setCell(sim.idx(x, y), AIR);
   for (let y = 10; y < 13; y++) for (let x = 30; x < 33; x++) sim.setCell(sim.idx(x, y), DIRT);
   sim.run(200);
-  let floating = 0; for (let y = 10; y < 13; y++) for (let x = 30; x < 33; x++) if (sim.type[sim.idx(x, y)] !== AIR) floating++;
+  let floating = 0; for (let y = 10; y < 13; y++) for (let x = 30; x < 33; x++) if (sim.typeAt(sim.idx(x, y)) !== AIR) floating++;
   assert.equal(floating, 0);
 });
 
@@ -143,20 +129,13 @@ test('tokens become digging energy and food crumbs; cache reads count a tenth', 
   assert.equal(s2.galleryQueue.length, 1);
 });
 
-test('the test buttons feed the farm like the real feed', () => {
-  const sim = createSim({ seed: 2 }), e0 = sim.energy;
-  sim.feed(fakeEvent('tokens', 0));
-  assert.ok(sim.energy > e0);
-  sim.feed(fakeEvent('wide_room', 0));
-  assert.equal(sim.galleryQueue.at(-1)!.w, 30, 'a wide room asks for a 30-cell gallery');
-});
-
 test('a finished task makes the colony start digging a gallery', () => {
   const sim = createSim({ seed: 11 });
   sim.run(4000);
   assert.ok(sim.royal && sim.royal.done, 'galleries wait for the royal chamber');
-  sim.feed(fakeEvent('wide_room', 0));
-  sim.feed(fakeEvent('task_done', 0));
+  sim.feed({ v: 1, source: 'test', type: 'task_done', ts: 0, width: 30 });
+  assert.equal(sim.galleryQueue.at(-1)!.w, 30, 'a wide room asks for a 30-cell gallery');
+  sim.feed({ v: 1, source: 'test', type: 'task_done', ts: 0 });
   assert.equal(sim.galleryQueue.length, 2);
   sim.run(200);
   assert.equal(sim.galleryQueue.length, 1, 'one gallery at a time is being dug');

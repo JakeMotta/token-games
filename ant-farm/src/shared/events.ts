@@ -1,7 +1,7 @@
 // The one token event format every source sends to every game (docs/ant-farm-design.md, "Event format", version 1).
 // Counts and timestamps only: an event never carries prompts, code or any other content.
 
-export type EventSource = 'claude-code' | 'codex' | 'fake' | string;
+export type EventSource = 'claude-code' | 'codex' | string;
 
 export interface TokensEvent {
   v: 1;
@@ -65,11 +65,4 @@ export function normalizeEvent(raw: unknown, now = Date.now()): FarmEvent | null
     return ev;
   }
   return null;
-}
-
-// The fake events the settings menu's test buttons send: the same shape the real feed sends.
-export function fakeEvent(kind: 'tokens' | 'task_done' | 'wide_room', now = Date.now()): FarmEvent {
-  if (kind === 'tokens') return { v: 1, source: 'fake', type: 'tokens', input: 3000, output: 2000, cache_read: 0, cache_write: 0, ts: now };
-  if (kind === 'wide_room') return { v: 1, source: 'fake', type: 'task_done', width: 30, ts: now };
-  return { v: 1, source: 'fake', type: 'task_done', ts: now };
 }

@@ -20,7 +20,6 @@ export function trayMenu(s: Settings, visible: boolean, clickShortcut: string): 
     { type: 'separator' },
     { label: 'Click-through', type: 'checkbox', checked: s.clickThrough, accelerator: clickShortcut, action: { do: 'set', patch: { clickThrough: !s.clickThrough } } },
     { label: 'Always on top', type: 'checkbox', checked: s.alwaysOnTop, action: { do: 'set', patch: { alwaysOnTop: !s.alwaysOnTop } } },
-    { label: 'Watch Claude Code', type: 'checkbox', checked: s.claudeFeed, action: { do: 'set', patch: { claudeFeed: !s.claudeFeed } } },
     {
       label: 'Dock', type: 'submenu',
       submenu: DOCKS.map((d) => ({ label: DOCK_LABEL[d], type: 'radio' as const, checked: s.dock === d, action: { do: 'set' as const, patch: { dock: d } } })),

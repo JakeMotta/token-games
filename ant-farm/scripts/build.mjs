@@ -1,4 +1,4 @@
-// Builds the app into dist/: the main process and preload for Node, the page for the browser, and the tests.
+// Builds the app into dist/: the main process and preload for Node, the page for the browser, the tests and the bench.
 import { build } from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,5 +16,6 @@ await Promise.all([
   build({ ...common, entryPoints: ['src/main/main.ts', 'src/main/preload.ts'], outdir: 'dist', platform: 'node', format: 'cjs', external: ['electron'] }),
   build({ ...common, entryPoints: ['src/game/app.ts'], outfile: 'dist/app.js', platform: 'browser', format: 'iife' }),
   build({ ...common, entryPoints: tests, outdir: 'dist/test', platform: 'node', format: 'cjs', external: ['electron'] }),
+  build({ ...common, entryPoints: ['scripts/bench.ts'], outfile: 'dist/bench.js', platform: 'node', format: 'cjs' }),
 ]);
 for (const f of ['index.html', 'style.css']) fs.copyFileSync(path.join(root, 'src/game', f), path.join(dist, f));

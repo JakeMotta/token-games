@@ -1,8 +1,8 @@
 // How agent tokens become colony energy and food (docs/ant-farm-design.md, "How tokens feed it").
 // Pure and deterministic: the same events give the same energy, so a farm can be replayed from its event log.
 
-export const TOKENS_PER_ENERGY = 40; // one grain dug per 40 weighted tokens
-export const TOKENS_PER_CRUMB = 500; // one food crumb per 500 weighted tokens
+export const TOKENS_PER_ENERGY = 15; // one grain dug per 15 weighted tokens: digging shows every bit of work
+export const TOKENS_PER_CRUMB = 2500; // one food crumb per 2,500 weighted tokens: food is scarcer than digging
 export const CACHE_READ_WEIGHT = 0.1; // cache reads are cheap re-reads of the same context
 export const SOFT_CAP = 200_000; // weighted tokens an hour before conversion turns logarithmic
 export const HOUR_MS = 3_600_000;
@@ -30,6 +30,13 @@ export class TokenMeter {
   constructor(private cap = SOFT_CAP) {}
 
   hourTotal(): number { return this.sum; }
+
+  // The last hour's batches, for the save file, and back.
+  save(): [number, number][] { return this.window.map((e) => [e.ts, e.w]); }
+  load(list: unknown): void {
+    this.window = Array.isArray(list) ? list.filter((e) => Array.isArray(e) && e.length === 2 && e.every(Number.isFinite)).map(([ts, w]) => ({ ts, w })) : [];
+    this.sum = this.window.reduce((s, e) => s + e.w, 0);
+  }
 
   add(e: TokenCounts, ts: number): Conversion {
     while (this.window.length && this.window[0].ts <= ts - HOUR_MS) this.sum -= this.window.shift()!.w;

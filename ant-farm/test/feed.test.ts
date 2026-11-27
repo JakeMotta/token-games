@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ClaudeParser, watchClaudeCode } from '../src/feed/claude-code';
-import { fakeEvent, normalizeEvent, type FarmEvent } from '../src/shared/events';
+import { normalizeEvent, type FarmEvent } from '../src/shared/events';
 
 const usage = { input_tokens: 1200, output_tokens: 850, cache_read_input_tokens: 40000, cache_creation_input_tokens: 3000 };
 const line = (o: Record<string, unknown> = {}, m: Record<string, unknown> = {}) => JSON.stringify({
@@ -19,7 +19,7 @@ test('events: the v1 format, cleaned to known fields only', () => {
   assert.equal(normalizeEvent({ v: 2, type: 'tokens' }), null, 'unknown versions are refused');
   assert.equal(normalizeEvent({ type: 'nope' }), null);
   assert.equal(normalizeEvent({ v: 1, type: 'task_done', source: 'codex', session: 'r-77', ts: 1 })!.type, 'task_done');
-  assert.equal((fakeEvent('wide_room', 0) as { width: number }).width, 30);
+  assert.equal((normalizeEvent({ v: 1, type: 'task_done', width: 30.2, ts: 1 }) as { width: number }).width, 30);
 });
 
 test('parser: an assistant line becomes a tokens event with counts and time, never content', () => {
