@@ -18,6 +18,13 @@
 </style>
 </head>
 <body>
+<div id="orig">
+<h2>The ants: the first prototype's style, the 320 × 180 window at real size, in every palette</h2>
+<div class="row" id="origReal"></div>
+<h2>The same frames, zoomed 4× on the nest entrance</h2>
+<div class="row" id="origZoom"></div>
+</div>
+<div id="sprites" hidden>
 <div class="row looks" id="looks"></div>
 <h2>Before / after: the 320 × 180 window, real size</h2>
 <div class="row" id="real"></div>
@@ -27,8 +34,10 @@
 <div class="row" id="sheet"></div>
 <h2>Sprites, 2 micro pixels a cell (far zoomed out), zoomed 8×</h2>
 <div class="row" id="sheetTiny"></div>
+</div>
 <script src="sim.js"></script>
 <script src="camera.js"></script>
+<script src="palettes.js"></script>
 <script src="render.js"></script>
 <script>
 (function () {
@@ -37,13 +46,20 @@
   let look = q.get('look') || 'rust';
   const seed = +(q.get('seed') || 3), warp = +(q.get('warp') || 2600);
 
-  function farmFrame(old, w, h, dpr) {
+  // ?ants=new shows round two's side-view sprites (kept only for comparing); the default is the original ants
+  const NEW = q.get('ants') === 'new';
+  function farmFrame(old, w, h, dpr, palette) {
     const sim = AntSim.createSim({ seed });
     sim.run(warp);
     const c = document.createElement('canvas'); c.width = w * dpr; c.height = h * dpr;
     const cam = AntCamera.fit(sim.interestBox(), w, h, { pad: 10, min: 0.5, max: 10 });
-    AntRender.drawFarm(c.getContext('2d'), sim, cam, dpr, AntRender.makeBuffer(sim), { oldAnts: old, look });
+    AntRender.drawFarm(c.getContext('2d'), sim, cam, dpr, AntRender.makeBuffer(sim), { ants: old ? null : 'new', look, palette, soft: palette && palette !== 'original' });
     return { c, cam, sim };
+  }
+  function zoomOn(f, dpr, w, h) {
+    const s = f.cam.s * dpr, nx = (f.sim.ex - f.cam.x) * s, ny = (f.sim.surf[f.sim.ex] - f.cam.y) * s;
+    const sw = 160, sh = 110;
+    return [Math.max(0, Math.min(w * dpr - sw, nx - sw / 2)), Math.max(0, Math.min(h * dpr - sh, ny - 20)), sw, sh];
   }
   function zoomed(src, sx, sy, sw, sh, k) {
     const c = document.createElement('canvas'); c.width = sw * k; c.height = sh * k;
@@ -84,8 +100,7 @@
     fig(document.getElementById('real'), before.c, 'before: one pixel a cell, ants are three dots', 320);
     fig(document.getElementById('real'), after.c, 'after: side-view sprites', 320);
     // zoom on the nest entrance, where the colony is busiest
-    const s = after.cam.s * dpr, nx = (after.sim.ex - after.cam.x) * s, ny = (after.sim.surf[after.sim.ex] - after.cam.y) * s;
-    const sw = 160, sh = 110, sx = Math.max(0, Math.min(640 - sw, nx - sw / 2)), sy = Math.max(0, Math.min(360 - sh, ny - 20));
+    const [sx, sy, sw, sh] = zoomOn(after, dpr, 320, 180);
     fig(document.getElementById('zoom'), zoomed(before.c, sx, sy, sw, sh, 4), 'before ×4');
     fig(document.getElementById('zoom'), zoomed(after.c, sx, sy, sw, sh, 4), 'after ×4');
     for (const tiny of [false, true]) {
@@ -99,13 +114,27 @@
     }
   }
 
-  const looks = document.getElementById('looks');
-  for (const [k, v] of Object.entries(AntRender.LOOKS)) {
-    const b = document.createElement('button'); b.textContent = v.name; b.className = k === look ? 'on' : '';
-    b.onclick = () => { look = k; [...looks.children].forEach((e) => e.classList.toggle('on', e === b)); render(); };
-    looks.appendChild(b);
+  function renderOriginal() {
+    const dpr = 2;
+    for (const id of AntPalette.ORDER) {
+      const f = farmFrame(true, 320, 180, dpr, id), name = AntPalette.PALETTES[id].name;
+      fig(document.getElementById('origReal'), f.c, name, 320);
+      const [sx, sy, sw, sh] = zoomOn(f, dpr, 320, 180);
+      fig(document.getElementById('origZoom'), zoomed(f.c, sx, sy, sw, sh, 4), name + ' ×4');
+    }
   }
-  render();
+
+  document.getElementById('orig').hidden = NEW;
+  document.getElementById('sprites').hidden = !NEW;
+  if (NEW) {
+    const looks = document.getElementById('looks');
+    for (const [k, v] of Object.entries(AntRender.LOOKS)) {
+      const b = document.createElement('button'); b.textContent = v.name; b.className = k === look ? 'on' : '';
+      b.onclick = () => { look = k; [...looks.children].forEach((e) => e.classList.toggle('on', e === b)); render(); };
+      looks.appendChild(b);
+    }
+    render();
+  } else renderOriginal();
 })();
 </script>
 </body>

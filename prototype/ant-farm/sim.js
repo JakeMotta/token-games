@@ -10,6 +10,8 @@
   const DIGGABLE = [false, true, false, true, true, true, false];
   const FALLS = [false, false, false, true, false, true, false];
   const CEILING = [false, true, false, false, true, false, false]; // fixed soil that can span a gap
+  // What a painted pixel shows, for palettes (sim.paint with o.kind).
+  const K = { SKY: 0, WALL: 1, SOIL: 2, GRASS: 3, LOOSE: 4, ROCK: 5, FOOD: 6, GLASS: 7, CRACK: 8, BROOD: 9, ANT: 10, QUEEN: 11, LOAD_FOOD: 12, LOAD_GRAIN: 13 };
 
   const TICK_HZ = 20;
   const DIG_TICKS = 4;        // time to bite one grain loose
@@ -813,10 +815,19 @@
     };
 
     // Paint the world into a W*H RGBA buffer (one pixel per cell). The ants come too unless o.ants is false
-    // (the page draws them as sprites on top instead: see render.js).
+    // (the page can draw them as sprites on top instead: see render.js). With o.kind (a W*H Uint8Array) it also
+    // writes what each pixel shows (K.*), so a palette can recolour soil, food and ants separately: see palettes.js.
     sim.paint = function (px, o) {
+      const kind = o && o.kind;
       // loose grains (spoil, rubble) show a shade lighter than packed soil, like fresh-dug earth
       for (let k = 0; k < N; k++) { const t = type[k]; px[k] = t === AIR ? bg[k] : t === LOOSE ? scaleCol(col[k], 1.18) : col[k]; }
+      if (kind) {
+        for (let k = 0; k < N; k++) {
+          const t = type[k], x = k % W, y = (k - x) / W;
+          kind[k] = t === AIR ? (y < surf[x] ? K.SKY : K.WALL) : t === DIRT ? (y === surf[x] ? K.GRASS : K.SOIL) : t === LOOSE ? K.LOOSE
+            : t === ROCK ? K.ROCK : t === FOOD || t === CRUMB ? K.FOOD : K.GLASS;
+        }
+      }
       for (const s of sim.strains) {
         // hairline cracks spreading through the sagging ceiling, darker as it nears failure
         const f = 1 - s.t / 40;
@@ -824,11 +835,12 @@
           const h = (x * 7 + s.y * 3) % 5;
           for (let dy = 0; dy < 3; dy++) {
             const k = (s.y - dy) * W + x;
-            if (type[k] !== AIR && (h === dy || (dy === 0 && (x + (sim.tick >> 2)) % 3 === 0)) && h + dy < 2 + f * 4) px[k] = scaleCol(col[k], 0.45);
+            if (type[k] !== AIR && (h === dy || (dy === 0 && (x + (sim.tick >> 2)) % 3 === 0)) && h + dy < 2 + f * 4) { px[k] = scaleCol(col[k], 0.45); if (kind) kind[k] = K.CRACK; }
           }
         }
       }
-      const put = (x, y, c) => { if (x > 0 && y > 0 && x < W - 1 && y < H - 1) px[y * W + x] = c; };
+      let kNow = K.BROOD;
+      const put = (x, y, c) => { if (x > 0 && y > 0 && x < W - 1 && y < H - 1) { px[y * W + x] = c; if (kind) kind[y * W + x] = kNow; } };
       const BROOD = [rgb(238, 232, 214), rgb(226, 212, 182), rgb(201, 179, 140)];
       for (const b of sim.brood) {
         if (b.carried) continue;
@@ -842,13 +854,16 @@
         const hx = a.hx || 0, hy = a.hy || 0;
         const dx = hx === 0 && hy === 0 ? 1 : hx, dy = hx === 0 && hy === 0 ? 0 : hy;
         if (a.role === 'queen') {
+          kNow = K.QUEEN;
           put(a.x - 2 * dx, a.y - 2 * dy, qGaster); put(a.x - dx, a.y - dy, qGaster);
           put(a.x - dx + dy, a.y - dy - dx, qGaster);
           put(a.x, a.y, qBody); put(a.x + dx, a.y + dy, head);
           continue;
         }
+        kNow = K.ANT;
         put(a.x - dx, a.y - dy, gaster); put(a.x, a.y, body); put(a.x + dx, a.y + dy, head);
         if ((a.walk >> 1) & 1) put(a.x - dy, a.y + dx, legs);
+        kNow = a.carry === 'food' ? K.LOAD_FOOD : a.carry === 'grain' ? K.LOAD_GRAIN : K.BROOD;
         if (a.carry === 'grain' || a.carry === 'food') put(a.x + 2 * dx, a.y + 2 * dy, a.carryCol);
         else if (a.carry === 'brood' && a.brood) put(a.x + 2 * dx, a.y + 2 * dy, BROOD[Math.min(2, a.brood.stage)]);
       }
@@ -857,7 +872,7 @@
     return sim;
   }
 
-  const api = { createSim, AIR, DIRT, ROCK, LOOSE, FOOD, CRUMB, GLASS, TICK_HZ, TOKENS_PER_ENERGY, TOKENS_PER_CRUMB, LAYERS };
+  const api = { createSim, K, AIR, DIRT, ROCK, LOOSE, FOOD, CRUMB, GLASS, TICK_HZ, TOKENS_PER_ENERGY, TOKENS_PER_CRUMB, LAYERS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.AntSim = api;
 })(typeof window !== 'undefined' ? window : globalThis);

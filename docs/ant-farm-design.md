@@ -119,15 +119,21 @@ The bridge never sends prompts or code to the game, only counts, model names and
 
 ## How the ants look
 
-The soil stays one pixel a cell, but an ant drawn that way is three dots. So the ants are drawn on top of the soil as side-view sprites in micro pixels: four a cell when the window has room (3.5 device pixels a cell or more), else a two-a-cell shape. A sprite is never smaller than one device pixel per micro pixel, so when the camera is far out the ants are drawn larger than true scale and stay readable.
+The ants keep the first prototype's style: one pixel a cell like the soil, a worker is gaster, body and head in a row with a leg that flickers as it walks, a carrier holds its grain, crumb or larva one cell ahead, and the queen is a longer, paler five-cell body. Round two tried side-view sprites in micro pixels; they are kept behind `ants=new` on the sprite page only, for comparing.
 
-- **Body:** gaster, a one-pixel waist, thorax and head, each a different shade, with a dark rim so they read against both dark tunnels and pale sand. One eye, mandibles at the front.
-- **Legs:** six, three near (bright) and three far (dark), bent at the knee, on a four-frame tripod gait that advances with each step the ant takes. Still ants stand still.
-- **Antennae:** elbowed, reaching forward, with a small twitch now and then.
-- **Load:** the grain (in its soil colour), the food crumb or the larva is held in front of and above the jaws, so a carrier is obvious.
-- **Castes:** the queen is longer and taller than a worker, amber, with a banded gaster and wing scars. Every sixth worker is a big-headed major, which looks like a digger; diggers open their jaws while they bite. Carriers show their load, nurses carry a pale larva.
-- **Pose:** ants turn to face the way they last stepped, cling upside down to ceilings, stand sideways on shaft walls and tilt one pixel on slopes.
-- **Colours:** three looks for now, `rust` (default), `black` and `glow` (teal, the playful one). See `prototype/ant-farm/sprites.html` for the sheet and a before/after.
+## Colours
+
+The farm sits in a corner of the screen while you work, so its colours must stay quiet. Each pixel is painted with what it shows (sky, tunnel wall, soil, grass, food, ant, queen, brood), and a palette maps each kind through its own short colour ramp, keeping the pixel's relative lightness so the pixel-art texture stays. Palettes avoid pure white and saturated accents, keep bright areas small, and feather the window's edges into its backdrop.
+
+- **Original:** the prototype colours, kept for comparison.
+- **Quiet Earth:** soil, food and ants in one low warm brown.
+- **Graphite:** grey only, with one soft ochre for food.
+- **Slate:** cool blue-grey, the lowest contrast of the dark ones.
+- **Sepia Dusk:** faded photo browns under a dull mauve sky.
+- **Terminal:** faint green on near-black.
+- **Desktop Blend (recommended):** follows the desktop's light or dark mode in its own near-neutral greys, so the farm reads as part of the desktop rather than a picture on it.
+
+Any palette can be calmed further with the Calm amount (up to 85% less saturation and half the contrast, pulled toward the palette's own middle tone). Fade when idle sinks the farm toward its backdrop after 5 quiet seconds and brings it back on the next token event. Reduced motion drops the floating labels and window animation and draws 2–5 frames a second.
 
 ## The always-on window
 
@@ -183,11 +189,11 @@ Ship this, then watch it for a week of real agent use before adding more:
 ## Open questions for Jake
 
 1. **Can ants die?** Today collapses only bury ants and they dig out. Should a collapse be able to kill a few ants (more drama, a real cost) or stay gentle (a calmer always-on window)? I recommend gentle by default with a hard-mode toggle.
-2. **Palette:** the prototype uses warm natural soil under the muted night-blue sky from the pitch. Do you want it fully muted (grey-blue soils like the pitch) or this warmer look?
+2. **Palette:** Desktop Blend (recommended), or one of the fixed ones (Quiet Earth, Graphite, Slate, Sepia Dusk, Terminal, Original)?
 3. **How fast should a farm fill?** At 20 Hz the colony digs about 1 grain per second per 4 workers, so a farm takes days of agent use to fill the map. Is "days" right, or should a single long session show visible growth (a smaller map or faster ants)?
 
-4. **Ants when zoomed far out:** a sprite never drops under one device pixel, so in a small window showing a big farm the ants are drawn larger than the tunnels they walk in. That keeps them readable. Is that right, or should the small window follow the busiest spot instead of fitting the whole nest, so ants stay true to scale?
-5. **Ant colour:** rust (default), black, or glow?
+4. **Ants when zoomed far out:** the one-pixel ants shrink with the farm, so in a small window showing a big nest they are hard to see. Should the small window follow the busiest spot instead of fitting the whole nest?
+5. **Ants:** the first prototype's one-pixel ants are back; keep them as they are?
 
 ## Sources
 

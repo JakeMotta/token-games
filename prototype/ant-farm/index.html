@@ -59,6 +59,7 @@
 <pre id="result"></pre>
 <script src="sim.js"></script>
 <script src="camera.js"></script>
+<script src="palettes.js"></script>
 <script src="render.js"></script>
 <script>
 (function () {
@@ -105,7 +106,7 @@
     return { vw: view.clientWidth, vh: view.clientHeight, dpr };
   }
   const WHOLE = q.get('view') === 'all';
-  const OLD_ANTS = q.get('ants') === 'old', LOOK = q.get('look') || 'rust';
+  const ANTS = q.get('ants'), LOOK = q.get('look') || 'rust', PALETTE = q.get('palette') || 'original';
   let lastAnts = null;
   function autoTarget(vw, vh) {
     const box = WHOLE ? { x: 0, y: 0, w: sim.W, h: sim.H } : sim.interestBox();
@@ -116,7 +117,7 @@
     const target = autoTarget(vw, vh);
     if (!cam) cam = target;
     else if (auto) cam = AntCamera.near(cam, target) ? target : AntCamera.lerp(cam, target, 0.12, vw, vh);
-    lastAnts = AntRender.drawFarm(ctx, sim, cam, dpr, buf, { oldAnts: OLD_ANTS, look: LOOK });
+    lastAnts = AntRender.drawFarm(ctx, sim, cam, dpr, buf, { ants: ANTS, look: LOOK, palette: PALETTE });
     hud();
   }
   function hud() {
@@ -240,7 +241,7 @@
     const d = ctx.getImageData(0, 0, view.width, view.height).data, seen = new Set();
     for (let i = 0; i < d.length; i += 4 * 97) seen.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
     ok('canvas is drawn', seen.size > 12, { colours: seen.size });
-    ok('every ant on screen is drawn as a sprite', lastAnts && lastAnts.drawn > 0 && lastAnts.m >= 1, lastAnts);
+    ok('the ants on screen are drawn', lastAnts && lastAnts.drawn > 0, lastAnts);
     ok('no page errors', errors.length === 0, errors);
     const pass = checks.every((c) => c.pass);
     document.getElementById('result').textContent = JSON.stringify({ pass, seed: sim.seed, tick: sim.tick, checks }, null, 1);

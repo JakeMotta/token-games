@@ -116,15 +116,18 @@
   @keyframes ripple { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.8); opacity: 0; } }
 
   /* ---------- the ant farm window ---------- */
-  .farm { position: absolute; z-index: 20; border-radius: 10px; overflow: hidden; background: #12151d; box-shadow: var(--farm-shadow);
-    outline: 1px solid rgba(255, 255, 255, 0.12); outline-offset: -1px; transition: opacity 0.2s; }
+  .farm { position: absolute; z-index: 20; border-radius: 10px; overflow: hidden; background: var(--f-back); box-shadow: var(--farm-shadow);
+    outline: 1px solid var(--f-line); outline-offset: -1px; transition: opacity 0.2s; }
+  /* the farm's own colours come from its palette (palettes.js), set on .farm by script */
+  .farm, .mini { --f-back: #12151d; --f-bar: rgba(12, 14, 20, 0.78); --f-ink: #cfd3dc; --f-dim: #9aa3b5; --f-hot: #e8b45e; --f-task: #88c58f; --f-line: rgba(255, 255, 255, 0.12); }
+  .farm.soft { box-shadow: 0 6px 22px rgba(0, 0, 0, 0.22); }
   .farm.anim { transition: left 0.22s ease, top 0.22s ease, width 0.22s ease, height 0.22s ease, border-radius 0.22s, opacity 0.2s; }
   .farm canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; }
   .farm.full { border-radius: 0; outline: none; }
   .farm.thru { pointer-events: none; }
   .farm.thru.grab { pointer-events: auto; }
   .bar { position: absolute; left: 0; right: 0; top: 0; height: 20px; display: flex; align-items: center; gap: 6px; padding: 0 4px 0 8px;
-    background: linear-gradient(rgba(12, 14, 20, 0.78), rgba(12, 14, 20, 0.5)); color: #cfd3dc; cursor: grab;
+    background: var(--f-bar); color: var(--f-ink); cursor: grab;
     font: 10.5px/1 ui-monospace, "SF Mono", Menlo, monospace; transition: opacity 0.25s; }
   .farm.full .bar { height: 26px; font-size: 12px; }
   .bar:active { cursor: grabbing; }
@@ -132,20 +135,21 @@
   .farm:hover .bar, .farm.grab .bar { opacity: 1; }
   .farm.thru .bar { opacity: 0; }
   .farm.thru.grab .bar { opacity: 1; }
-  .pulse { width: 6px; height: 6px; border-radius: 50%; background: #6b7387; flex: none; transition: background 0.3s, box-shadow 0.3s; }
-  .pulse.hot { background: #e8b45e; box-shadow: 0 0 6px #e8b45e; }
-  .pulse.task { background: #88c58f; box-shadow: 0 0 6px #88c58f; }
-  .fname { color: #eef0f4; font-weight: 600; white-space: nowrap; }
-  .meter { color: #9aa3b5; white-space: nowrap; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-  .meter b { color: #e8b45e; font-weight: 600; }
-  .evt { color: #e8b45e; white-space: nowrap; opacity: 0; transition: opacity 0.4s; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--f-dim); opacity: 0.6; flex: none; transition: background 0.3s, box-shadow 0.3s; }
+  .pulse.hot { background: var(--f-hot); box-shadow: 0 0 6px var(--f-hot); opacity: 1; }
+  .pulse.task { background: var(--f-task); box-shadow: 0 0 6px var(--f-task); opacity: 1; }
+  .rm .pulse { box-shadow: none !important; transition: none; }
+  .fname { color: var(--f-ink); font-weight: 600; white-space: nowrap; }
+  .meter { color: var(--f-dim); white-space: nowrap; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .meter b { color: var(--f-hot); font-weight: 600; }
+  .evt { color: var(--f-hot); white-space: nowrap; opacity: 0; transition: opacity 0.4s; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .evt.show { opacity: 1; }
   .wbtns { margin-left: auto; display: flex; gap: 1px; flex: none; }
-  .wbtn { width: 18px; height: 16px; display: grid; place-items: center; border: 0; border-radius: 3px; background: transparent; color: #aeb5c4;
+  .wbtn { width: 18px; height: 16px; display: grid; place-items: center; border: 0; border-radius: 3px; background: transparent; color: var(--f-dim);
     font: 600 9.5px/1 ui-monospace, Menlo, monospace; cursor: pointer; padding: 0; }
   .farm.full .wbtn { width: 24px; height: 20px; font-size: 11px; }
-  .wbtn:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
-  .wbtn.on { color: #e8b45e; }
+  .wbtn:hover { background: var(--f-line); color: var(--f-ink); }
+  .wbtn.on { color: var(--f-hot); }
   .wbtn svg { width: 11px; height: 11px; display: block; }
   .farm.full .wbtn svg { width: 13px; height: 13px; }
   .grip { position: absolute; width: 14px; height: 14px; cursor: nwse-resize; touch-action: none; }
@@ -160,13 +164,44 @@
   .sizetag { position: absolute; right: 6px; bottom: 5px; font: 10px ui-monospace, Menlo, monospace; color: rgba(255, 255, 255, 0.75);
     background: rgba(0, 0, 0, 0.45); padding: 1px 4px; border-radius: 3px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
   .sizetag.show { opacity: 1; }
-  .floater { position: absolute; left: 10px; bottom: 8px; font: 600 11px ui-monospace, Menlo, monospace; color: #e8b45e; pointer-events: none;
+  .floater { position: absolute; left: 10px; bottom: 8px; font: 600 11px ui-monospace, Menlo, monospace; color: var(--f-hot); pointer-events: none;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); animation: floatup 1.6s ease-out forwards; }
   @keyframes floatup { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-26px); opacity: 0; } }
-  .snap { position: absolute; z-index: 19; border: 2px dashed rgba(232, 180, 94, 0.9); border-radius: 10px; pointer-events: none; display: none; }
+  .snap { position: absolute; z-index: 19; border: 2px dashed var(--accent); border-radius: 10px; pointer-events: none; display: none; }
   .snap.show { display: block; }
   #result { display: none; }
+
+  /* ---------- compare: every palette at 320 × 180, real size, on a busy desktop next to a work window ---------- */
+  /* kept rendered (not display:none) so the tiles can reuse its wallpaper gradients */
+  .stage.hide { position: absolute; left: -99999px; top: 0; visibility: hidden; }
+  .compare { display: none; padding: 12px 16px 24px; }
+  .compare.show { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 640px), 1fr)); gap: 14px; justify-items: center; }
+  .cell { width: 100%; max-width: 640px; }
+  .cell h3 { margin: 0 0 6px; font-size: 12px; font-weight: 600; display: flex; gap: 8px; align-items: baseline; }
+  .cell h3 span { color: var(--ink-dim); font-weight: 400; }
+  .cell h3 .pick { color: var(--accent); font-weight: 600; }
+  .cell .clip { position: relative; width: 100%; aspect-ratio: 640 / 360; overflow: hidden; border-radius: 10px; cursor: pointer;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3); }
+  .cell.on .clip { box-shadow: 0 0 0 2px var(--accent); }
+  .tile { position: absolute; left: 0; top: 0; width: 640px; height: 360px; transform-origin: 0 0; overflow: hidden; }
+  .tile .wall { position: absolute; inset: 0; }
+  .tile .wall svg { width: 100%; height: 100%; display: block; }
+  .ed { position: absolute; left: 14px; top: 14px; width: 420px; height: 318px; border-radius: 9px; overflow: hidden; background: var(--term-bg);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 0 0 0.5px rgba(0, 0, 0, 0.4); display: flex; flex-direction: column; }
+  .ed .tbar { flex: none; height: 22px; background: var(--term-bar); display: flex; align-items: center; padding: 0 9px; gap: 7px;
+    border-bottom: 1px solid var(--term-line); font-size: 11px; color: var(--term-dim); }
+  .ed .lights i { width: 9px; height: 9px; }
+  .ed .lights { gap: 6px; }
+  .ed pre { margin: 0; padding: 8px 10px; font: 10.5px/1.55 "SF Mono", ui-monospace, Menlo, monospace; color: var(--term-ink); white-space: pre; overflow: hidden; }
+  .ed .kw { color: var(--tool); } .ed .st { color: var(--ok); } .ed .cm { color: var(--term-dim); } .ed .fn { color: var(--cc); }
+  .mini { position: absolute; right: 12px; bottom: 12px; width: 320px; height: 180px; border-radius: 10px; overflow: hidden; background: var(--f-back);
+    box-shadow: var(--farm-shadow); outline: 1px solid var(--f-line); outline-offset: -1px; }
+  .mini.soft { box-shadow: 0 6px 22px rgba(0, 0, 0, 0.22); }
+  .mini canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }
+  .mini .bar { cursor: default; }
+  .strip .grp.pal button.pick::after { content: ' ★'; }
   @media (prefers-reduced-motion: reduce) { .farm.anim { transition: none; } .ripple, .floater { animation-duration: 0.01s; } }
+  .rm .farm.anim { transition: none; } .rm .ripple { animation-duration: 0.01s; } .rm .cursor { animation: none; }
 </style>
 </head>
 <body>
@@ -186,9 +221,12 @@
   <div class="grp"><span class="lbl">Agent</span>
     <button id="cFeed">+5k tokens<kbd>K</kbd></button><button id="cTask">Task done</button><button id="cAuto" class="on">Claude working</button>
   </div>
-  <div class="grp"><span class="lbl">Ants</span><button data-look="rust" class="on">Rust</button><button data-look="black">Black</button><button data-look="glow">Glow</button></div>
   <div class="grp"><span class="lbl">Desktop</span><button id="thL" data-th="light">Light</button><button id="thD" data-th="dark">Dark</button></div>
-  <a href="sprites.html">Ant sprites, before / after</a>
+  <div class="grp"><span class="lbl">View</span><button id="vDesk">Desktop</button><button id="vCmp">Compare palettes<kbd>C</kbd></button></div>
+  <div class="grp pal" id="pal"><span class="lbl">Palette</span><kbd>P</kbd></div>
+  <div class="grp"><span class="lbl">Calm</span><input id="calm" type="range" min="0" max="100" value="0" aria-label="Calm: lowers saturation and contrast"><span id="calmv">0</span></div>
+  <div class="grp"><span class="lbl">Motion</span><button id="cFade">Fade when idle</button><button id="cRM">Reduced motion</button></div>
+  <a href="sprites.html">Ant sprites</a>
 </div>
 
 <div class="stage" id="stage">
@@ -255,10 +293,55 @@
     </div>
   </div>
 </div>
+<div class="compare" id="compare"></div>
+<template id="tileTpl">
+  <div class="cell">
+    <h3></h3>
+    <div class="clip"><div class="tile">
+      <div class="wall" aria-hidden="true">
+        <svg viewBox="0 0 640 360" preserveAspectRatio="xMidYMid slice">
+          <rect width="640" height="360" fill="url(#sky)"/>
+          <path d="M0 210 C 120 170 200 200 300 175 S 500 140 640 180 L 640 360 L 0 360 Z" fill="url(#h1)" opacity="0.85"/>
+          <path d="M0 270 C 140 235 260 280 380 245 S 560 220 640 250 L 640 360 L 0 360 Z" fill="url(#h2)" opacity="0.9"/>
+          <path d="M0 320 C 160 296 300 330 450 305 S 600 292 640 300 L 640 360 L 0 360 Z" fill="url(#h3)" opacity="0.8"/>
+        </svg>
+      </div>
+      <div class="ed">
+        <div class="tbar"><span class="lights"><i></i><i></i><i></i></span><span>sim.js — token-games</span></div>
+<pre><span class="cm">// Paint the world into a W*H RGBA buffer.</span>
+<span class="kw">sim</span>.paint = <span class="kw">function</span> (px, o) {
+  <span class="kw">const</span> kind = o &amp;&amp; o.kind;
+  <span class="kw">for</span> (<span class="kw">let</span> k = 0; k &lt; N; k++) {
+    <span class="kw">const</span> t = type[k];
+    px[k] = t === AIR ? bg[k] : col[k];
+  }
+  <span class="kw">for</span> (<span class="kw">const</span> s <span class="kw">of</span> sim.strains) {
+    <span class="cm">// hairline cracks in a sagging ceiling</span>
+    <span class="kw">const</span> f = 1 - s.t / 40;
+    <span class="fn">crack</span>(s, f);
+  }
+  <span class="fn">put</span>(b.x, b.y, BROOD[b.stage]);
+  <span class="kw">if</span> (o.ants === <span class="kw">false</span>) <span class="kw">return</span>;
+  <span class="kw">for</span> (<span class="kw">const</span> a <span class="kw">of</span> sim.ants) {
+    <span class="fn">put</span>(a.x - dx, a.y - dy, gaster);
+    <span class="fn">put</span>(a.x, a.y, body);
+    <span class="fn">put</span>(a.x + dx, a.y + dy, head);
+  }
+};</pre>
+      </div>
+      <div class="mini">
+        <canvas></canvas>
+        <div class="bar"><span class="pulse"></span><span class="fname">Ant Farm</span><span class="meter"></span>
+          <span class="wbtns"><span class="wbtn">S</span><span class="wbtn">L</span><span class="wbtn">–</span></span></div>
+      </div>
+    </div></div>
+  </div>
+</template>
 <pre id="result"></pre>
 
 <script src="sim.js"></script>
 <script src="camera.js"></script>
+<script src="palettes.js"></script>
 <script src="render.js"></script>
 <script>
 (function () {
@@ -295,7 +378,7 @@
     return { x, y };
   }
   function layout(animate) {
-    animate = animate && !TEST;
+    animate = animate && !TEST && !vis.rm;
     farm.classList.toggle('anim', !!animate);
     let x, y, w, h;
     if (st.full) { x = 0; y = 0; w = SW; h = SH; }
@@ -419,14 +502,40 @@
   $('wHide').onclick = () => setHidden(true); $('mbAnt').onclick = () => setHidden(!st.hidden);
   document.querySelectorAll('[data-dock]').forEach((b) => b.addEventListener('click', () => setDock(b.dataset.dock)));
   $('op').oninput = () => { st.opacity = +$('op').value; $('opv').textContent = st.opacity + '%'; farm.style.opacity = st.opacity / 100; };
-  let look = q.get('look') || 'rust';
-  document.querySelectorAll('[data-look]').forEach((b) => b.addEventListener('click', () => {
-    look = b.dataset.look; document.querySelectorAll('[data-look]').forEach((x) => x.classList.toggle('on', x === b)); draw(true);
-  }));
+  // ---------- palette, calm, idle fade, reduced motion ----------
+  // The pick is the palette we recommend; Original is the prototype's colours, kept for comparing.
+  const PICK = 'blend';
+  let ready = false; // the farm and the compare tiles exist
+  const vis = { palette: AntPalette.PALETTES[q.get('palette')] ? q.get('palette') : PICK, calm: 0, fade: q.has('fade'), rm: q.has('rm') || matchMedia('(prefers-reduced-motion: reduce)').matches, dark: false, dim: 0 };
+  const palEl = $('pal');
+  for (const id of AntPalette.ORDER) {
+    const b = document.createElement('button'), P = AntPalette.PALETTES[id];
+    b.textContent = P.name; b.dataset.pal = id; b.title = P.note; if (id === PICK) b.classList.add('pick');
+    b.onclick = () => setPalette(id);
+    palEl.insertBefore(b, palEl.lastElementChild);
+  }
+  // the window chrome (title bar, glow, labels) follows the palette too
+  function paintChrome(el, id) {
+    const p = AntPalette.resolve(id, vis.dark), u = p.ui;
+    for (const [k, v] of Object.entries({ '--f-back': u.back, '--f-bar': u.bar, '--f-ink': u.ink, '--f-dim': u.dim, '--f-hot': u.hot, '--f-task': u.task, '--f-line': u.line })) el.style.setProperty(k, v);
+    el.classList.toggle('soft', !p.identity);
+  }
+  function setPalette(id) {
+    vis.palette = id;
+    document.querySelectorAll('[data-pal]').forEach((b) => b.classList.toggle('on', b.dataset.pal === id));
+    document.querySelectorAll('.cell').forEach((c) => c.classList.toggle('on', c.dataset.pal === id));
+    paintChrome(farm, id); draw(true);
+  }
+  $('calm').oninput = () => { vis.calm = +$('calm').value / 100; $('calmv').textContent = $('calm').value; draw(true); drawTiles(); };
+  function setFade(on) { vis.fade = on; $('cFade').classList.toggle('on', on); if (!on) vis.dim = 0; draw(true); }
+  function setRM(on) { vis.rm = on; $('cRM').classList.toggle('on', on); document.body.classList.toggle('rm', on); }
+  $('cFade').onclick = () => setFade(!vis.fade); $('cRM').onclick = () => setRM(!vis.rm);
   function setTheme(t) {
     if (t) document.documentElement.dataset.theme = t;
     const dark = t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    vis.dark = dark;
     $('thL').classList.toggle('on', !dark); $('thD').classList.toggle('on', dark);
+    if (ready) { paintChrome(farm, vis.palette); draw(true); tiles.forEach((t2) => paintChrome(t2.mini, t2.id)); drawTiles(); }
   }
   $('thL').onclick = () => setTheme('light'); $('thD').onclick = () => setTheme('dark');
   setTheme(q.get('theme'));
@@ -443,6 +552,8 @@
     else if (key === 'h') setHidden(!st.hidden);
     else if (key === 'k') feedTokens();
     else if (key === 'd') setDock(DOCKS[(DOCKS.indexOf(st.dock) + 1) % DOCKS.length]);
+    else if (key === 'p') { const O = AntPalette.ORDER; setPalette(O[(O.indexOf(vis.palette) + (e.shiftKey ? O.length - 1 : 1)) % O.length]); }
+    else if (key === 'c') setView(view2 === 'compare' ? 'desk' : 'compare');
     else return;
     e.preventDefault();
   });
@@ -467,29 +578,69 @@
     const t = AntCamera.fit(sim.interestBox(), vw, vh - bar, { pad: 8, min: 0.5, max: 10 });
     return { x: t.x, y: t.y - bar / t.s, s: t.s };
   }
+  const farmOpts = (id) => ({ palette: id, calm: vis.calm, dark: vis.dark, dim: vis.dim, soft: !AntPalette.resolve(id).identity });
   function draw(snap) {
-    if (st.hidden) return;
+    if (!ready || st.hidden || !st.box) return;
     const { vw, vh, dpr } = sizeCanvas();
     const t = target(vw, vh);
-    // the auto camera re-fits at every size; a resize jumps, sim growth eases
-    cam = !cam || snap ? t : (AntCamera.near(cam, t) ? t : AntCamera.lerp(cam, t, 0.12, vw, vh));
-    lastAnts = AntRender.drawFarm(ctx, sim, cam, dpr, buf, { look });
+    // the auto camera re-fits at every size; a resize jumps, sim growth eases (or jumps too, with reduced motion)
+    cam = !cam || snap || vis.rm ? t : (AntCamera.near(cam, t) ? t : AntCamera.lerp(cam, t, 0.12, vw, vh));
+    lastAnts = AntRender.drawFarm(ctx, sim, cam, dpr, buf, farmOpts(vis.palette));
     meter();
   }
+
+  // ---------- compare: one tile per palette, each the 320 × 180 window at real size ----------
+  const tiles = [];
+  function buildTiles() {
+    const tpl = $('tileTpl'), host = $('compare');
+    for (const id of AntPalette.ORDER) {
+      const P = AntPalette.PALETTES[id], node = tpl.content.firstElementChild.cloneNode(true);
+      node.dataset.pal = id;
+      node.querySelector('h3').innerHTML = P.name + ' <span>' + P.note + '</span>' + (id === PICK ? ' <span class="pick">★ pick</span>' : '');
+      node.querySelector('.clip').onclick = () => { setPalette(id); setView('desk'); };
+      host.appendChild(node);
+      const mini = node.querySelector('.mini'), canvas = mini.querySelector('canvas');
+      tiles.push({ id, node, mini, canvas, ctx: canvas.getContext('2d'), buf: AntRender.makeBuffer(sim), tile: node.querySelector('.tile'), meter: node.querySelector('.meter'), drawn: null });
+      paintChrome(mini, id);
+    }
+  }
+  function scaleTiles() {
+    for (const t of tiles) { const w = t.node.querySelector('.clip').clientWidth || 640; t.tile.style.transform = 'scale(' + w / 640 + ')'; }
+  }
+  let view2 = 'desk';
+  function drawTiles() {
+    if (!ready || view2 !== 'compare') return;
+    const dpr = Math.min(3, window.devicePixelRatio || 1), vw = 320, vh = 180;
+    const t0 = AntCamera.fit(sim.interestBox(), vw, vh - BAR, { pad: 8, min: 0.5, max: 10 }), c = { x: t0.x, y: t0.y - BAR / t0.s, s: t0.s };
+    for (const t of tiles) {
+      const w = Math.round(vw * dpr * (t.tile.getBoundingClientRect().width / 640 || 1)), h = Math.round(w * 9 / 16);
+      if (t.canvas.width !== w || t.canvas.height !== h) { t.canvas.width = w; t.canvas.height = h; }
+      t.drawn = AntRender.drawFarm(t.ctx, sim, c, w / vw, t.buf, farmOpts(t.id));
+      t.meter.innerHTML = '<b>⚡' + Math.floor(sim.energy) + '</b> · ' + fmt(sim.stats.tokens) + ' tok';
+    }
+  }
+  function setView(v) {
+    view2 = v;
+    $('stage').classList.toggle('hide', v === 'compare'); $('compare').classList.toggle('show', v === 'compare');
+    $('vDesk').classList.toggle('on', v !== 'compare'); $('vCmp').classList.toggle('on', v === 'compare');
+    if (v === 'compare') { scaleTiles(); drawTiles(); } else { scaleStage(); draw(true); }
+  }
+  $('vDesk').onclick = () => setView('desk'); $('vCmp').onclick = () => setView('compare');
   const fmt = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(Math.round(n)));
   function meter() {
     const ants = sim.ants.length - 1;
     $('meter').innerHTML = '<b>⚡' + Math.floor(sim.energy) + '</b> · ' + fmt(sim.stats.tokens) + ' tok' + (st.w >= 420 || st.full ? ' · ' + ants + ' ants · ' + sim.brood.length + ' brood' : '');
     $('mbTok').textContent = fmt(sim.stats.tokens);
   }
-  let evtT = 0;
+  let evtT = 0, lastEvt = performance.now();
   function event(label, kind) {
+    lastEvt = performance.now();
     const p = $('pulse'), e = $('evt');
     p.classList.remove('hot', 'task'); void p.offsetWidth; p.classList.add(kind === 'task' ? 'task' : 'hot');
     e.textContent = label; e.classList.add('show');
     clearTimeout(evtT); evtT = setTimeout(() => { e.classList.remove('show'); p.classList.remove('hot', 'task'); }, 2600);
     const f = document.createElement('div'); f.className = 'floater'; f.textContent = label;
-    if (!st.hidden) { farm.appendChild(f); setTimeout(() => f.remove(), 1700); }
+    if (!st.hidden && !vis.rm) { farm.appendChild(f); setTimeout(() => f.remove(), 1700); }
     meter();
   }
   function feedTokens(n, label) {
@@ -511,7 +662,17 @@
     if (n >= 40) acc = 0;
     const busy = sim.isBusy() || drag;
     farm.classList.toggle('calm', !busy);
-    if (t - lastDraw >= (busy ? 1000 / 30 : 1000 / 8) - 2) { lastDraw = t; draw(false); }
+    fadeStep(dt, t);
+    // reduced motion: few frames, so less flicker at the edge of your eye
+    const fps = view2 === 'compare' ? 8 : vis.rm ? (busy ? 5 : 2) : busy ? 30 : 8;
+    if (t - lastDraw >= 1000 / fps - 2) { lastDraw = t; if (view2 === 'compare') drawTiles(); else draw(false); }
+  }
+  // Fade when idle: after a few quiet seconds the farm sinks toward its backdrop; a token event brings it back.
+  const FADE = { after: 5000, depth: 0.5, down: 3500, up: 600 };
+  function fadeStep(dt, now) {
+    const want = vis.fade && now - lastEvt > FADE.after ? FADE.depth : 0;
+    const rate = dt / (want > vis.dim ? FADE.down : FADE.up) * FADE.depth;
+    vis.dim = want > vis.dim ? Math.min(want, vis.dim + rate) : Math.max(want, vis.dim - rate);
   }
 
   // ---------- the terminal: Claude Code at work; each step it takes feeds the farm ----------
@@ -574,7 +735,11 @@
 
   // ---------- start ----------
   scaleStage();
-  window.addEventListener('resize', () => { scaleStage(); draw(true); });
+  window.addEventListener('resize', () => { scaleStage(); draw(true); if (view2 === 'compare') { scaleTiles(); drawTiles(); } });
+  buildTiles();
+  ready = true;
+  if (q.has('calm')) { $('calm').value = q.get('calm'); vis.calm = +$('calm').value / 100; $('calmv').textContent = $('calm').value; }
+  setFade(vis.fade); setRM(vis.rm);
   st.w = PRESETS[q.get('size')] || 320;
   if (q.has('dock')) st.dock = q.get('dock') || null;
   if (q.has('thru')) setThru(true);
@@ -582,11 +747,13 @@
   layout(false);
   if (q.get('size') === 'F') enterFull();
   if (q.has('freew')) { st.w = Math.max(MINW, Math.min(MAXW, +q.get('freew'))); layout(false); }
+  setPalette(vis.palette);
+  setView(q.get('view') === 'compare' ? 'compare' : 'desk');
   clock(); setInterval(clock, 15000);
   if (TEST) runTest();
   else {
     // ?pause=1: a still frame for screenshots, with a short burst of terminal lines already in
-    if (q.has('pause')) { auto = true; for (let i = 0; i < +(q.get('lines') || 6); i++) next(); clearTimeout(termT); spinner(); draw(true); }
+    if (q.has('pause')) { auto = true; for (let i = 0; i < +(q.get('lines') || 6); i++) next(); clearTimeout(termT); spinner(); draw(true); drawTiles(); }
     else { later(800); setInterval(spinner, 120); requestAnimationFrame(frame); }
   }
 
@@ -604,7 +771,7 @@
     key('2'); r = rect(); sizes.push(r);
     ok('large preset is 640 × 360', r.w === 640 && r.h === 360, r);
     ok('the farm zooms in to fill the larger window', cam.s > s1, { small: s1, large: cam.s });
-    ok('ants drawn at the large size', lastAnts && lastAnts.drawn > 3 && lastAnts.m >= 1, lastAnts);
+    ok('ants drawn at the large size', lastAnts && lastAnts.drawn > 3, lastAnts);
     // free resize from the grip keeps 16:9
     const g = $('grip'), gr = g.getBoundingClientRect();
     const gx = gr.left + gr.width / 2, gy = gr.top + gr.height / 2;
@@ -673,10 +840,77 @@
     const d = ctx.getImageData(0, 0, view.width, view.height).data, seen = new Set();
     for (let i = 0; i < d.length; i += 4 * 53) seen.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
     ok('the farm is drawn', seen.size > 12, { colours: seen.size });
+    paletteChecks(ok, key);
     ok('no page errors', errors.length === 0, errors);
     const pass = checks.every((c) => c.pass);
     $('result').textContent = JSON.stringify({ pass, seed: sim.seed, tick: sim.tick, checks }, null, 1);
     document.title = pass ? 'PASS' : 'FAIL';
+  }
+  // what the window shows: mean luma and chroma (0..1) and a fingerprint of the pixels
+  function look2(c2) {
+    const cv = c2 || view, d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+    let n = 0, l = 0, ch = 0, h = 0;
+    for (let i = 0; i < d.length; i += 4 * 7) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      l += (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; ch += (Math.max(r, g, b) - Math.min(r, g, b)) / 255; n++;
+      h = (h * 31 + r * 7 + g * 3 + b) >>> 0;
+    }
+    return { luma: +(l / n).toFixed(3), chroma: +(ch / n).toFixed(3), hash: h };
+  }
+  function paletteChecks(ok, key) {
+    const O = AntPalette.ORDER;
+    ok('seven palettes, Original among them', O.length >= 6 && O.includes('original'), O);
+    // the switch works live at every size, on a light and a dark desktop
+    for (const theme of ['light', 'dark']) {
+      setTheme(theme);
+      for (const sz of ['S', 'L', 'F']) {
+        if (sz === 'F') enterFull(); else { exitFull(); setSize(sz); }
+        const seen2 = new Set(), drawn = [];
+        for (const id of O) { setPalette(id); seen2.add(look2().hash); drawn.push(lastAnts && lastAnts.drawn); }
+        ok('every palette paints differently, ' + sz + ' on ' + theme, seen2.size === O.length && drawn.every((x) => x > 3), { looks: seen2.size, drawn });
+      }
+      exitFull(); setSize('S');
+    }
+    // Original is the prototype's colours, pixel for pixel
+    setPalette('original');
+    const raw = new Uint32Array(buf.px.length); sim.paint(raw);
+    let same = true; for (let i = 0; i < raw.length; i++) if (raw[i] !== buf.px[i]) { same = false; break; }
+    ok('Original paints exactly the prototype colours', same);
+    const orig = look2();
+    for (const id of O.filter((x) => x !== 'original')) {
+      setPalette(id); const m = look2();
+      ok(AntPalette.PALETTES[id].name + ' is calmer than Original', m.chroma < orig.chroma * 0.75, { orig: orig.chroma, it: m.chroma });
+    }
+    ok('the window chrome follows the palette', farm.style.getPropertyValue('--f-back') === AntPalette.resolve(vis.palette, vis.dark).ui.back);
+    setPalette('blend'); setTheme('light'); const bl = look2(); setTheme('dark'); const bd = look2();
+    ok('Desktop Blend turns light on a light desktop', bl.luma > bd.luma + 0.2, { light: bl.luma, dark: bd.luma });
+    key('p'); ok('P cycles the palette', vis.palette === O[(O.indexOf('blend') + 1) % O.length], vis.palette);
+    // Calm lowers saturation and contrast
+    setPalette('original'); const c0 = look2();
+    $('calm').value = 100; $('calm').oninput(); const c1 = look2();
+    ok('Calm lowers saturation', c1.chroma < c0.chroma * 0.4, { before: c0.chroma, after: c1.chroma });
+    $('calm').value = 0; $('calm').oninput();
+    // fade when idle, back on a token event
+    setPalette('blend'); const f0 = look2();
+    setFade(true); lastEvt = performance.now() - 20000;
+    for (let i = 0; i < 20; i++) fadeStep(250, performance.now());
+    draw(true); const f1 = look2();
+    ok('Fade when idle sinks the farm into its backdrop', vis.dim > 0.4 && f1.chroma <= f0.chroma && f1.hash !== f0.hash, { dim: vis.dim });
+    feedTokens(1000); for (let i = 0; i < 4; i++) fadeStep(250, performance.now());
+    ok('a token event brings it back', vis.dim === 0, vis.dim);
+    setFade(false);
+    // reduced motion: no floating labels, no window animation
+    setRM(true); const fl = farm.querySelectorAll('.floater').length; feedTokens(1000);
+    layout(true);
+    ok('Reduced motion drops floaters and animation', farm.querySelectorAll('.floater').length === fl && !farm.classList.contains('anim'));
+    setRM(false);
+    // compare: every palette at 320 × 180 next to a work window
+    key('c');
+    const tl = tiles.map((t) => ({ id: t.id, drawn: t.drawn && t.drawn.drawn, hash: look2(t.canvas).hash, w: Math.round(t.mini.getBoundingClientRect().width / (t.tile.getBoundingClientRect().width / 640)) }));
+    ok('Compare shows every palette drawn at 320 px', view2 === 'compare' && tl.length === O.length && tl.every((t) => t.drawn > 3 && t.w === 320) && new Set(tl.map((t) => t.hash)).size === O.length, tl);
+    tiles[2].node.querySelector('.clip').click();
+    ok('clicking a tile picks it and goes back to the desktop', vis.palette === tiles[2].id && view2 === 'desk');
+    setPalette(PICK);
   }
 })();
 </script>

@@ -1,11 +1,12 @@
-// Ant farm prototype: drawing. The soil is one pixel per cell, scaled up crisp. Ants are not drawn into the soil
-// grid: at one pixel per cell an ant is three dots. They are side-view sprites drawn on top in micro pixels
-// (four per cell when there is room, two when the view is small), so each one keeps a head, a thorax, a petiole
-// and a gaster, six walking legs, elbowed antennae and its load in its jaws.
+// Ant farm prototype: drawing. The world is one pixel per cell, scaled up crisp, ants included: each ant is a
+// gaster, body and head in a row with a leg that flickers as it walks and its load one cell ahead of its jaws,
+// and the queen is longer (the first prototype's look, which is the one we keep). A palette recolours the frame
+// (palettes.js). The side-view sprites of round two (micro pixels, six legs, antennae) are still here behind
+// `ants: 'new'`, only for comparing on the sprite page.
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.AntRender = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./palettes.js'));
+  else root.AntRender = factory(root.AntPalette);
+})(typeof self !== 'undefined' ? self : this, function (Pal) {
   'use strict';
 
   // Body shapes facing right, one character per micro pixel. The bottom row of each shape is the row above the
@@ -235,26 +236,59 @@
     return { drawn, m, per, tiny: L.tiny };
   }
 
-  // The whole frame: soil scaled up crisp, then the ants. `buf` is { canvas, ctx, img, px } for the soil grid.
+  // The whole frame: the world one pixel a cell (the ants too, in the first prototype's three-cell style),
+  // recoloured by a palette and scaled up crisp. `buf` is { canvas, ctx, img, px, src, kind } for the grid; it
+  // keeps its own palette mapper, so give every view its own buffer.
   function makeBuffer(sim) {
     const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(sim.W, sim.H) : Object.assign(document.createElement('canvas'), { width: sim.W, height: sim.H });
-    const c = canvas.getContext('2d'), img = c.createImageData(sim.W, sim.H);
-    return { canvas, ctx: c, img, px: new Uint32Array(img.data.buffer) };
+    const c = canvas.getContext('2d'), img = c.createImageData(sim.W, sim.H), n = sim.W * sim.H;
+    return { canvas, ctx: c, img, px: new Uint32Array(img.data.buffer), src: new Uint32Array(n), kind: new Uint8Array(n), mapper: null };
   }
+  // opts: palette (an AntPalette id), calm 0..1, dark (desktop appearance, for palettes that follow it),
+  // dim 0..1 (idle fade toward the palette's backdrop), soft (feathered edges), ants: 'new' for the side-view
+  // sprites of round two (kept only as a hidden option), look (their colouring).
   function drawFarm(ctx, sim, cam, dpr, buf, opts) {
     opts = opts || {};
-    sim.paint(buf.px, { ants: !!opts.oldAnts });
+    const sprites = opts.ants === 'new';
+    const key = (opts.palette || 'original') + '|' + (opts.calm || 0) + '|' + !!opts.dark;
+    if (!buf.mapper || buf.mapperKey !== key) { buf.mapper = Pal.mapper(opts.palette || 'original', { calm: opts.calm, dark: opts.dark }); buf.mapperKey = key; }
+    const ui = buf.mapper.palette.ui;
+    sim.paint(buf.src, { ants: !sprites, kind: buf.kind });
+    buf.mapper.apply(buf.src, buf.kind, buf.px);
     buf.ctx.putImageData(buf.img, 0, 0);
+    const W = ctx.canvas.width, H = ctx.canvas.height, back = opts.backdrop || ui.back;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = opts.backdrop || '#12151d';
-    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    ctx.fillStyle = back;
+    ctx.fillRect(0, 0, W, H);
     ctx.imageSmoothingEnabled = false;
     const s = cam.s * dpr;
     ctx.setTransform(s, 0, 0, s, Math.round(-cam.x * s), Math.round(-cam.y * s));
     ctx.drawImage(buf.canvas, 0, 0);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    if (opts.oldAnts) return { drawn: 0 };
-    return drawAnts(ctx, sim, cam, dpr, { look: opts.look, rim: opts.rim !== false });
+    let res;
+    if (sprites) res = drawAnts(ctx, sim, cam, dpr, { look: opts.look, rim: opts.rim !== false });
+    else {
+      const x1 = cam.x + W / s, y1 = cam.y + H / s;
+      let drawn = 0;
+      for (const a of sim.ants) if (a.x >= cam.x - 1 && a.x <= x1 && a.y >= cam.y - 1 && a.y <= y1) drawn++;
+      res = { drawn, per: 1, original: true };
+    }
+    if (opts.dim > 0) { ctx.globalAlpha = Math.min(1, opts.dim); ctx.fillStyle = back; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+    if (opts.soft) feather(ctx, back, Math.max(4, Math.round(Math.min(W, H) * 0.07)));
+    return res;
+  }
+  // Edges that fade into the window's backdrop instead of ending in a hard line.
+  function feather(ctx, col, d) {
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    const edge = (x0, y0, x1, y1, rx, ry, rw, rh) => {
+      const g = ctx.createLinearGradient(x0, y0, x1, y1);
+      g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g; ctx.fillRect(rx, ry, rw, rh);
+    };
+    ctx.globalAlpha = 0.8;
+    edge(0, 0, d, 0, 0, 0, d, H); edge(W, 0, W - d, 0, W - d, 0, d, H);
+    edge(0, H, 0, H - d, 0, H - d, W, d); edge(0, 0, 0, d, 0, 0, W, d);
+    ctx.globalAlpha = 1;
   }
 
   return { sprite, lod, pose, drawAnts, drawFarm, makeBuffer, LOOKS, SHAPES };
