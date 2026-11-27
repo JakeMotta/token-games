@@ -6,3 +6,6 @@ Planned:
 - Tower defense: tokens queue enemies, a bucket releases them in waves.
 - Ant farm: seeded maps with food scattered through them, the ants tunnel to find it.
 - A website where people find, upload and link their own agent idle games.
+
+Mock-ups:
+- [Tower defense views](prototype/tower-defense-views/): one idle tower defense in eight visual styles, side by side.

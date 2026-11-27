@@ -1,0 +1,29 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sprite sheet</title>
+<!-- Every packed sprite at 3x, grouped by view. Open next to art.js after a --pack. -->
+<style>
+  body { margin: 0; padding: 12px; background: #8a8f98; font: 11px sans-serif; color: #111; }
+  h2 { margin: 8px 0 4px; font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; }
+  figure { margin: 0; background: #c9ccd2; padding: 4px; text-align: center; }
+  img { image-rendering: pixelated; display: block; margin: 0 auto; }
+</style>
+<div id="out"></div>
+<script src="../art.js"></script>
+<script>
+  const groups = {};
+  for (const k of Object.keys(window.ART)) (groups[k.split('/')[0]] ||= []).push(k);
+  const out = document.getElementById('out');
+  for (const [g, keys] of Object.entries(groups)) {
+    out.insertAdjacentHTML('beforeend', '<h2>' + g + '</h2><div class="row" id="g-' + g + '"></div>');
+    for (const k of keys.sort()) {
+      const im = new Image();
+      im.onload = () => { im.width = im.naturalWidth * 2; };
+      im.src = window.ART[k];
+      const f = document.createElement('figure');
+      f.append(im, k.split('/')[1]);
+      document.getElementById('g-' + g).append(f);
+    }
+  }
+</script>
