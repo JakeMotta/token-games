@@ -8,6 +8,7 @@ import type { UsageEvent } from '@token-games/shell/events';
 import { mountShell } from '@token-games/shell/page/shell-page';
 import { MAP_SIZE_IDS, PALETTE_IDS, type Settings } from '../shared/settings';
 import { createSim, readSave, type Sim } from '../sim/sim';
+import { compare, readRuns, recordRun, score, scoreInput, type Run, type Runs } from '../sim/score';
 import { MAP_SIZES, TICK_HZ } from '../sim/world';
 import { fit, lerp, near, clamp, type Cam } from './camera';
 import { classifyWheel, wheelPixels, panBy, pinchFactor, wheelFactor, easeZoom, zoomDone, Inertia, FOLLOW_PAUSE_MS, type ZoomGoal } from './input';
@@ -30,6 +31,7 @@ let main = new View();
 let cam: Cam | null = null, auto = true, snap = true, pausedUntil = 0, zoomGoal: ZoomGoal | null = null;
 let acc = 0, lastT = performance.now(), timer = 0, dim = 0, lastEvt = performance.now(), lastThumbs = 0, lastSave = 0, lastFrame = 0;
 let drag: { x: number; y: number; id: number } | null = null, showStats = false;
+let runs: Runs = readRuns(null), runsRead = false, points = 0, shownOver = false; // the local record of runs, this run's score, and the game over screen
 const inertia = new Inertia();
 const thumbs = new Map<string, { canvas: HTMLCanvasElement; view: View }>();
 const counts = { events: 0, tokens: 0, tasks: 0, frames: 0 };
@@ -94,11 +96,17 @@ function draw(dt: number): void {
 }
 
 const MOOD = { fed: '', hungry: ' · hungry', starving: ' · starving', empty: ' · empty' } as const;
+const num = (n: number): string => Math.round(n).toLocaleString('en-US');
 function status(): void {
   const h = sim.health();
+  points = score(scoreInput(sim)).total;
+  if (sim.over()) {
+    C.setStatus({ count: '0', title: 'ants', lead: '★ ' + num(points), line: 'game over · ★ ' + num(points) + (runs.best ? ' · best ' + num(Math.max(points, runs.best.score)) : '') });
+    return;
+  }
   C.setStatus({
     count: String(h.workers), title: h.workers === 1 ? 'ant' : 'ants', lead: '⚡' + Math.floor(sim.energy),
-    line: fmt(sim.stats.tokens) + ' tok · ' + h.workers + ' ants · ' + h.food + ' food' + MOOD[h.mood] +
+    line: h.workers + ' ants · ' + h.food + ' food' + MOOD[h.mood] + ' · ★ ' + num(points) +
       (feed && (feed.error || !feed.files) ? ' · waiting for Claude Code' : ''),
   });
 }
@@ -177,19 +185,24 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) { cle
 function save(): void {
   if (!ready) return;
   lastSave = performance.now();
-  void C.save(sim.save());
+  void C.save(saveData());
 }
+// The colony and, beside it, the record of past runs: both stay on this computer.
+const saveData = () => ({ ...sim.save(), runs });
 
 async function newFarm(): Promise<void> {
   ready = false;
   const size = S.mapSize, { W, H } = MAP_SIZES[size];
-  const restore = readSave(await C.load(), S.seed, W, H);
+  const raw = await C.load();
+  if (!runsRead) { runs = readRuns(raw && (raw as { runs?: unknown }).runs); runsRead = true; } // later, memory is newest
+  const restore = readSave(raw, S.seed, W, H);
   sim = createSim({ seed: S.seed, size, restore });
   simSize = size;
   main = new View();
   for (const t of thumbs.values()) t.view = new View();
   cam = null; auto = true; zoomGoal = null; inertia.reset();
   followBtn.hidden = true;
+  shownOver = false; overEl.hidden = true;
   ready = true;
   if (!restore) save(); // a new farm replaces the old save straight away
   wake();
@@ -203,9 +216,50 @@ function lifeNews(): void {
     if (e.tick <= seenEvents) continue;
     if (e.type === 'died') C.pulse(e.queen ? 'the old queen died' : e.cause === 'age' ? 'an old ant died' : 'an ant starved', 'task');
     else if (e.type === 'queen') C.pulse('a new queen took over', 'task');
-    else if (e.type === 'founded') C.pulse('a new queen founded the farm', 'task');
   }
   if (evs.length) seenEvents = Math.max(seenEvents, evs[evs.length - 1].tick);
+  if (sim.over() && !shownOver) gameOver();
+}
+
+// ---------- game over: the run's score, the best, the last few runs, and a new farm ----------
+
+const overEl = $('over');
+const thisRun = (): Run => {
+  const s = score(scoreInput(sim));
+  return { score: s.total, started: sim.life.started, ended: sim.life.over, seed: sim.seed, parts: s.parts.filter((p) => p.count > 0) };
+};
+const when = (ms: number): string => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+const signed = (n: number): string => (n > 0 ? '+' : n < 0 ? '−' : '±') + num(Math.abs(n));
+const esc = (t: string): string => t.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
+
+function gameOver(): void {
+  shownOver = true;
+  const run = thisRun(), cmp = compare(runs, run), s = score(scoreInput(sim));
+  runs = recordRun(runs, run);
+  save();
+  $('overScore').textContent = num(run.score);
+  $('overNote').textContent = cmp.isBest ? (cmp.last ? 'A new best on this computer.' : 'Your first run: the best so far.')
+    : 'Best ' + num(cmp.best) + ' · ' + signed(cmp.vsBest) + ' from the best';
+  $('overParts').innerHTML = s.parts.map((p) => `<div class="hrow"><span>${p.count.toLocaleString('en-US')} ${esc(p.label)}</span><span>${num(p.points)}</span></div>`).join('');
+  $('overCompare').innerHTML = [
+    ['This run', num(run.score) + ' · ' + age(run.ended - run.started)],
+    ['Last run', cmp.last ? num(cmp.last.score) + ' (' + signed(cmp.vsLast!) + ')' : '–'],
+    ['Best', num(cmp.best) + (cmp.isBest ? ' ★' : '')],
+  ].map(([k, v]) => `<div class="hrow"><span>${k}</span><span>${v}</span></div>`).join('');
+  $('overRuns').innerHTML = runs.list.slice(0, 5).map((r) =>
+    `<div class="hrow${r === run || (r.started === run.started && r.seed === run.seed) ? ' now' : ''}"><span>${when(r.ended)} · ${age(r.ended - r.started)}</span><span>${num(r.score)}</span></div>`).join('');
+  overEl.hidden = mini();
+  wake(true);
+}
+
+$('overRestart').onclick = restart;
+
+// A fresh farm: a new map and a new colony, at once, without restarting the app. The run just ended stays in the record.
+function restart(): void {
+  if (!sim.over()) return;
+  const seed = crypto.getRandomValues(new Uint32Array(1))[0];
+  overEl.hidden = true;
+  C.set({ seed });
 }
 
 // ---------- events from the feed ----------
@@ -280,13 +334,14 @@ function renderPanel(): void {
 // The colony's health, quietly: how many, how fed, how old.
 function renderHealth(): void {
   const h = sim.health();
-  const mood = h.mood === 'fed' ? 'Fed' : h.mood === 'hungry' ? 'Hungry: the store is low' : h.mood === 'starving' ? `Starving for ${age(h.starvingMs)}: tokens bring food` : 'Empty: the next tokens bring a new queen';
+  const mood = sim.over() ? 'Game over: start a new farm' : h.mood === 'fed' ? 'Fed' : h.mood === 'hungry' ? 'Hungry: the store is low' : h.mood === 'starving' ? `Starving for ${age(h.starvingMs)}: tokens bring food` : 'Empty';
   $('health').innerHTML = [
     ['Ants', h.workers + (h.queen ? ' + queen' : '') + (h.brood ? ` · ${h.brood} brood` : '')],
     ['Food stored', h.food + (h.loose ? ` · ${h.loose} still outside` : '')],
     ['Oldest ant', h.workers ? age(h.oldestMs) : '–'],
     ['Queen', h.queen ? age(h.queenAgeMs) + ' old' : '–'],
     ['State', mood],
+    ['Score', num(points) + (runs.best ? ` · best ${num(Math.max(points, runs.best.score))}` : '')],
   ].map(([k, v]) => `<div class="hrow"><span>${k}</span><span>${v}</span></div>`).join('');
 }
 
@@ -393,13 +448,13 @@ mountShell<Settings>({
   },
   onEvent,
   onSettings(s) { S = s; if (C) applySettings(); },
-  onScale(s) { scale = s; farm.classList.toggle('mini', s === 'mini'); snap = true; if (C) wake(true); },
+  onScale(s) { scale = s; farm.classList.toggle('mini', s === 'mini'); if (shownOver) overEl.hidden = s === 'mini'; snap = true; if (C) wake(true); },
   onDark(d) { dark = d; wake(); },
   onFeed(f) { feed = f; if (C.panelOpen) renderPanel(); },
   onPanel(open) { if (open) { renderPanel(); lastThumbs = 0; } wake(); },
   onFullscreen() { snap = true; wake(); },
   onKey,
-  onHide() { if (ready) { lastSave = performance.now(); C.saveNow(sim.save()); } },
+  onHide() { if (ready) { lastSave = performance.now(); C.saveNow(saveData()); } },
   testHooks,
 });
 
@@ -413,7 +468,7 @@ function testHooks(): Record<string, unknown> {
       w: vw(), h: vh(), auto, cam: cam && { ...cam },
       view: perf.view, drawMs: perf.drawMs, tickMs: perf.tickMs, chunks: sim.chunkStats(), health: sim.health(),
       heapMB: ((performance as unknown as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize || 0) / 1048576,
-      ages: sim.ants.map((a) => a.born),
+      ages: sim.ants.map((a) => a.born), seed: sim.seed,
     }),
     colours: () => {
       const d = g2d.getImageData(0, 0, view.width, view.height).data, seen = new Set<number>();
@@ -425,5 +480,10 @@ function testHooks(): Record<string, unknown> {
     look: (x: number, y: number) => { manual(); cam = keepIn({ x, y, s: cam ? cam.s : 1 }); wake(true); }, // jump the camera far away
     save: () => { save(); return sim.tick; },
     feed: () => $('feedNote').textContent || '',
+    score: () => ({ points, over: sim.over(), shown: shownOver && !overEl.hidden, runs, text: overEl.innerText }),
+    // The smoke test's way to the game over screen without waiting two days: every ant's life ends now. It exists only
+    // in the hidden smoke run (the shell sets window.gameTest there and nowhere else) and takes nothing from the feed.
+    endColony: () => { for (const a of sim.ants) a.dies = sim.now() - 1; sim.brood.length = 0; sim.life.last = Math.min(sim.life.last, sim.now() - 1000); wake(true); },
+    restart: () => $('overRestart').click(),
   };
 }

@@ -46,16 +46,18 @@ export type SimEvent =
   | { type: 'collapse'; tick: number; y: number; x0: number; x1: number }
   | { type: 'died'; tick: number; cause: 'age' | 'hunger'; queen: boolean }
   | { type: 'queen'; tick: number } // a worker took over from an old queen
-  | { type: 'founded'; tick: number }; // a new queen arrived at an empty farm
+  | { type: 'over'; tick: number }; // the last ant is gone: game over (see score.ts)
 export interface Field { dist: Int32Array; x0: number; y0: number; w: number; h: number; ver: number; at: number; sources: () => number[] }
 export interface PaintOptions { kind?: Uint8Array; ants?: boolean }
 export interface Box { x0: number; y0: number; x1: number; y1: number }
 export interface Stats {
   dug: number; stored: number; eaten: number; laid: number; born: number; collapses: number; crumbsSpawned: number; tokens: number; tasks: number;
   died: number; starved: number;
+  collected: number; deepest: number; oldestMs: number; // for the score: crumbs gathered, rows dug below ground, longest life
 }
 export interface Counts { air: number; dirt: number; rock: number; loose: number; food: number; crumb: number; carriedGrain: number; carriedFood: number }
-export interface Life { last: number; hunger: number; starve: number; starvingSince: number; lastTokens: number }
+// started: when this run's colony was founded (wall ms; 0 for a farm without one). over: when its last ant died (0 = alive).
+export interface Life { last: number; hunger: number; starve: number; starvingSince: number; lastTokens: number; started: number; over: number }
 export type Mood = 'fed' | 'hungry' | 'starving' | 'empty';
 export interface Health { workers: number; queen: boolean; brood: number; food: number; loose: number; oldestMs: number; queenAgeMs: number; mood: Mood; starvingMs: number }
 export type Put = (x: number, y: number, c: number, kind: number, alpha: number) => void;
@@ -95,6 +97,7 @@ export interface Sim {
   chunkStats(): ChunkStats;
   stored(): number;
   health(): Health;
+  over(): boolean; // every ant and every egg is gone: the run has ended and tokens no longer reach this farm
   count(b?: Box): Counts;
   hash(): number;
   paintChunk(cx: number, cy: number, px: Uint32Array, kind: Uint8Array): void;
@@ -257,11 +260,11 @@ export function createSim(opts: SimOptions = {}): Sim {
     royal: null, broodRoom: null, view: null,
     box: { x0: ex - 1, y0: surf[ex] - 1, x1: ex + 1, y1: surf[ex] + 1 }, // everything the colony has touched
     sandAwake: false, moves: 0, falling: 0, crumbsOut: 0,
-    stats: { dug: 0, stored: 0, eaten: 0, laid: 0, born: 0, collapses: 0, crumbsSpawned: 0, tokens: 0, tasks: 0, died: 0, starved: 0 },
+    stats: { dug: 0, stored: 0, eaten: 0, laid: 0, born: 0, collapses: 0, crumbsSpawned: 0, tokens: 0, tasks: 0, died: 0, starved: 0, collected: 0, deepest: 0, oldestMs: 0 },
     fields: new Map<string, Field>(),
     nextId: 1,
     meter: new TokenMeter(),
-    life: { last: now(), hunger: 0, starve: 0, starvingSince: 0, lastTokens: 0 },
+    life: { last: now(), hunger: 0, starve: 0, starvingSince: 0, lastTokens: 0, started: opts.colony === false ? 0 : now(), over: 0 },
     chunks: store, now,
   } as unknown as Sim;
 
@@ -702,7 +705,7 @@ export function createSim(opts: SimOptions = {}): Sim {
       if (sim.crumbsOut <= 0) { release(a); return; }
       const r = follow(a, field('crumbs', crumbSources));
       if (r === 'arrived') {
-        for (const [dx, dy] of D8) { const n = k + dx + dy * R; if (T(n) === CRUMB && !isStored(n & XM, n >> XB)) { a.carry = 'food'; a.carryCol = C(n); setCell(n, AIR); a.busy = DIG_TICKS; sim.crumbsOut--; break; } }
+        for (const [dx, dy] of D8) { const n = k + dx + dy * R; if (T(n) === CRUMB && !isStored(n & XM, n >> XB)) { a.carry = 'food'; a.carryCol = C(n); setCell(n, AIR); a.busy = DIG_TICKS; sim.crumbsOut--; sim.stats.collected++; break; } }
         release(a);
       } else if (r === 'stuck') {
         // no way to the crumbs from here: do other work for a while instead of trying again every tick
@@ -735,6 +738,8 @@ export function createSim(opts: SimOptions = {}): Sim {
         const cx = c & XM, cy = c >> XB, t = T(c);
         a.carry = t === FOOD || t === CRUMB ? 'food' : 'grain'; a.carryCol = C(c);
         a.hx = Math.sign(cx - a.x); a.hy = Math.sign(cy - a.y);
+        if (t === FOOD) sim.stats.collected++;
+        if (p.kind !== 'clear') sim.stats.deepest = Math.max(sim.stats.deepest, cy - surf[cx]);
         setCell(c, AIR); sim.energy -= 1; sim.stats.dug++; workDone++; a.busy = DIG_TICKS;
         release(a);
         return;
@@ -824,6 +829,7 @@ export function createSim(opts: SimOptions = {}): Sim {
     if (a.carry === 'brood' && a.brood) { a.brood.carried = false; a.brood.nurse = 0; }
     a.carry = null; a.brood = null;
     if (cause === 'age') sim.stats.died++; else sim.stats.starved++;
+    sim.stats.oldestMs = Math.max(sim.stats.oldestMs, at - a.born);
     event({ type: 'died', tick: sim.tick, cause, queen: a.role === 'queen' });
     if (a.role !== 'queen') return;
     // the youngest worker takes over, and heads for the royal chamber
@@ -843,7 +849,12 @@ export function createSim(opts: SimOptions = {}): Sim {
     const L = sim.life, dt = to - from;
     for (const a of sim.ants) if (!a.dying && a.dies <= to) die(a, 'age', to);
     const alive = sim.ants.filter((a) => !a.dying).length;
-    if (!alive) { L.hunger = 0; L.starve = 0; L.starvingSince = 0; return; }
+    if (!alive) {
+      L.hunger = 0; L.starve = 0; L.starvingSince = 0;
+      // no ant left and no egg to hatch: the run is over. No new queen comes; the player starts a new farm.
+      if (L.started && !L.over && !sim.brood.length) { L.over = to; event({ type: 'over', tick: sim.tick }); }
+      return;
+    }
     L.hunger += (alive * dt) / ANT_MEAL_MS;
     while (L.hunger >= 1 && eatStored()) L.hunger -= 1;
     if (L.hunger < 1) { L.starvingSince = 0; L.starve = 0; return; }
@@ -1128,17 +1139,14 @@ export function createSim(opts: SimOptions = {}): Sim {
 
   // Agent activity in: the only source of energy and food. See docs/ant-farm-design.md, "How tokens feed the farm".
   sim.feed = function (ev) {
-    if (!ev) return;
+    if (!ev || sim.life.over) return; // a finished run takes nothing more
     if (ev.type === 'tokens') {
       // Weighted (cache reads count a tenth) and softly capped per hour of event time: see tokens.ts.
       const c = sim.meter.add(ev, ev.ts);
       sim.stats.tokens += c.weighted;
       sim.energy = Math.min(MAX_ENERGY, sim.energy + c.energy);
       sim.crumbQueue = Math.min(MAX_CRUMB_QUEUE, sim.crumbQueue + c.crumbs);
-      if (c.weighted > 0) {
-        sim.life.lastTokens = now(); // food is on its way: nobody starves while it comes
-        if (!sim.ants.some((a) => !a.dying)) { found(2); event({ type: 'founded', tick: sim.tick }); }
-      }
+      if (c.weighted > 0) sim.life.lastTokens = now(); // food is on its way: nobody starves while it comes
     } else if (ev.type === 'task_done') {
       sim.stats.tasks++;
       sim.galleryQueue.push({ w: Math.max(6, Math.min(40, ev.width || ri(10, 18))) });
@@ -1169,6 +1177,7 @@ export function createSim(opts: SimOptions = {}): Sim {
   };
   sim.chunkStats = () => store.stats();
 
+  sim.over = () => sim.life.over > 0;
   sim.health = function (): Health {
     const t = now(), live = sim.ants.filter((a) => !a.dying), q = live.find((a) => a.role === 'queen');
     const workers = live.filter((a) => a.role === 'worker');
@@ -1366,6 +1375,8 @@ export function createSim(opts: SimOptions = {}): Sim {
       sim.ants.push(a); occAdd(idx(a.x, a.y), 1);
     }
     sim.brood = R0.brood.map((e) => ({ ...e }));
+    // saves from before runs had a start: the run began when the first queen did (or now, for a farm without one)
+    if (!R0.life.started) sim.life.started = Math.min(now(), ...sim.ants.filter((a) => a.role === 'queen').map((a) => a.born));
     sim.version = 1;
   }
 

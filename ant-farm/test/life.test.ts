@@ -1,5 +1,6 @@
 // The colony's life by the wall clock, with a fake clock: old age, a new queen, food-bound breeding, slow starvation
-// with a long grace, recovery when tokens flow again, and a farm that ages while the app is closed.
+// with a long grace, recovery when tokens flow again, game over when the last ant dies, and a farm that ages while the
+// app is closed.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSim, readSave, type Counts, type Sim } from '../src/sim/sim';
@@ -95,7 +96,7 @@ test('without tokens the colony starves slowly, keeps its last few for the grace
   assert.equal(sim.health().mood, 'empty', 'after the grace, the farm empties');
 });
 
-test('tokens bring a starving colony back, and refound an empty one', () => {
+test('tokens bring a starving colony back; an empty farm is game over', () => {
   const f = farm(), { sim } = f;
   for (const a of sim.ants) a.dies = Infinity;
   pass(f, 24 * HOUR);
@@ -109,7 +110,7 @@ test('tokens bring a starving colony back, and refound an empty one', () => {
   assert.equal(sim.life.starvingSince, 0, 'stored food ends the starving');
   assert.notEqual(sim.health().mood, 'starving');
 
-  // an empty farm: the next tokens bring a new queen
+  // an empty farm: the run is over, and tokens no longer bring a new queen (the player starts a new farm)
   const g = farm(), s2 = g.sim;
   for (const a of workers(s2)) a.dies = g.clock.t + MIN;
   pass(g, 10 * MIN, 10 * MIN, true);
@@ -117,9 +118,9 @@ test('tokens bring a starving colony back, and refound an empty one', () => {
   pass(g, 10 * MIN, 10 * MIN, true);
   s2.run(DYING_TICKS + 1);
   assert.equal(s2.health().mood, 'empty');
+  assert.ok(s2.over(), 'game over');
   s2.feed(tokens(5000, g.clock.t));
-  assert.ok(queenOf(s2) && workers(s2).length > 0, 'a new queen founded the farm');
-  assert.ok(s2.events.some((e) => e.type === 'founded'));
+  assert.ok(!queenOf(s2) && workers(s2).length === 0, 'no new queen');
 });
 
 test('there is no idle regen: without tokens, energy and food never grow', () => {
