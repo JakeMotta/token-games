@@ -218,20 +218,161 @@
     return pal.body;
   }
 
-  registerStyle('gochi', {
+  // The ramp a hit uses: eggs have shell, markings and the inside; creatures their body ramps.
+  function rampOf(scene, pal, h) {
+    if (scene.kind === 'egg') return h.inner ? pal.inner : eggMark(scene, h) ? pal.mark : pal.egg;
+    return bodyRamp(scene, pal, h);
+  }
+  const glossOf = (scene) => (scene.kind === 'egg' ? scene.look.gloss : scene.ph.gloss);
+  // ro.shine (0..1, default 1) scales the highlights: 1 is the video's look, 0 no glint and no top light band.
+  const shineOf = (ro) => (ro && ro.shine != null ? Math.max(0, Math.min(1, ro.shine)) : 1);
+  function gochiBand(scene, h, ro, L) {
+    const shine = shineOf(ro);
+    let band = L < 0.18 ? 1 : L < 0.45 ? 2 : L < 0.8 + (1 - shine) * 0.4 ? 3 : 4;
+    const gloss = glossOf(scene);
+    if (gloss > 0.25 && shine > 0 && h.spec > (shine === 1 ? 0.985 - gloss * 0.04 : 1 - (0.015 + gloss * 0.04) * shine)) band = 5;
+    return band;
+  }
+  // 4x4 ordered (Bayer) dither threshold for a pixel, 0..1.
+  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  const bayer = (x, y) => (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16;
+  const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+
+  // Finished looks (the app's style switcher), in order. Each is the same genome, body and light; only the drawing
+  // changes. Fields: label, shade(scene, pal, hit, opts) -> { rgb, ink }, inkEdges, inkWidth (outline pixels),
+  // decals (draw eyes, mouth, blush, cracks), pixel (render at 1/k size and blow up), post(res, scene, pal, opts).
+  const looks = [];
+  function registerLook(name, s) { registerStyle(name, Object.assign({ decals: true, inkEdges: true }, s)); looks.push(name); }
+
+  registerLook('gochi', {
+    label: 'Original',
     // Banded light: four tones from a cool shadow to a warm light, plus a glint where the surface is glossy.
-    shade(scene, pal, h) {
-      let rp;
-      if (scene.kind === 'egg') rp = h.inner ? pal.inner : eggMark(scene, h) ? pal.mark : pal.egg;
-      else rp = bodyRamp(scene, pal, h);
-      const L = h.light;
-      let band = L < 0.18 ? 1 : L < 0.45 ? 2 : L < 0.8 ? 3 : 4;
-      const gloss = scene.kind === 'egg' ? scene.look.gloss : scene.ph.gloss;
-      if (gloss > 0.25 && h.spec > 0.985 - gloss * 0.04) band = 5;
-      return { rgb: rp[band], ink: rp[0] };
+    shade(scene, pal, h, ro) {
+      const rp = rampOf(scene, pal, h);
+      return { rgb: rp[gochiBand(scene, h, ro, h.light)], ink: rp[0] };
     },
-    inkEdges: true,
   });
+  registerLook('matte', {
+    label: 'Matte',
+    // Flat paint: a body colour and one soft shadow, no glint, a softer outline. Shine only adds a faint top light.
+    shade(scene, pal, h, ro) {
+      const rp = rampOf(scene, pal, h), L = h.light;
+      const rgb = L < 0.3 ? mix(rp[2], rp[3], 0.35) : L < 0.95 ? rp[3] : mix(rp[3], rp[4], 0.4 * shineOf(ro));
+      return { rgb, ink: rp[1] };
+    },
+  });
+  registerLook('cel', {
+    label: 'Cel',
+    // Cartoon cel: two hard tones split at the terminator, a bold outline, one small hard highlight.
+    shade(scene, pal, h, ro) {
+      const rp = rampOf(scene, pal, h);
+      let rgb = h.light < 0.42 ? rp[2] : rp[4];
+      if (shineOf(ro) > 0.2 && h.spec > 1 - 0.008 * shineOf(ro) * (0.5 + glossOf(scene))) rgb = [255, 255, 250];
+      return { rgb, ink: mix(rp[0], [20, 16, 24], 0.5) };
+    },
+    inkWidth: 2,
+  });
+  registerLook('pixel', {
+    label: 'Pixel',
+    // Pixel art: drawn at half size (a 75x60 sprite in the overlay), blown up with hard edges; four tones of the
+    // creature's own ramp blended with an ordered dither; a 1px outline. opts.palette swaps in a fixed palette.
+    pixel: 2,
+    shade(scene, pal, h, ro) {
+      const rp = rampOf(scene, pal, h);
+      return { rgb: rp[gochiBand(scene, h, ro, h.light + (bayer(h.x, h.y) - 0.5) * 0.22)], ink: rp[0] };
+    },
+    post: (res, scene, pal, ro) => quantise(res, ro && ro.palette),
+  });
+  registerLook('chunky', {
+    label: 'Chunky',
+    // Chunky pixels: quarter size, three flat tones, no dither, a 1px outline.
+    pixel: 4,
+    shade(scene, pal, h) {
+      const rp = rampOf(scene, pal, h), L = h.light;
+      return { rgb: L < 0.3 ? rp[1] : L < 0.75 ? rp[3] : rp[4], ink: rp[0] };
+    },
+    post: (res, scene, pal, ro) => quantise(res, ro && ro.palette),
+  });
+  registerLook('ink', {
+    label: 'Ink',
+    // Pen and ink: paper with a hint of the body colour, an ink outline, hatching in the shadows (crossed in the
+    // deepest), stippled markings.
+    shade(scene, pal, h) {
+      const rp = rampOf(scene, pal, h), L = h.light, x = h.x, y = h.y;
+      const inkC = mix(rp[0], [24, 20, 28], 0.6), paper = mix([250, 246, 234], rp[4], 0.22);
+      let on = false;
+      if (L < 0.2) on = (x + y) % 3 === 0 || (x - y + 300) % 3 === 0;
+      else if (L < 0.45) on = (x + y) % 3 === 0;
+      else if (L < 0.62) on = (x + y) % 6 === 0;
+      if (!on && scene.kind !== 'egg' && rp === pal.mark) on = (x * 7 + y * 13) % 5 === 0;
+      if (!on && scene.kind === 'egg' && rp === pal.mark) on = (x + y * 2) % 3 === 0;
+      return { rgb: on ? inkC : paper, ink: inkC };
+    },
+  });
+  registerLook('sticker', {
+    label: 'Sticker',
+    // Paper cut-out sticker: flat colour with one shadow tone, no ink line, a white die-cut border, a drop shadow and
+    // a little paper grain.
+    shade(scene, pal, h) {
+      const rp = rampOf(scene, pal, h);
+      const g = 1 + (vnoise(h.x * 1.7, h.y * 1.7, 3.3) - 0.5) * 0.08;
+      return { rgb: (h.light < 0.32 ? rp[2] : rp[3]).map((c) => Math.min(255, c * g)), ink: rp[2] };
+    },
+    inkEdges: false,
+    post: stickerBorder,
+  });
+
+  // Fixed palettes for the pixel looks ('own' keeps the creature's colours).
+  const PALETTES = {
+    gameboy: [[15, 56, 15], [48, 98, 48], [139, 172, 15], [155, 188, 15]],
+    pico8: [[0, 0, 0], [29, 43, 83], [126, 37, 83], [0, 135, 81], [171, 82, 54], [95, 87, 79], [194, 195, 199], [255, 241, 232],
+      [255, 0, 77], [255, 163, 0], [255, 236, 39], [0, 228, 54], [41, 173, 255], [131, 118, 156], [255, 119, 168], [255, 204, 170]],
+    earth: [[38, 28, 26], [92, 58, 42], [150, 92, 56], [196, 138, 78], [226, 196, 140], [118, 124, 70], [72, 90, 66], [240, 228, 200]],
+  };
+  function quantise(res, name) {
+    const P = PALETTES[name];
+    if (!P) return;
+    const luma = (c) => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+    // Game Boy: four greens by brightness, stretched over this sprite's own darkest to lightest pixel.
+    const byLuma = name === 'gameboy';
+    let lo = 255, hi = 0;
+    if (byLuma) for (let i = 0; i < res.w * res.h; i++) if (res.mask[i] === 1) { const l = luma([res.rgba[i * 4], res.rgba[i * 4 + 1], res.rgba[i * 4 + 2]]); lo = Math.min(lo, l); hi = Math.max(hi, l); }
+    for (let i = 0; i < res.w * res.h; i++) {
+      if (res.mask[i] !== 1) continue;
+      const c = [res.rgba[i * 4], res.rgba[i * 4 + 1], res.rgba[i * 4 + 2]];
+      let best = P[0];
+      if (byLuma) best = P[Math.max(0, Math.min(3, Math.floor(((luma(c) - lo) / Math.max(1, hi - lo)) * 3.999)))];
+      else {
+        let bd = Infinity;
+        for (const q of P) { const d = 2 * (c[0] - q[0]) ** 2 + 4 * (c[1] - q[1]) ** 2 + 3 * (c[2] - q[2]) ** 2; if (d < bd) { bd = d; best = q; } }
+      }
+      res.rgba[i * 4] = best[0]; res.rgba[i * 4 + 1] = best[1]; res.rgba[i * 4 + 2] = best[2];
+    }
+  }
+  function stickerBorder(res) {
+    const W = res.w, H = res.h, r = Math.max(1, Math.round(Math.min(W, H) / 48));
+    const body = res.mask.map((m) => (m === 1 ? 1 : 0));
+    const near = (x, y, rad) => {
+      for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++) {
+        if (dx * dx + dy * dy > rad * rad + rad) continue;
+        const xx = x + dx, yy = y + dy;
+        if (xx >= 0 && yy >= 0 && xx < W && yy < H && body[yy * W + xx]) return true;
+      }
+      return false;
+    };
+    const border = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (!body[y * W + x] && near(x, y, r)) border[y * W + x] = 1;
+    // drop shadow down and right of the cut-out, then the white border on top
+    for (let y = H - 1; y >= 0; y--) for (let x = W - 1; x >= 0; x--) {
+      const i = y * W + x, sx = x - r, sy = y - r;
+      if (body[i] || border[i] || sx < 0 || sy < 0) continue;
+      const j = sy * W + sx;
+      if (body[j] || border[j]) { res.rgba[i * 4] = 40; res.rgba[i * 4 + 1] = 30; res.rgba[i * 4 + 2] = 30; res.rgba[i * 4 + 3] = 70; res.mask[i] = 2; }
+    }
+    for (let i = 0; i < W * H; i++) if (border[i]) {
+      res.rgba[i * 4] = 252; res.rgba[i * 4 + 1] = 250; res.rgba[i * 4 + 2] = 244; res.rgba[i * 4 + 3] = 255; res.mask[i] = 1;
+    }
+  }
   registerStyle('inside', { shade: () => ({ rgb: [42, 36, 46], ink: [42, 36, 46] }), inkEdges: false });
   registerStyle('flat', { shade: (scene, pal) => ({ rgb: scene.kind === 'egg' ? pal.egg[3] : [128, 78, 168], ink: [128, 78, 168] }), inkEdges: false });
   registerStyle('pieces', {
@@ -262,11 +403,13 @@
 
   // ---------- the renderer ----------
   // scene: from CreatureBody.build/buildEgg (plus .ph for creatures). cam: { w, h, px, yaw, pitch, center }.
-  // opts: { style, shadow: true, background: null | [r,g,b] }. Returns { w, h, rgba, depth, mask, stats }.
+  // opts: { style, shine: 0..1, palette: 'own' | 'gameboy' | 'pico8' | 'earth', shadow: true }.
+  // Returns { w, h, rgba, depth, mask, info, cam, stats }.
   function render(scene, camIn, opts) {
     opts = opts || {};
-    const cam = camera(camIn);
     const style = styles[opts.style || 'gochi'] || styles.gochi;
+    if (style.pixel > 1 && !opts.lowRes) return renderPixel(scene, camIn, opts, style.pixel);
+    const cam = camera(camIn);
     const W = cam.w, H = cam.h, N = W * H;
     const rgba = new Uint8ClampedArray(N * 4), depth = new Float32Array(N).fill(Infinity), mask = new Uint8Array(N);
     const ink = new Array(N), info = new Array(N);
@@ -336,25 +479,32 @@
       dist(q, px, py, pz, fc);
       const lam = B.v.dot(nrm, Lw);
       const h = { q, fc: { along: fc.along, up: fc.up, side: fc.side }, inner: fc.inner, n: nrm, p: [px, py, pz],
-        light: lam * 0.62 + 0.38 * Math.max(0, nrm[1]) + 0.12, spec: B.v.dot(nrm, Hv) };
-      const c = style.shade(scene, pal, h);
+        light: lam * 0.62 + 0.38 * Math.max(0, nrm[1]) + 0.12, spec: B.v.dot(nrm, Hv), x, y };
+      const c = style.shade(scene, pal, h, opts);
       rgba[i * 4] = c.rgb[0]; rgba[i * 4 + 1] = c.rgb[1]; rgba[i * 4 + 2] = c.rgb[2]; rgba[i * 4 + 3] = 255;
       depth[i] = t - D; mask[i] = 1; ink[i] = c.ink; info[i] = h;
     }
 
     // Ink: outline pixels on the silhouette, and where a piece passes in front of another one far behind it.
+    // inkWidth 2 thickens the silhouette line (the inner lines stay one pixel).
     if (style.inkEdges) {
       const thr = Math.max(cam.px * 5, 0.07 * (scene.scale || 1));
       const out = new Uint8Array(N);
+      const near = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+      const far = style.inkWidth > 1 ? [[2, 0], [-2, 0], [0, 2], [0, -2], [1, 1], [-1, 1], [1, -1], [-1, -1]] : [];
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
         const i = y * W + x;
         if (!mask[i]) continue;
         let edge = false;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        for (const [dx, dy] of near) {
           const xx = x + dx, yy = y + dy;
           if (xx < 0 || yy < 0 || xx >= W || yy >= H) { edge = true; break; }
           const j = yy * W + xx;
           if (!mask[j] || depth[j] - depth[i] > thr) { edge = true; break; }
+        }
+        if (!edge) for (const [dx, dy] of far) {
+          const xx = x + dx, yy = y + dy;
+          if (xx >= 0 && yy >= 0 && xx < W && yy < H && !mask[yy * W + xx]) { edge = true; break; }
         }
         if (edge) out[i] = 1;
       }
@@ -379,8 +529,30 @@
     }
 
     const res = { w: W, h: H, rgba, depth, mask, info, cam, stats: { steps, hits } };
-    if (opts.style == null || opts.style === 'gochi') drawDecals(scene, list, res);
+    if (style.decals) drawDecals(scene, list, res);
+    if (style.post) style.post(res, scene, pal, opts);
     return res;
+  }
+
+  // Pixel looks: render at 1/k size with the same centre and k times the world size per pixel, then blow it up with
+  // hard edges, so the sprite keeps its size and place but is made of k x k blocks (outline and eyes included).
+  function renderPixel(scene, camIn, opts, k) {
+    const full = camera(camIn), W = full.w, H = full.h;
+    const lw = Math.ceil(W / k), lh = Math.ceil(H / k);
+    const low = render(scene, Object.assign({}, camIn, { w: lw, h: lh, px: full.px * k }), Object.assign({}, opts, { lowRes: true }));
+    const N = W * H, rgba = new Uint8ClampedArray(N * 4), depth = new Float32Array(N).fill(Infinity), mask = new Uint8Array(N), info = new Array(N);
+    for (let y = 0; y < H; y++) {
+      const jy = Math.floor((y + 0.5 - H / 2) / k + lh / 2);
+      if (jy < 0 || jy >= lh) continue;
+      for (let x = 0; x < W; x++) {
+        const jx = Math.floor((x + 0.5 - W / 2) / k + lw / 2);
+        if (jx < 0 || jx >= lw) continue;
+        const i = y * W + x, j = jy * lw + jx;
+        rgba[i * 4] = low.rgba[j * 4]; rgba[i * 4 + 1] = low.rgba[j * 4 + 1]; rgba[i * 4 + 2] = low.rgba[j * 4 + 2]; rgba[i * 4 + 3] = low.rgba[j * 4 + 3];
+        depth[i] = low.depth[j]; mask[i] = low.mask[j]; info[i] = low.info[j];
+      }
+    }
+    return { w: W, h: H, rgba, depth, mask, info, cam: full, stats: low.stats, low };
   }
 
   // ---------- face marks ----------
@@ -614,7 +786,7 @@
     ctx2d.drawImage(off, x, y, res.w * size, res.h * size);
   }
 
-  const api = { render, camera, project, styles, registerStyle, palette, ramp, hsl, vnoise, smin, field, prep, dist, withShadow, blit, creatureScene, eggScene, frameCamera };
+  const api = { render, camera, project, styles, looks, registerStyle, registerLook, PALETTES, palette, ramp, hsl, vnoise, smin, field, prep, dist, withShadow, blit, creatureScene, eggScene, frameCamera };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.CreatureRender = api;
 })(typeof window !== 'undefined' ? window : globalThis);

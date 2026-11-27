@@ -1,5 +1,6 @@
 // Renderer and motion: the same creature draws the same pixels, every level draws differently, bodies and eggs are
-// non-empty with an ink outline, and the walker keeps planted feet and only flies with big enough wings.
+// non-empty with an ink outline, the walker keeps planted feet and only flies with big enough wings, and every look (the
+// style switcher) draws creature and egg without touching the genome.
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -79,6 +80,61 @@ test('walking: feet stay planted, the walker stays inside its strip', () => {
   }
   assert.ok(minX >= -1 - 1e-9 && maxX <= 1 + 1e-9);
   assert.ok(maxX - minX > 0.05, 'it moved');
+});
+
+// ---------- looks (the style switcher) ----------
+const fitCam = (sc) => R.frameCamera(sc, 64, 64, { fit: true });
+const colours = (res) => { const s = new Set(); for (let i = 0; i < res.mask.length; i++) if (res.mask[i] === 1) s.add(res.rgba.subarray(i * 4, i * 4 + 3).join()); return s; };
+const brightest = (res) => { let b = 0; for (let i = 0; i < res.mask.length; i++) if (res.mask[i] === 1) b = Math.max(b, res.rgba[i * 4] + res.rgba[i * 4 + 1] + res.rgba[i * 4 + 2]); return b; };
+
+test('every look draws the creature, its egg and the hatching, each look differently', () => {
+  assert.ok(R.looks.length >= 6);
+  const c = G.randomCreature('looks');
+  const ph = G.express(c, { level: 80 }), look = G.eggLook(c);
+  const seen = new Set();
+  for (const style of R.looks) {
+    assert.ok(R.styles[style].label, style + ' has a label');
+    const res = draw(ph, { style });
+    assert.ok(count(res, 1) > 300, style);
+    seen.add(hash(res.rgba));
+    for (const pose of [{}, { crack: 1 }, { crack: 1, open: 1 }]) {
+      const sc = R.eggScene(look, pose);
+      assert.ok(count(R.render(sc, fitCam(sc), { style }), 1) > 200, style + ' egg ' + JSON.stringify(pose));
+    }
+  }
+  assert.equal(seen.size, R.looks.length);
+});
+
+test('a look is only drawing: the genome and body stay the same', () => {
+  const c = G.randomCreature('same');
+  const fp = G.fingerprint(c), ph = JSON.stringify(G.express(c, { level: 50 }));
+  for (const style of R.looks) for (const palette of [null, 'gameboy']) draw(G.express(c, { level: 50 }), { style, palette, shine: 0.3 });
+  assert.equal(G.fingerprint(c), fp);
+  assert.equal(JSON.stringify(G.express(c, { level: 50 })), ph);
+});
+
+test('the default look is the original at full shine', () => {
+  const ph = G.express(G.randomCreature('dflt'), { level: 60 });
+  assert.equal(hash(draw(ph).rgba), hash(draw(ph, { style: 'gochi', shine: 1 }).rgba));
+});
+
+test('pixel palettes limit the colours: Game Boy is four greens', () => {
+  const ph = G.express(G.randomCreature('pal'), { level: 90 });
+  const gb = colours(draw(ph, { style: 'pixel', palette: 'gameboy' }));
+  assert.ok(gb.size <= 4, 'gameboy ' + gb.size);
+  const allowed = new Set(R.PALETTES.gameboy.map((p) => p.join()));
+  for (const k of gb) assert.ok(allowed.has(k), k);
+  for (const name of ['pico8', 'earth']) {
+    const set = colours(draw(ph, { style: 'pixel', palette: name }));
+    for (const k of set) assert.ok(R.PALETTES[name].some((p) => p.join() === k), name + ' ' + k);
+  }
+});
+
+test('the shine slider takes the glint away', () => {
+  const ph = G.express(G.randomCreature('shiny'), { level: 100, overrides: { gloss: 1 } });
+  const hi = brightest(draw(ph, { shine: 1 })), lo = brightest(draw(ph, { shine: 0 }));
+  assert.ok(lo < hi, `shine 0 brightest ${lo} < shine 1 brightest ${hi}`);
+  for (const style of ['matte', 'cel']) assert.ok(brightest(draw(ph, { style, shine: 0 })) <= brightest(draw(ph, { style, shine: 1 })), style);
 });
 
 test('wings: only big enough wings lift the body', () => {

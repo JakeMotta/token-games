@@ -112,6 +112,7 @@
         <button id="loadSeed">Load seed</button>
         <button id="walk" class="on">Walk</button>
         <button id="repair" class="on">Repair pass</button>
+        <button id="debug">Walk debug</button>
       </div>
       <div class="row">
         <span class="note" style="margin:0">Face:</span>
@@ -121,6 +122,19 @@
         <span class="note" style="margin:0">View:</span>
         <div class="steps" id="views"></div>
         <button id="askPixels">Ask every pixel ▶</button>
+      </div>
+      <div class="row">
+        <span class="note" style="margin:0">Style:</span>
+        <div class="steps" id="looks"></div>
+      </div>
+      <div class="row" id="paletteRow">
+        <span class="note" style="margin:0">Palette:</span>
+        <div class="steps" id="palettes"></div>
+      </div>
+      <div class="lvl">
+        <span>Shine</span>
+        <input id="shine" type="range" min="0" max="1" step="0.05" value="1" aria-label="Shine">
+        <b id="shineVal">1.00</b>
       </div>
       <div class="row">
         <span class="note" style="margin:0">Backdrop:</span>

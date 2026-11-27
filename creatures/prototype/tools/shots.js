@@ -25,7 +25,7 @@ for (const [name, query] of Object.entries(jobs)) {
   const q = new URLSearchParams(query);
   const size = (q.get('size') || '1280x900').replace('x', ',');
   const dark = q.get('theme') === 'dark';
-  q.delete('size'); q.set('pause', '1');
+  q.delete('size'); if (!q.has('pause')) q.set('pause', '1'); // pause=0 keeps it walking (the debug shot)
   const page = 'file://' + path.join(__dirname, '..', q.get('page') || 'index.html') + '?' + q.toString();
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'creatures-shot-'));
   const args = ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--window-size=' + size,

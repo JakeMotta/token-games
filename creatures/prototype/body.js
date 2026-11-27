@@ -27,6 +27,8 @@
     rotY: (p, o, ang) => { const c = Math.cos(ang), s = Math.sin(ang), x = p[0] - o[0], z = p[2] - o[2]; return [o[0] + c * x + s * z, p[1], o[2] - s * x + c * z]; },
     // rotate p around the x axis through o
     rotX: (p, o, ang) => { const c = Math.cos(ang), s = Math.sin(ang), y = p[1] - o[1], z = p[2] - o[2]; return [p[0], o[1] + c * y - s * z, o[2] + s * y + c * z]; },
+    // rotate p around the z axis through o (positive tips +x up)
+    rotZ: (p, o, ang) => { const c = Math.cos(ang), s = Math.sin(ang), x = p[0] - o[0], y = p[1] - o[1]; return [o[0] + c * x - s * y, o[1] + s * x + c * y, p[2]]; },
   };
 
   // A frame for a segment: axis along it, u its "up" (in the plane of the body), side across.
@@ -104,16 +106,29 @@
       w: rings[i].w + (rings[j].w - rings[i].w) * u, h: rings[i].h + (rings[j].h - rings[i].h) * u };
   }
 
-  // Two-bone leg from hip to foot; the knee bends toward `bend` (a unit vector).
+  // Two-bone leg from hip to foot (two equal bones, len in all); the knee bends toward `bend` (a unit vector).
+  // `stretch` is hip-to-foot over the leg length: above 1 the foot can't be reached and `end` stops short of it.
   function legIK(hip, foot, len, bend) {
-    const d = v.sub(foot, hip), dist = Math.min(v.len(d), len * 0.999);
+    const d = v.sub(foot, hip), stretch = v.len(d) / len, dist = Math.min(v.len(d), len * 0.999);
     const dir = v.norm(d), mid = v.add(hip, v.mul(dir, dist / 2));
     const h = Math.sqrt(Math.max(0, (len / 2) ** 2 - (dist / 2) ** 2));
     // bend direction made perpendicular to the leg
     const b = v.norm(v.sub(bend, v.mul(dir, v.dot(bend, dir))));
     const knee = v.add(mid, v.mul(b, h));
     const end = v.add(hip, v.mul(dir, dist));
-    return { knee, end };
+    return { knee, end, stretch };
+  }
+
+  // The walk moves the body on its legs: bob (up), sway (sideways), pitch (nose up) and roll (lean right), about the
+  // middle of the torso. Feet stay where the walker put them; only hips, torso, head, tail and wings move.
+  function bodyTransform(L, body) {
+    body = body || {};
+    const bob = body.bob || 0, sway = body.sway || 0, pitch = body.pitch || 0, roll = body.roll || 0;
+    if (!bob && !sway && !pitch && !roll) return null;
+    const o = L.tsp.pts[Math.floor(L.tsp.pts.length / 2)];
+    const R = (d) => v.rotX(v.rotZ(d, [0, 0, 0], pitch), [0, 0, 0], roll);
+    const T = (p) => { const q = v.rotX(v.rotZ(p, o, pitch), o, roll); return [q[0], q[1] + bob, q[2] + sway]; };
+    return { T, R };
   }
 
   // Rest layout shared by the body and the walker: hip points and where each foot stands.
@@ -147,8 +162,9 @@
     return { s, torsoR, tsp, hips, feet, legLen: reach, footR, H };
   }
 
-  // Build the creature. pose: { breathe, lookYaw, tailSway, tailLift, wingFlap, feet (local, like layout().feet),
-  // blink, expression, hop }.
+  // Build the creature. pose: { breathe, lookYaw, headNod, tailSway, tailLift, wingFlap, feet (local, like
+  // layout().feet, on the ground frame), body: { bob, sway, pitch, roll } (see bodyTransform), blink, expression }.
+  // The scene reports each leg's hip, knee, foot and stretch in `legs` (for the walk's debug overlay and tests).
   function build(ph, pose) {
     pose = pose || {};
     const L = layout(ph);
@@ -181,6 +197,8 @@
     const headLen = ph.head.length * s;
     const look = pose.lookYaw || 0;
     let hsp = spine(v.add(headStart, v.mul([Math.cos(ph.head.angle), Math.sin(ph.head.angle), 0], -headR[0].w * 0.2)), ph.head.angle, headLen, ph.head.curve, headR.length);
+    const nod = pose.headNod || 0;
+    if (nod) hsp = { pts: hsp.pts.map((p) => v.rotZ(p, headStart, nod)), dirs: hsp.dirs.map((d) => v.rotZ(d, [0, 0, 0], nod)) };
     if (look) hsp = { pts: hsp.pts.map((p) => v.rotY(p, headStart, look)), dirs: hsp.dirs.map((d) => v.rotY(d, [0, 0, 0], look)) };
     sausage(prims, hsp, headR, 'head', MAT.BODY, k);
 
@@ -198,13 +216,17 @@
       for (const p of prims) if (p.piece === 'tail') p.tip = ph.tail.tip;
     }
 
-    // Legs: two round cones each and a paw; the paw stands where the walker put it.
+    // Legs: two round cones each and a paw; the paw stands where the walker put it, the hip rides on the moving body.
     const legW = ph.legs.width * s;
+    const BT = bodyTransform(L, pose.body);
+    const legs = [];
     L.hips.forEach((hp, i) => {
       const foot = (pose.feet && pose.feet[i]) || L.feet[i];
+      const hip = BT ? BT.T(hp.p) : hp.p;
       const kneeSign = (ph.legs.knee >= 0 ? 1 : -1) * (hp.front ? -1 : 1);
-      const ik = legIK(hp.p, foot, L.legLen, [kneeSign, 0, hp.side * 0.25]);
-      prims.push(cone(hp.p, ik.knee, legW * 1.15, legW * 0.85, 1, 'leg', MAT.BODY, { k2: k * 0.5 }));
+      const ik = legIK(hip, foot, L.legLen, [kneeSign, 0, hp.side * 0.25]);
+      legs.push({ hip, knee: ik.knee, end: ik.end, foot, stretch: ik.stretch });
+      prims.push(cone(hip, ik.knee, legW * 1.15, legW * 0.85, 1, 'leg', MAT.BODY, { k2: k * 0.5 }));
       prims.push(cone(ik.knee, ik.end, legW * 0.85, legW * 0.7, 1, 'leg', MAT.BODY, { k2: k * 0.5 }));
       prims.push(ellipsoid(v.add(ik.end, [L.footR * 0.35, 0, 0]), [1, 0, 0], L.footR * 1.2, L.footR * 0.6, L.footR * 0.85, 'foot', MAT.BODY, { k2: k * 0.4 }));
       if (ph.claws > 0.45) {
@@ -342,7 +364,23 @@
       from: mq.p, dir: mf.ax, width: (0.4 + 0.8 * ph.mouth.width) * Math.max(mq.w, 0.04 * s),
       smile: ph.mouth.smile, fangs: ph.fangs, expression: pose.expression || ph.expression });
 
-    return { prims, decals, k, scale: s, layout: L, kind: 'creature' };
+    if (BT) moveBody(prims, decals, BT);
+    return { prims, decals, k, scale: s, layout: L, legs, kind: 'creature' };
+  }
+
+  // Apply the walk's body transform to everything but the legs (which were solved from the moved hips).
+  function moveBody(prims, decals, BT) {
+    const LEG = { leg: 1, foot: 1, claw: 1 };
+    for (const p of prims) {
+      if (LEG[p.piece]) continue;
+      p.a = BT.T(p.a); if (p.b) p.b = BT.T(p.b); if (p.c) p.c = BT.T(p.c);
+      p.ax = BT.R(p.ax); p.u = BT.R(p.u); p.side = BT.R(p.side);
+      p.bs = bound(p);
+    }
+    for (const d of decals) {
+      d.from = BT.T(d.from); d.dir = BT.R(d.dir);
+      if (d.pts) d.pts = d.pts.map((q) => ({ from: BT.T(q.from), dir: BT.R(q.dir) }));
+    }
   }
 
   // The egg: one ellipsoid with a shell pattern; `crack` (0..1) grows a zigzag crack, `open` (0..1) lifts the cap.
@@ -370,7 +408,7 @@
     return { prims, decals: pose.crack ? [{ kind: 'crack', amount: pose.crack, center: c, H, W }] : [], k: 0.001, scale: 1, kind: 'egg', look };
   }
 
-  const api = { build, buildEgg, layout, legIK, spine, frame, bound, v, CONE, ELLIPSOID, TRI, MAT };
+  const api = { build, buildEgg, layout, legIK, bodyTransform, spine, frame, bound, v, CONE, ELLIPSOID, TRI, MAT };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.CreatureBody = api;
 })(typeof window !== 'undefined' ? window : globalThis);

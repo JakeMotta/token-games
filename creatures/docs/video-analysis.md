@@ -62,6 +62,6 @@ Source: `generative creatures.mp4` (Jake's Downloads), a 152-second vertical dev
 | faces | five expressions (neutral plus the four) as eye/mouth offsets |
 | breeding | `breed()`: whole pieces per parent, two copies, nudge on every number, 6% surprise, names breed |
 | repair pass | `repair()`: head ≤ 1.6× body, legs back, neck ≤ body, tail thinner than body, no ring jumps, legs long enough |
-| motion | `motion.js`: planted feet with diagonal gait, tail spring, wings lift only above a lift ratio, else flap-and-hop |
+| motion | `motion.js`: planted feet on a gait clock per leg count (a foot also steps early if the body gets too far ahead), two-bone IK legs, body bob and sway, tail spring, wings lift only above a lift ratio, else flap-and-hop |
 
 The 31 kinds in the video are the developer's own catalogue; the prototype has its own set of a similar size, and the throat sac is not one of them (yet).

@@ -1,7 +1,9 @@
 /* Creature Hatchery: the page. Eggs, hatching, the temperament slider, a level preview, gene sliders, the genome as a
    list of numbers, breeding, and a collection. Rendering and motion live in render.js and motion.js.
    URL: ?seed=<s> starts from that egg; &level=<1-100> &temperament=<-1..1> &hatched=1 show the creature; &pause=1 holds
-   still (for screenshots); &view=inside|flat|pieces; &back=night|paper|peach|clear; &test=1 runs the self-checks. */
+   still (for screenshots); &view=inside|flat|pieces; &style=<look> (gochi, matte, cel, pixel, chunky, ink, sticker);
+   &palette=gameboy|pico8|earth (pixel looks); &shine=<0-1>; &debug=1 draws the walk (planted feet, swing targets, legs,
+   ground line, gait); &gait=walk|hurry keeps it walking; &back=night|paper|peach|clear; &test=1 runs the self-checks. */
 (function () {
   'use strict';
   const G = window.CreatureGenome, R = window.CreatureRender, M = window.CreatureMotion;
@@ -9,6 +11,7 @@
   const params = new URLSearchParams(location.search);
   const TEST = params.get('test') === '1';
   const PAUSE = params.get('pause') === '1' || TEST;
+  const GAIT = ['walk', 'hurry'].includes(params.get('gait')) ? params.get('gait') : null; // keep walking (or hurrying)
   const reducedMotion = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 
   const STAGE_W = 240, STAGE_H = 140, GROUND = 118;      // stage grid (logical pixels) and the ground row
@@ -18,6 +21,7 @@
   const GALLERY_KEY = 'creature-hatchery-v1', GALLERY_MAX = 40;
   const BACKS = { night: [42, 38, 56], paper: [240, 232, 216], peach: [251, 214, 190], clear: null };
   const FACES = ['neutral', 'happy', 'angry', 'sleepy', 'surprised'];
+  const PALETTE_NAMES = { gameboy: 'Game Boy', pico8: 'PICO-8', earth: 'warm earth' };
   const VIEWS = [['gochi', 'Finished'], ['pieces', 'Melted pieces'], ['flat', 'One colour'], ['inside', 'Inside?']];
   // Gene sliders: [label, gene or special, kind]. Specials scale whole pieces.
   const SLIDERS = [
@@ -31,6 +35,10 @@
   const S = {
     creature: null, overrides: {}, special: { body: 1, head: 1 }, temperament: 0, level: 1, expression: 'neutral',
     repair: true, view: params.get('view') || 'gochi', walk: !PAUSE, back: params.get('back') || 'night',
+    style: R.looks.includes(params.get('style')) ? params.get('style') : 'gochi',
+    palette: R.PALETTES[params.get('palette')] ? params.get('palette') : 'own',
+    shine: params.get('shine') != null ? Math.max(0, Math.min(1, Number(params.get('shine')) || 0)) : 1,
+    debug: params.get('debug') === '1',
     phase: 'egg', hatchT: 0, gallery: [], picks: [], current: -1, reveal: null, cam: null, ph: null, walker: null,
   };
 
@@ -165,12 +173,49 @@
     else sctx.drawImage(sprite, sx - Math.round(o.x), sy);
     sctx.restore();
   }
+  // The finished view draws in the chosen look; the other views are the debug looks. The look never touches the genome.
+  function lookOpts() {
+    return { style: S.view === 'gochi' ? S.style : S.view, shine: S.shine, palette: S.palette === 'own' ? null : S.palette };
+  }
   function renderCreature(pose) {
     const sc = R.creatureScene(S.ph, pose);
-    return R.render(sc, S.cam, { style: S.view });
+    S.lastScene = sc;
+    return R.render(sc, S.cam, lookOpts());
   }
   function renderEgg(pose) {
-    return R.render(R.eggScene(G.eggLook(S.creature), pose), S.eggCam, { style: S.view === 'gochi' ? 'gochi' : S.view });
+    return R.render(R.eggScene(G.eggLook(S.creature), pose), S.eggCam, lookOpts());
+  }
+  // Walk debug: the ground contact lines (one per row of feet), each leg hip-knee-foot, planted feet (green), feet in swing (orange) and where
+  // they will land (cross), and the gait's name and phase. Points are in the body's frame, placed like putSprite.
+  function drawDebug(res, st) {
+    const cam = R.camera(res.cam), o = R.project(cam, [0, 0, 0]);
+    const sx = Math.round(STAGE_W / 2 + st.x / res.cam.px), sy = GROUND - Math.round(o.y);
+    const at = (p, onGround) => {
+      const q = R.project(cam, [p[0], onGround ? 0 : p[1] + (st.lift || 0), p[2]]);
+      return [st.dir < 0 ? sx + Math.round(o.x) - q.x : sx - Math.round(o.x) + q.x, sy + q.y];
+    };
+    const line = (a, b, colour) => { sctx.strokeStyle = colour; sctx.beginPath(); sctx.moveTo(a[0], a[1]); sctx.lineTo(b[0], b[1]); sctx.stroke(); };
+    const dot = (p, colour, r) => { sctx.fillStyle = colour; sctx.fillRect(Math.round(p[0] - r), Math.round(p[1] - r), r * 2, r * 2); };
+    sctx.save();
+    sctx.lineWidth = 0.5;
+    const legs = (S.lastScene && S.lastScene.legs) || [];
+    for (const side of [-1, 1]) {
+      const row = legs.filter((lg) => Math.sign(lg.foot[2]) === side);
+      if (!row.length) continue;
+      const xs = row.map((lg) => lg.foot[0]), z = row[0].foot[2], reach = row[0].hip[1];
+      line(at([Math.min(...xs) - reach, 0, z], true), at([Math.max(...xs) + reach, 0, z], true), 'rgba(120,200,255,0.75)');
+    }
+    if (!legs.length) line([0, GROUND + 0.5], [STAGE_W, GROUND + 0.5], 'rgba(120,200,255,0.75)');
+    legs.forEach((lg, k) => {
+      const c = lg.hip[2] < 0 ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.9)';
+      line(at(lg.hip), at(lg.knee), c); line(at(lg.knee), at(lg.foot), c);
+      dot(at(lg.foot), st.feetState[k] ? '#5fe08a' : '#ffa53a', 1.5);
+      const t = st.targets && st.targets[k];
+      if (t) { const p = at(t); line([p[0] - 2, p[1] - 2], [p[0] + 2, p[1] + 2], '#ffa53a'); line([p[0] - 2, p[1] + 2], [p[0] + 2, p[1] - 2], '#ffa53a'); }
+    });
+    sctx.fillStyle = 'rgba(255,255,255,0.85)'; sctx.font = '7px monospace';
+    sctx.fillText(st.gait.name + ' ' + st.gait.phase.toFixed(2) + ' duty ' + st.gait.duty.toFixed(2) + ' v ' + (st.gait.speed / S.ph.scale).toFixed(2), 3, STAGE_H - 4);
+    sctx.restore();
   }
 
   function frame(dt) {
@@ -192,14 +237,18 @@
       else {
         putSprite(renderEgg(eggPose), -0.12, 1, fade);
         const st = M.step(S.walker, dt, -half, half, { walk: false, hop: T - dt < HATCH.baby });
-        putSprite(renderCreature(st.pose), st.x, st.dir);
+        const res = renderCreature(st.pose);
+        putSprite(res, st.x, st.dir);
+        if (S.debug) drawDebug(res, st);
       }
       if (T >= HATCH.fade[1]) finishHatch();
       return;
     }
-    const st = M.step(S.walker, PAUSE ? 0 : dt, -half, half, { walk: S.walk && !PAUSE, reduced: reducedMotion || PAUSE });
+    const st = M.step(S.walker, PAUSE ? 0 : dt, -half, half, { walk: S.walk && !PAUSE, reduced: reducedMotion || PAUSE, force: S.walk && !PAUSE ? GAIT : null });
     const pose = PAUSE ? Object.assign({}, st.pose, { breathe: 0, blink: 0, tailSway: 0, lookYaw: 0, wingFlap: 0 }) : st.pose;
-    putSprite(renderCreature(pose), st.x, st.dir);
+    const res = renderCreature(pose);
+    putSprite(res, st.x, st.dir);
+    if (S.debug) drawDebug(res, st);
   }
 
   let last = 0, acc = 0;
@@ -243,6 +292,11 @@
     renderNumbers();
     for (const b of $('faces').children) b.classList.toggle('on', b.dataset.v === S.expression);
     for (const b of $('views').children) b.classList.toggle('on', b.dataset.v === S.view);
+    for (const b of $('looks').children) b.classList.toggle('on', b.dataset.v === S.style);
+    for (const b of $('palettes').children) b.classList.toggle('on', b.dataset.v === S.palette);
+    $('paletteRow').style.display = R.styles[S.style].pixel ? '' : 'none';
+    $('shineVal').textContent = S.shine.toFixed(2);
+    $('debug').classList.toggle('on', S.debug);
     for (const b of $('backs').children) b.classList.toggle('on', b.dataset.v === S.back);
     $('walk').classList.toggle('on', S.walk); $('repair').classList.toggle('on', S.repair);
   }
@@ -296,14 +350,14 @@
 
   const thumbCache = new Map();
   function thumb(entry) {
-    const key = JSON.stringify([entry.creature.seed, entry.creature.parents, entry.overrides, entry.special, entry.temperament, entry.level]);
+    const key = JSON.stringify([entry.creature.seed, entry.creature.parents, entry.overrides, entry.special, entry.temperament, entry.level, S.style, S.shine, S.palette]);
     if (thumbCache.has(key)) return thumbCache.get(key);
     const saved = { creature: S.creature, overrides: S.overrides, special: S.special, temperament: S.temperament };
     Object.assign(S, { creature: entry.creature, overrides: entry.overrides || {}, special: entry.special || { body: 1, head: 1 }, temperament: entry.temperament });
     const ph = phenotypeAt(entry.level || 1);
     Object.assign(S, saved);
     const sc = R.creatureScene(ph, {});
-    const res = R.render(sc, R.frameCamera(sc, 44, 44, { fit: true }), {});
+    const res = R.render(sc, R.frameCamera(sc, 44, 44, { fit: true }), Object.assign(lookOpts(), { style: S.style }));
     thumbCache.set(key, res);
     return res;
   }
@@ -347,6 +401,13 @@
   }
   chips('faces', FACES.map((f) => [f, f]), (v) => { S.expression = v; refresh(); });
   chips('views', VIEWS, (v) => { S.view = v; S.dirty = true; updatePanels(); });
+  // A new look redraws the stage and the collection; the genome stays as it is.
+  const relook = () => { S.dirty = true; updatePanels(); renderGallery(); };
+  chips('looks', R.looks.map((k) => [k, R.styles[k].label || k]), (v) => { S.style = v; S.view = 'gochi'; relook(); });
+  chips('palettes', [['own', 'own colours']].concat(Object.keys(R.PALETTES).map((k) => [k, PALETTE_NAMES[k] || k])), (v) => { S.palette = v; relook(); });
+  $('shine').value = S.shine;
+  $('shine').addEventListener('input', () => { S.shine = Number($('shine').value); relook(); });
+  $('debug').addEventListener('click', () => { S.debug = !S.debug; S.dirty = true; updatePanels(); });
   chips('backs', Object.keys(BACKS).map((k) => [k, k]), (v) => { S.back = v; S.dirty = true; updatePanels(); });
   chips('tabs', [['genes', 'Genes'], ['numbers', 'Numbers'], ['about', 'About']], (v) => {
     for (const t of ['genes', 'numbers', 'about']) $('tab-' + t).hidden = t !== v;
@@ -431,6 +492,20 @@
       const inp = $('genes').querySelector('input[data-gene="colour.hue"]');
       inp.value = (Number(inp.value) + 120) % 360; inp.dispatchEvent(new Event('input'));
       check('colour slider recolours', hash(renderCreature({}).rgba) !== h0);
+      // Every look draws the creature and its egg, each differently, and switching looks leaves the genome alone.
+      const fpBefore = G.fingerprint(S.creature), seen = new Set(), blank = [];
+      for (const b of $('looks').children) {
+        b.click();
+        const cr = renderCreature({}), eg = renderEgg({});
+        if (cr.mask.filter((m) => m === 1).length < 200 || eg.mask.filter((m) => m === 1).length < 100) blank.push(S.style);
+        seen.add(hash(cr.rgba));
+      }
+      check('every look draws creature and egg', blank.length === 0 && seen.size === R.looks.length, { blank, looks: R.looks.length, distinct: seen.size });
+      check('looks leave the genome alone', G.fingerprint(S.creature) === fpBefore);
+      $('looks').children[0].click();
+      // The walk debug overlay draws over the stage without errors.
+      S.debug = true; frame(0.1); S.debug = false;
+      check('walk debug draws', true);
       frame(0.1);
     } catch (e) { check('no errors', false, String(e && e.stack || e)); }
     const pass = checks.every((c) => c.pass);

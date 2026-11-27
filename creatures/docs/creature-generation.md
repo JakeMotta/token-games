@@ -1,6 +1,6 @@
 # Creature generation: the approach
 
-How the web model (`creatures/prototype/`) makes, grows, draws and moves a creature, and the numbers behind it. The goal for this first version is a faithful copy of the technique in the GOCHITAMA video ([video-analysis.md](video-analysis.md)); other art styles come later, through the pluggable renderer (below).
+How the web model (`creatures/prototype/`) makes, grows, draws and moves a creature, and the numbers behind it. The goal for this first version is a faithful copy of the technique in the GOCHITAMA video ([video-analysis.md](video-analysis.md)); other art styles are now looks on the same pluggable renderer ([art-style-options.md](art-style-options.md)).
 
 Pipeline: **seed → genome (two copies) → expressed genes → phenotype (+ temperament, + growth, + repair) → ring-stack body + parts → signed distance field → per-pixel ray march → banded light, ink, decals → sprite.**
 
@@ -44,6 +44,24 @@ Pipeline: **seed → genome (two copies) → expressed genes → phenotype (+ te
 - Sprites re-render at a pixel-art clock of **12 fps** (`SPRITE_FPS`), which is both the look and the budget: ~30 ms per frame on one creature leaves most of a core free. The overlay renders at most one creature per frame, and only when its pose changed.
 - Poses are cheap to change (they move primitives), so the whole body re-renders each frame; no caching of parts is needed at this size.
 - Idle (no pose change, Calm on, faded) costs nothing: the last frame stays on the canvas.
+
+### Looks (the style switcher)
+
+Seven finished looks share the body, light and pose and differ only in how a hit pixel becomes a colour: Original (`gochi`, the default), Matte, Cel, Pixel, Chunky, Ink and Sticker. Pixel and Chunky render at half or quarter size and blow up with nearest-neighbour, take an optional fixed palette (Game Boy, PICO-8, warm earth) and are 3–10 times cheaper. A Shine option (0–1) removes the glint in every look. `registerLook(name, { label, shade, pixel, inkWidth, decals, post })` adds one. Options, costs and the recommendation: [art-style-options.md](art-style-options.md).
+
+### Motion: the walk (`motion.js`)
+
+Nobody animates the walk; it is a gait clock and planted feet. The constants are named at the top of `motion.js`.
+
+- **Gaits per leg count**: one clock (phase 0–1 per stride) and, for each foot, a phase offset (when it lands) and a duty factor (share of the cycle on the ground). Two legs: walk (duty 0.62, alternating) and jog (0.5). Four: lateral-sequence walk (0.75, three feet down) and trot (0.56, diagonal pairs). Six: wave (0.7, a back-to-front ripple) and tripod (0.52). Legless: a scoot. Offsets blend smoothly between walk and hurry.
+- **Planted feet**: in stance a foot is pinned to the world (no slide, tested to 10⁻⁶); in swing it lifts (a share of the leg length) and lands half a stride ahead of its rest spot. The clock runs by distance travelled, so a stance sweeps exactly one stride, whatever the speed.
+- **Stride, cadence and speed** come from leg length: cadence scales with 1/√leg, stride with leg length, and a stride takes a whole number of 12 fps frames so walks loop crisply. A level 1 baby takes 60% of an adult's stride at a higher cadence and waddles more; adults stride.
+- **Reach**: the stride is capped so hip-to-foot never passes 95% of the leg (tested ≤ 0.985 with the body moving, for 2, 4 and 6 legs at every level 1–100); the body may crouch up to 10% of a leg to make room. Two-bone IK puts the knee forward.
+- **Body**: it bobs (highest over the planted foot when walking, dipping when hurrying), pitches toward the feet holding it, rolls and sways toward the standing side. The head counters part of the bob and pitch; the tail follows on a lagging spring; wings flap out of phase with the steps.
+- **Start, stop and turn**: speed ramps up in 0.45 s with a lean into it, the left hind foot first; stopping keeps stepping until every foot is back under its hip; it turns round only when stopped and settled.
+- **Walk debug** (`?debug=1` or the Walk debug button): ground contact lines, hip–knee–foot lines, planted feet green, swinging feet orange with a cross where they will land, and the gait's name, phase and duty. `?gait=walk|hurry` keeps it walking. `tools/walkstrip.js` draws frame strips and prints foot slip, stretch and how many feet are up per frame.
+
+Before this pass a foot stepped only once the body had got too far ahead of it, with a fixed step time, one diagonal rule for every leg count and one walking speed: hexapod legs were pulled to 1.1× their length, feet left in bursts and the body then glided on planted feet, and babies walked at the same speed as adults. Strips: [before](shots/walk-before-side.png), [after](shots/walk-after-side.png), [babies after](shots/walk-after-baby.png), [hurry](shots/walk-after-hurry.png).
 
 ## 4. Growth: level 1 to 100
 
@@ -106,7 +124,7 @@ Same settings and meanings as the ant farm, from the same shell (the web model h
 - `genome.js`: seed, genes, breeding, temperament, growth, repair, traits, egg look, tokens → levels.
 - `body.js`: phenotype → primitives and decals (pieces, parts, face, egg).
 - `render.js`: SDF, ray marcher, styles, palette, ink, decals, camera framing.
-- `motion.js`: walker (planted feet, tail spring, wings, hop, blink, look).
+- `motion.js`: walker (gaits per leg count, planted feet, body bob and sway, tail and head springs, wings, hop, blink, look).
 - `app.js` + `index.html`: the web model page.
 - `test/`: unit tests (`node --test test/`) and `test/e2e.js` (headless page checks).
-- `tools/`: `sheets.js` (contact sheets in Node), `shots.js` (headless page screenshots), `bundle.js` (single-file page), `png.js`.
+- `tools/`: `sheets.js` (contact sheets in Node), `shots.js` (headless page screenshots), `walkstrip.js` (walk frame strips and foot metrics), `bundle.js` (single-file page), `png.js`.
