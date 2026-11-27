@@ -1,10 +1,10 @@
-// The shell's main process, shared by every game: one frameless, transparent window that holds the game in the
-// notch (or a pill in the middle of the menu bar) and becomes the floating overlay window when it pops out; the
-// menu-bar icon; the global shortcut; the settings and save files; and the Claude Code feed.
+// The shell's main process, shared by every game: one frameless, transparent window that holds the game in an orb
+// in a corner of the screen and becomes the floating overlay window when it pops out; the menu-bar icon; the global
+// shortcut; the settings and save files; and the Claude Code feed.
 //
-// There is only ever one window running the game, so one game instance: the strip in the notch, the drop-down and
-// the popped-out window are the same page moving its game between places. While the game is popped out, a tiny
-// second window with no game in it (marker.html) keeps the island in the notch and brings the game back when clicked.
+// There is only ever one window running the game, so one game instance: the orb, its hover pill, the open card and
+// the popped-out window are the same page moving its game between places. In the corner the window is as big as the
+// open card and lets every click through except over the orb (or the pill, or the open card).
 //
 // Environment (for the automated smoke test): TG_SMOKE=<folder> runs the smoke test and quits without ever showing a
 // window; TG_SMOKE_MODE picks the run; TG_USER_DATA moves the settings and save files; TG_CLAUDE_DIR points the feed
@@ -12,20 +12,20 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, Tray, type MenuItemConstructorOptions } from 'electron';
 import os from 'node:os';
 import path from 'node:path';
-import { CH, type FeedStatus, type GameStatus, type ModeInfo, type ResizeDrag, type ShellBoot, type ShellCommand } from '../api';
+import { CH, type FeedStatus, type GameStatus, type ModeInfo, type OrbDrag, type ResizeDrag, type ShellBoot, type ShellCommand } from '../api';
 import { normalizeEvent, type UsageEvent } from '../events';
 import { watchClaudeCode, type Feed } from '../feed/claude-code';
-import { boundsFor, clampToArea, gripCorner, nearestDock, resizeFromGrip, type Area, type Corner } from '../geometry';
-import { initialState, next, PAGE_EVENTS, presentationOf, shapeOf, type ShellEvent, type ShellState } from '../modes';
-import { contains, islandRect, notchGeo, notchWindowBounds, pickDisplay, type NotchGeo } from '../notch';
+import { boundsFor, clampToArea, gripCorner, nearestDock, resizeFromGrip, type Area } from '../geometry';
+import { initialState, next, PAGE_EVENTS, presentationOf, type ShellEvent, type ShellState } from '../modes';
+import { contains, nearestCorner, onOrb, orbCenter, orbGeo, orbWindowBounds, pickDisplay, shapeRect, type Corner, type OrbGeo } from '../orb';
 import { settingsKit, type Bounds, type GameSettingsSchema, type ShellSettings } from '../settings';
 import { trayMenu, type TrayAction, type TrayItem } from '../tray';
 import { runSmoke, type GameSmoke } from './smoke';
 import { SaveFile, SettingsStore } from './store';
 
 export interface ShellConfig<G extends object> {
-  name: string; // shown in the menu, the tray and the island's tooltips
-  dir: string; // the built game: index.html, preload.js, marker.html (usually __dirname)
+  name: string; // shown in the menu, the tray and the orb's pill
+  dir: string; // the built game: index.html, preload.js, shell.css (usually __dirname)
   settings: GameSettingsSchema<G>; // the game's own settings, stored beside the shell's
   icon(scale: 1 | 2): Buffer; // the menu-bar icon: 16 × 16 (× scale) BGRA pixels, black on clear (a template image)
   saveFile?: string; // the game's save file in the app's data folder (default save.json)
@@ -34,7 +34,7 @@ export interface ShellConfig<G extends object> {
 
 export const SHORTCUT = 'Alt+CommandOrControl+T';
 const IS_MAC = process.platform === 'darwin';
-const POLL_MS = 100; // how often the pointer is checked against the island while it rests in the notch
+const POLL_MS = 100; // how often the pointer is checked against the orb while it rests in its corner
 const FLY = { fade: 140, settle: 420 }; // popping out and docking: the page fades, then the window flies
 
 export function startShell<G extends object>(cfg: ShellConfig<G>): void {
@@ -46,20 +46,26 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
   const kit = settingsKit(cfg.settings);
 
   let win: BrowserWindow | null = null;
-  let marker: BrowserWindow | null = null;
   let tray: Tray | null = null;
   let store: SettingsStore<S>;
   let save: SaveFile;
   let feed: Feed | null = null;
   let feedStatus: FeedStatus = { watching: false, files: 0, root: CLAUDE_DIR };
-  let state: ShellState = 'collapsed';
-  let geo: NotchGeo;
+  let state: ShellState = 'orb';
+  let geo: OrbGeo;
   let status: GameStatus = { count: '', title: '' };
   let lastPlaced: Bounds | null = null; // the bounds we set last, so our own moves aren't taken for the player's
   let fullPrev: Bounds | null = null; // the window before full screen
   let moveTimer: NodeJS.Timeout | null = null, flyTimer: NodeJS.Timeout | null = null, poll: NodeJS.Timeout | null = null;
-  let inside = false; // the pointer is over the island
+  let inside = false; // the pointer is over the orb (or the pill)
   let drag: { start: Bounds; x: number; y: number; grip: Corner; area: Area; last: Bounds } | null = null;
+  let orbDrag: { start: Bounds; x: number; y: number } | null = null;
+  let ignoring = false; // clicks pass through the window
+
+  function ignore(on: boolean): void {
+    ignoring = on;
+    win?.setIgnoreMouseEvents(on, on ? { forward: true } : undefined);
+  }
 
   const same = (a: Bounds | null, b: Bounds): boolean => !!a && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
   const send = (ch: string, v: unknown): void => { if (win && !win.isDestroyed()) win.webContents.send(ch, v); };
@@ -69,14 +75,15 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
   const visible = (): boolean => !!win && (SMOKE ? smokeShown : win.isVisible());
   const modeInfo = (): ModeInfo => ({ state, geo, visible: visible() });
 
-  // The display the island lives on: the built-in one if there is one (only it can have a notch), else the main one.
-  function home(): NotchGeo {
-    return notchGeo(pickDisplay(screen.getAllDisplays(), screen.getPrimaryDisplay())!);
+  // The orb's display (the one it was last dropped on, while it is plugged in; else the main one) and its corner.
+  function home(): OrbGeo {
+    const s = store.get();
+    return orbGeo(pickDisplay(screen.getAllDisplays(), s.display, screen.getPrimaryDisplay())!, s.corner);
   }
 
   // The work area of the display the floating window is on, or will go to.
   function areaFor(b?: Bounds | null): Area {
-    const at = b || (win && state === 'popped' ? win.getBounds() : store.get().dock === 'free' ? store.get().bounds : null) || geo.screen;
+    const at = b || (win && state === 'popped' ? win.getBounds() : store.get().dock === 'free' ? store.get().bounds : null) || geo.area;
     return screen.getDisplayMatching(at).workArea;
   }
 
@@ -92,7 +99,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
   }
 
   function applyClickThrough(on: boolean): void {
-    win?.setIgnoreMouseEvents(on, on ? { forward: true } : undefined);
+    ignore(on);
   }
 
   function applyOnTop(on: boolean): void {
@@ -103,18 +110,27 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
 
   // ---------- the two presentations ----------
 
-  // In the notch: above the menu bar, on every desktop but hidden in full-screen apps, see-through and click-through
-  // except where the island is (the pointer poll switches that).
-  function setupNotch(animate = false): void {
+  // In the corner: above other windows, on every desktop but not over full-screen apps, see-through and click-through
+  // except over the orb (the pointer poll switches that) or the open card.
+  function setupOrb(animate = false): void {
     if (!win) return;
     win.setResizable(false);
     win.setAspectRatio(0);
-    win.setAlwaysOnTop(true, 'status');
+    win.setMinimumSize(0, 0);
+    win.setAlwaysOnTop(true, 'floating');
     if (IS_MAC) win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
     win.setOpacity(1);
     inside = false;
-    win.setIgnoreMouseEvents(true, { forward: true });
-    place(notchWindowBounds(geo), animate);
+    applyMouse();
+    place(orbWindowBounds(geo), animate);
+  }
+
+  // Which clicks the window takes: popped out, all of them unless click-through is on; in the corner, the open card's,
+  // or the orb's while the pointer is over it; none while it flies.
+  function applyMouse(): void {
+    if (!win) return;
+    const take = state === 'popped' ? !store.get().clickThrough : state === 'expanded' || !!orbDrag || ((state === 'orb' || state === 'hover') && inside);
+    ignore(!take);
   }
 
   // Popped out: the floating window, with its size, corner, opacity, always-on-top and click-through settings.
@@ -122,6 +138,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     if (!win) return;
     const s = store.get();
     win.setResizable(true);
+    win.setMinimumSize(256, 144);
     win.setAspectRatio(16 / 9);
     applyOnTop(s.alwaysOnTop);
     win.setOpacity(s.opacity);
@@ -143,10 +160,11 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     };
     if (now === 'popping') fly(setupFloating);
     else if (now === 'popped' && prev !== 'popping') setupFloating(); // reduced motion: no flight
-    else if (now === 'docking') { setFullscreen(false); fly(setupNotch); }
-    else if (now === 'collapsed' && prev === 'popped') { setFullscreen(false); setupNotch(); }
+    else if (now === 'docking') { setFullscreen(false); fly(setupOrb); }
+    else if (now === 'orb' && prev === 'popped') { setFullscreen(false); setupOrb(); }
+    if (now === 'orb' && prev !== 'hover') inside = false; // the pointer is looked at afresh
+    if (now !== 'popping' && now !== 'popped') applyMouse();
     if (now === 'expanded' && !SMOKE) win?.focus();
-    syncMarker();
     syncPoll();
     send(CH.mode, modeInfo());
     refreshTray();
@@ -162,6 +180,11 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
       if (prev.opacity !== nextS.opacity) win?.setOpacity(nextS.opacity);
       if (prev.alwaysOnTop !== nextS.alwaysOnTop && !fullPrev) applyOnTop(nextS.alwaysOnTop);
     }
+    if (prev.corner !== nextS.corner || prev.display !== nextS.display) {
+      geo = home();
+      if (!floating() && !flyTimer) { if (state !== 'orb') dispatch('drag'); place(orbWindowBounds(geo), true); }
+      send(CH.mode, modeInfo());
+    }
     send(CH.settings, nextS);
     refreshTray();
     if (presentation && presentation !== presentationOf(state)) dispatch(presentation === 'floating' ? 'pop' : 'dock');
@@ -171,68 +194,68 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
   function resetAll(): S {
     setFullscreen(false);
     const s = store.reset();
+    geo = home();
     send(CH.settings, s);
     if (floating()) dispatch('dock');
-    else { state = 'collapsed'; setupNotch(); syncPoll(); send(CH.mode, modeInfo()); }
+    else { state = 'orb'; setupOrb(); syncPoll(); send(CH.mode, modeInfo()); }
     refreshTray();
     return store.get();
   }
 
-  // ---------- the pointer over the island ----------
+  // ---------- the pointer over the orb ----------
 
-  // Electron can't tell when the pointer is over a see-through, click-through window, so while the island rests in
-  // the notch the pointer is checked ten times a second (only then: never while popped out or hidden).
+  // Electron can't tell when the pointer is over a see-through, click-through window, so while the orb rests in its
+  // corner the pointer is checked ten times a second (only then: never with the card open, popped out or hidden).
   function syncPoll(): void {
-    const want = !SMOKE && visible() && !floating();
+    const want = !SMOKE && visible() && (state === 'orb' || state === 'hover') && !orbDrag;
     if (want && !poll) poll = setInterval(pointer, POLL_MS);
-    else if (!want && poll) { clearInterval(poll); poll = null; inside = false; }
+    else if (!want && poll) { clearInterval(poll); poll = null; }
   }
 
   function pointer(): void {
-    const shape = shapeOf(state);
-    if (!win || !shape) return;
-    const over = contains(islandRect(shape, geo), screen.getCursorScreenPoint(), inside ? 4 : 0);
+    if (!win) return;
+    const p = screen.getCursorScreenPoint();
+    const over = state === 'hover' ? contains(shapeRect('pill', geo), p, 4) : onOrb(geo, p);
     if (over === inside) return;
     inside = over;
-    win.setIgnoreMouseEvents(!over, { forward: true });
+    applyMouse();
     dispatch(over ? 'enter' : 'leave');
   }
 
-  // A display came, went or changed (resolution, the menu bar, the lid): put the island back in its place.
+  // A display came, went or changed (resolution, the Dock, the lid): put the orb back in its corner, on the main
+  // display if its own one is gone.
   function onDisplays(): void {
     if (!win) return;
     geo = home();
     if (floating()) placeForSettings();
-    else if (!flyTimer) { setupNotch(); dispatch('display'); }
-    if (marker) marker.setBounds(islandRect('collapsed', geo));
+    else if (!flyTimer) { setupOrb(); dispatch('display'); }
     send(CH.mode, modeInfo());
   }
 
-  // ---------- the marker: the island stays in the notch while the game is popped out ----------
+  // ---------- dragging the orb to another corner ----------
 
-  function syncMarker(): void {
-    const want = state === 'popped';
-    if (!want) { if (marker && !marker.isDestroyed()) marker.destroy(); marker = null; return; }
-    if (!marker || marker.isDestroyed()) {
-      marker = new BrowserWindow({
-        ...islandRect('collapsed', geo), show: false, frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,
-        resizable: false, movable: false, maximizable: false, minimizable: false, fullscreenable: false, skipTaskbar: true, focusable: false,
-        enableLargerThanScreen: true, acceptFirstMouse: true, alwaysOnTop: true, title: cfg.name,
-        webPreferences: { preload: path.join(cfg.dir, 'preload.js'), contextIsolation: true, sandbox: true, nodeIntegration: false },
-      });
-      marker.setAlwaysOnTop(true, 'status');
-      if (IS_MAC) marker.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
-      marker.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-      marker.webContents.on('will-navigate', (e) => e.preventDefault());
-      marker.webContents.once('did-finish-load', () => sendMarker());
-      const icon = nativeImage.createFromBitmap(cfg.icon(2), { width: 32, height: 32, scaleFactor: 1 }).toDataURL();
-      marker.loadFile(path.join(cfg.dir, 'marker.html'), { query: { name: cfg.name, icon, notch: geo.notch ? '1' : '0' } });
+  // The page sends the pointer in screen coordinates once it has moved a few pixels; the window follows it, and when
+  // let go the orb settles in the corner of the quarter of the display it was dropped in.
+  function onOrbDrag(d: OrbDrag): void {
+    if (!win || floating() || flyTimer) return;
+    if (d.phase === 'start') {
+      dispatch('drag');
+      orbDrag = { start: win.getBounds(), x: d.x, y: d.y };
+      applyMouse(); syncPoll();
+      return;
     }
-    if (!SMOKE && visible()) marker.showInactive(); else marker.hide();
-  }
-
-  function sendMarker(): void {
-    if (marker && !marker.isDestroyed()) marker.webContents.send(CH.status, status);
+    if (!orbDrag) return;
+    const b = { ...orbDrag.start, x: orbDrag.start.x + Math.round(d.x - orbDrag.x), y: orbDrag.start.y + Math.round(d.y - orbDrag.y) };
+    if (d.phase === 'move') { place(b); return; }
+    orbDrag = null;
+    const from = orbWindowBounds(geo), c = orbCenter(geo);
+    const at = { x: c.x - from.x + b.x, y: c.y - from.y + b.y };
+    const d0 = screen.getDisplayNearestPoint(at);
+    const corner = nearestCorner(at, d0.workArea);
+    inside = false;
+    if (corner === store.get().corner && d0.id === geo.displayId) place(orbWindowBounds(geo), true); // back where it was
+    else update({ corner, display: d0.id } as Partial<S>);
+    applyMouse(); syncPoll();
   }
 
   // ---------- the Claude Code feed ----------
@@ -353,7 +376,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     else if (a.do === 'set') { if (a.patch.dock || a.patch.size) setFullscreen(false); update(a.patch as Partial<S>); }
   }
 
-  // The shortcut: shows a hidden game; in the notch it opens and closes the drop-down; popped out it switches
+  // The shortcut: shows a hidden game; in the corner it opens and closes the card; popped out it switches
   // click-through (the way back when the window lets every click pass).
   function hotkey(): void {
     if (!visible()) showWindow(floating());
@@ -371,14 +394,15 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     if (!win) return;
     if (SMOKE) smokeShown = true;
     else if (focus && floating()) win.show(); else win.showInactive();
-    syncPoll(); syncMarker(); refreshTray();
+    syncPoll(); refreshTray();
   }
 
   function hideWindow(): void {
     if (!win) return;
-    if (state === 'peek' || state === 'expanded') dispatch('escape');
+    if (state === 'hover') dispatch('leave');
+    if (state === 'expanded') dispatch('escape');
     if (SMOKE) smokeShown = false; else win.hide();
-    syncPoll(); syncMarker(); refreshTray();
+    syncPoll(); refreshTray();
   }
 
   function toggleWindow(): void {
@@ -392,18 +416,16 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     geo = home();
     state = initialState(s.presentation);
     win = new BrowserWindow({
-      ...notchWindowBounds(geo),
+      ...orbWindowBounds(geo),
       show: false, frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,
       resizable: false, maximizable: false, minimizable: false, fullscreenable: false, skipTaskbar: true,
-      enableLargerThanScreen: true, // may sit over the menu bar, by the notch
-      acceptFirstMouse: true, // the first click on the island counts
+      acceptFirstMouse: true, // the first click on the orb counts
       alwaysOnTop: true, title: cfg.name,
       webPreferences: {
         preload: path.join(cfg.dir, 'preload.js'), contextIsolation: true, sandbox: true, nodeIntegration: false,
         backgroundThrottling: !SMOKE, // the smoke test draws in a window that is never shown
       },
     });
-    win.setMinimumSize(256, 144);
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     win.webContents.on('will-navigate', (e) => e.preventDefault());
     win.on('move', () => { if (moveTimer) clearTimeout(moveTimer); moveTimer = setTimeout(onMoved, 350); });
@@ -411,11 +433,10 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     win.on('blur', () => { if (state === 'expanded') dispatch('blur'); });
     win.on('show', () => { syncPoll(); refreshTray(); });
     win.on('hide', () => { syncPoll(); refreshTray(); });
-    win.on('closed', () => { win = null; marker?.destroy(); });
-    if (!SMOKE) win.once('ready-to-show', () => { win?.showInactive(); syncMarker(); });
+    win.on('closed', () => { win = null; });
+    if (!SMOKE) win.once('ready-to-show', () => { win?.showInactive(); syncPoll(); });
     win.loadFile(path.join(cfg.dir, 'index.html'));
-    if (floating()) setupFloating(); else setupNotch();
-    syncMarker();
+    if (floating()) setupFloating(); else setupOrb();
     startFeed();
   }
 
@@ -431,13 +452,13 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     ipcMain.handle(CH.reset, resetAll);
     ipcMain.handle(CH.fullscreen, (_e, on: boolean) => setFullscreen(!!on));
     ipcMain.on(CH.resize, (_e, d: ResizeDrag) => onResizeDrag(d));
-    ipcMain.on(CH.grab, (_e, on: boolean) => { if (state === 'popped' && store.get().clickThrough) win?.setIgnoreMouseEvents(!on, { forward: true }); });
+    ipcMain.on(CH.grab, (_e, on: boolean) => { if (state === 'popped' && store.get().clickThrough) ignore(!on); });
+    ipcMain.on(CH.orbDrag, (_e, d: OrbDrag) => { if (d && Number.isFinite(d.x) && Number.isFinite(d.y)) onOrbDrag(d); });
     ipcMain.on(CH.intent, (_e, ev: ShellEvent) => { if (PAGE_EVENTS.includes(ev)) dispatch(ev); });
     ipcMain.on(CH.status, (_e, st: GameStatus) => {
       const clean = { count: String(st?.count ?? '').slice(0, 12), title: String(st?.title ?? '').slice(0, 24) };
       if (clean.count === status.count && clean.title === status.title) return;
       status = clean;
-      sendMarker();
       tray?.setToolTip(cfg.name + (status.count ? ` · ${status.count} ${status.title}` : ''));
     });
     ipcMain.on(CH.hide, hideWindow);
@@ -463,8 +484,9 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     for (const ev of ['display-added', 'display-removed', 'display-metrics-changed'] as const) screen.on(ev as 'display-added', onDisplays);
     if (SMOKE) {
       runSmoke<S>({
-        win: win!, marker: () => marker, store, outDir: SMOKE, claudeDir: CLAUDE_DIR, update: (p) => update(p), resize: onResizeDrag,
+        win: win!, store, outDir: SMOKE, claudeDir: CLAUDE_DIR, update: (p) => update(p), resize: onResizeDrag, orbDrag: onOrbDrag,
         isFullscreen: () => !!fullPrev, dispatch, displays: onDisplays, state: () => state, geo: () => geo, trayItems, hotkey, status: () => status,
+        visible, show: () => showWindow(), hide: hideWindow, ignoresMouse: () => ignoring,
       }, cfg.smoke);
       return;
     }

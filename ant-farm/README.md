@@ -1,6 +1,6 @@
 # Ant Farm
 
-A small ant farm that lives in your Mac's notch and digs while your AI agent works. Every token Claude Code spends gives the colony digging energy and drops food crumbs; every finished turn orders a new gallery. Real Claude Code use is the only thing that feeds it: there are no test buttons or free energy, and a colony left without tokens slowly goes hungry. Design: [../docs/ant-farm-design.md](../docs/ant-farm-design.md). The browser prototype it grew from is in [../prototype/ant-farm](../prototype/ant-farm/).
+A small ant farm that lives in a corner of your screen and digs while your AI agent works. Every token Claude Code spends gives the colony digging energy and drops food crumbs; every finished turn orders a new gallery. Real Claude Code use is the only thing that feeds it: there are no test buttons or free energy, and a colony left without tokens slowly goes hungry. Design: [../docs/ant-farm-design.md](../docs/ant-farm-design.md). The browser prototype it grew from is in [../prototype/ant-farm](../prototype/ant-farm/).
 
 ## Run it
 
@@ -10,17 +10,19 @@ npm install
 npm start
 ```
 
-Needs Node 20 or newer. It runs inside the Token Games shell ([../shell](../shell/README.md)), like every game in this repo: it starts in the notch, as a black island with a tiny live view of the colony on the left and the number of ants on the right (on a Mac without a notch, a pill in the middle of the menu bar). A little ant in the menu bar (the system tray on Windows) has every control. Quit from that menu or with Cmd+Q / Ctrl+Q.
+Needs Node 20 or newer. It runs inside the Token Games shell ([../shell](../shell/README.md)), like every game in this repo: it starts as a small round orb in the bottom-right corner of the screen, with a tiny live view of the colony and the number of ants on a badge. Its ring turns warm when the colony is hungry or the game is over. A little ant in the menu bar (the system tray on Windows) has every control. Quit from that menu or with Cmd+Q / Ctrl+Q.
 
 Already running an older Ant Farm? Quit it first: only one runs at a time. Your colony and settings carry over.
 
 ## Using it
 
-In the notch ([../docs/presentation.md](../docs/presentation.md)):
+In the corner ([../docs/presentation.md](../docs/presentation.md)):
 
-- **Peek**: point at the island and it widens into a strip of the farm with energy, tokens, ants and food.
-- **Drop down**: click it (or press Alt+Cmd+T anywhere) for the whole farm, large, with **Pop out ↗** and **Settings**. Esc, a click elsewhere or the shortcut closes it.
-- **Pop out**: **Pop out ↗** (or O) turns it into the floating window below; the island stays in the notch, and clicking it, **↩ Notch** in the title bar, or O brings the farm back. It remembers which you chose.
+- **Point at the orb** and a pill grows out of it with the farm's name, the ants and a line of energy, tokens and food.
+- **Click it** (or press Alt+Cmd+T anywhere) for a card with the whole farm, large, with **Pop out ↗**, **Settings** and **–**. Esc, –, a click elsewhere or the shortcut closes it.
+- **Drag it** to another corner, on any display; it settles in the nearest corner and stays there. Settings → Display → Corner and the menu-bar menu move it too.
+- **Pop out**: **Pop out ↗** (or O) turns it into the floating window below; **↩ Corner** in the title bar, or O, sends the farm back to its orb. It remembers which you chose.
+- Hidden (H, or the menu), Alt+Cmd+T or the menu-bar menu brings it back. Over full-screen apps the orb stays out of the way.
 
 Popped out, in the floating window:
 
@@ -28,9 +30,9 @@ Popped out, in the floating window:
 - **Resize it**: drag the grip on the corner away from its dock (it stays 16:9), or press 1 for small (320 × 180) and 2 for large (640 × 360).
 - **Full screen**: F, or the square button. Esc comes back.
 - **Click-through**: T, or the setting, lets clicks pass through to whatever is behind. To get the window back, hold Alt over it, use the menu-bar menu, or press Alt+Cmd+T (Alt+Ctrl+T on Windows) anywhere.
-- Opacity, always on top and click-through apply to the popped-out window only; the island in the notch is always solid black, like the notch.
+- Opacity, always on top and click-through apply to the popped-out window only; the orb is always solid and always answers a click.
 - **Settings**: the gear button, or the , key (Cmd+, works too).
-- **Camera** (in the drop-down and the window; in the notch it always shows the whole colony): it follows the colony by itself, until you move it:
+- **Camera** (in the card and the window; in the orb it always shows the whole colony): it follows the colony by itself, until you move it:
   - two fingers on a trackpad pan, 1:1 with your fingers and with no easing;
   - pinch to zoom around the pointer (a mouse wheel zooms too);
   - drag with the mouse to pan; let go while moving and it glides on and slows down;
@@ -48,7 +50,8 @@ Every change shows at once and is saved straight away (on a Mac in `~/Library/Ap
 | Colours | Original, Quiet Earth, Graphite, Slate, Sepia Dusk, Terminal, Desktop Blend (follows the system's light or dark mode) | Desktop Blend |
 | Calm | Less colour and contrast, from 0 to 100% | 0% |
 | Fade when idle | Sinks toward the desktop after a few quiet seconds, comes back on the next event or when you point at it | off |
-| Presentation | In the notch, or a floating window | in the notch |
+| Presentation | In the corner orb, or a floating window | corner orb |
+| Corner | Where the orb sits: top left, top right, bottom left, bottom right (or drag it) | bottom right |
 | Reduced motion | No floating labels, no pop-out flight, fewer frames | off |
 | Window size | Small, large, full screen; a dragged size is kept as custom | small |
 | Docking | Top left, top right, bottom left, bottom right, or free where you drop it | bottom right |
@@ -56,7 +59,7 @@ Every change shows at once and is saved straight away (on a Mac in `~/Library/Ap
 | Always on top | Floats above other windows | on |
 | Click-through | Clicks pass through to what is behind | off |
 | Map | Large (2,048 × 1,024), Huge (8,192 × 4,096) or Ridiculous (65,536 × 16,384 cells); another size starts a new farm | Ridiculous |
-| Reset | Every setting back to its default (back in the notch too); the farm itself stays. In Settings and the menu-bar menu | |
+| Reset | Every setting back to its default (back in the bottom-right orb too); the farm itself stays. In Settings and the menu-bar menu | |
 
 Settings also shows the colony's health (ants, brood, stored food, the oldest ant's age, the queen's age, and whether it is fed, hungry or starving) and whether Claude Code is being watched. The title bar shows energy, tokens, ants and food, and "hungry" or "starving" when it is.
 
@@ -95,13 +98,35 @@ Everything here runs on the real clock, including while the app is closed: a far
 
 Weighted tokens are input + output + cache writes + a tenth of cache reads, softly capped past 200k an hour. Foragers carry crumbs into the store by the queen; the queen lays an egg for every two crumbs near her, up to what the dug rooms can hold, and the brood hatches into workers. Food never piles up: crumbs wait in the sky while 30 lie uncollected, and a full store (80) feeds the forager who brings one more. A starving colony's brood stops growing. Nobody starves while food is on its way (in the 45 minutes after tokens arrive), so the colony recovers as soon as you work again, and tokens reaching an empty farm bring a new queen. All of it lives in `src/sim/world.ts` and `src/sim/tokens.ts`.
 
+## Score
+
+Each colony is one run, from its founding queen to its last ant. Its score is the sum of whole units (so it never
+jitters), shown in Settings (Score, and the best so far) and on the Game Over screen with its breakdown:
+
+| Part | Points |
+|---|---|
+| Ants born (raised from eggs) | 10 each |
+| Blocks dug | 1 each |
+| Depth: rows below the surface of the deepest block dug | 5 per row |
+| Food crumbs collected | 2 each |
+| Weighted tokens fed | 1 per 1,000 |
+| The oldest ant's life, dead or alive | 20 per hour |
+| Days the colony has lived | 100 per day |
+| Rooms finished (the queen's chamber, the nursery, galleries) | 100 each |
+| Tunnels finished on their own (to food, scouting) | 25 each |
+
+When the last ant dies, **Game Over** shows the score, the breakdown, the best score so far, how it compares with
+the last run, and the last five runs; the orb's ring turns warm and counts 0. **Start a new farm** begins a fresh
+map and colony at once, without restarting the app. The record (the last 20 runs, and the best one, which is never
+dropped) is kept in `colony.json` on this computer only and never uploaded. The formula lives in `src/sim/score.ts`.
+
 ## Where tokens come from
 
 Claude Code writes each session's transcript as a JSON-lines file under `~/.claude/projects`. Ant Farm always watches that folder (if it can't, Settings says so quietly and the farm just waits) and reads only the usage counts (input, output, cache read, cache write tokens), the time, and whether a turn finished. It never keeps or shows what was said, never writes there, and sends nothing anywhere: everything stays on your machine. Only lines written after it starts count, so opening it doesn't replay old work. Turns from helper agents add tokens but don't count as finished tasks.
 
 The feed turns these into the shared event format in the design doc (`tokens`, `task_done`, `session_start`), so a Codex feed can be added beside it later.
 
-Resting in the notch it draws 2 frames a second (4 while tokens arrive, 1 with reduced motion). Dropped down or popped out and calm it draws 8 (2 with reduced motion), 60 while you move the camera, and nothing at all while it is hidden. The simulation keeps real time at any frame rate.
+Resting in the orb it draws 2 frames a second (4 while tokens arrive, 1 with reduced motion). Opened or popped out and calm it draws 8 (2 with reduced motion), 60 while you move the camera, and nothing at all while it is hidden. The simulation keeps real time at any frame rate.
 
 ## Code
 
@@ -110,14 +135,14 @@ Resting in the notch it draws 2 frames a second (4 while tokens arrive, 1 with r
 - `src/main/` the Electron side: `main.ts` starts the shell with the farm's settings, menu-bar ant and save file (`colony.json`); `smoke.ts` adds the farm's checks to the shell's smoke test.
 - `src/shared/settings.ts` the farm's settings (palette, calm, fade, map size, seed), stored beside the shell's.
 - `game.json`, `icon.svg` the manifest ([../docs/manifest.md](../docs/manifest.md)).
-- The window, notch, tray, hotkey, settings file and Claude Code feed are the shell's ([../shell](../shell/README.md)).
+- The window, corner orb, tray, hotkey, settings file and Claude Code feed are the shell's ([../shell](../shell/README.md)).
 
 ## Tests
 
 ```sh
 npm test            # unit tests: simulation, chunks and culling, life on a fake clock, camera input, tokens, palettes, settings, and the shell's
 npm run typecheck
-npm run test:smoke  # launches the app hidden and drives it: the notch, peek, drop-down, pop out and back, the big map, camera, settings, sizes, full screen, feed, saving, restart
+npm run test:smoke  # launches the app hidden and drives it: the orb, its pill and card, dragging to a corner, pop out and back, the big map, camera, settings, sizes, full screen, feed, saving, game over and a new farm, restart
 npm run shots       # the same, and saves screenshots to shots/
 npm run bench       # frame time and memory at each map size
 ```

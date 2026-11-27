@@ -1,5 +1,6 @@
 // Window geometry, pure so it can be tested without Electron: 16:9 sizes, the four docking corners, snapping a
 // dropped window to a corner, and resizing from the grip while keeping 16:9.
+import type { Corner } from './orb';
 import { type Bounds, type Dock, MIN_WIDTH, type ShellSettings } from './settings';
 
 export interface Area { x: number; y: number; width: number; height: number }
@@ -49,8 +50,6 @@ export function boundsFor(s: Pick<ShellSettings, 'width' | 'dock' | 'bounds'>, a
   const at = s.bounds || { ...dockPoint('br', area, width, height), width, height };
   return clampToArea({ x: at.x, y: at.y, width, height }, area);
 }
-
-export type Corner = 'tl' | 'tr' | 'bl' | 'br';
 
 // The resize grip sits on the corner away from the dock, so the window grows into the screen.
 export function gripCorner(dock: Dock): Corner {

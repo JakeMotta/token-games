@@ -1,4 +1,4 @@
-/* The farm's own styles. The island, the window frame, the title bar and the Settings sheet are the shell's
+/* The farm's own styles. The corner orb, the window frame, the title bar and the Settings sheet are the shell's
    (shell/src/page/shell.css); their colours (--g-*) come from the farm's palette (palettes.ts) through setTheme. */
 
 .af { background: var(--g-back); color: var(--g-ink); }

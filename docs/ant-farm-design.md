@@ -135,9 +135,31 @@ The farm sits in a corner of the screen while you work, so its colours must stay
 
 Any palette can be calmed further with the Calm amount (up to 85% less saturation and half the contrast, pulled toward the palette's own middle tone). Fade when idle sinks the farm toward its backdrop after 5 quiet seconds and brings it back on the next token event. Reduced motion drops the floating labels and window animation and draws 2–5 frames a second.
 
+## Score
+
+Each colony is one run, from its founding queen to its last ant. Its score is the sum of whole units (so it never
+jitters), shown in Settings (Score, and the best so far) and on the Game Over screen with its breakdown:
+
+| Part | Points |
+|---|---|
+| Ants born (raised from eggs) | 10 each |
+| Blocks dug | 1 each |
+| Depth: rows below the surface of the deepest block dug | 5 per row |
+| Food crumbs collected | 2 each |
+| Weighted tokens fed | 1 per 1,000 |
+| The oldest ant's life, dead or alive | 20 per hour |
+| Days the colony has lived | 100 per day |
+| Rooms finished (the queen's chamber, the nursery, galleries) | 100 each |
+| Tunnels finished on their own (to food, scouting) | 25 each |
+
+When the last ant dies, **Game Over** shows the score, the breakdown, the best score so far, how it compares with
+the last run, and the last five runs; the orb's ring turns warm and counts 0. **Start a new farm** begins a fresh
+map and colony at once, without restarting the app. The record (the last 20 runs, and the best one, which is never
+dropped) is kept in `colony.json` on this computer only and never uploaded. The formula lives in `ant-farm/src/sim/score.ts`.
+
 ## The always-on window
 
-Since the shared shell, the farm starts in the notch and this window is what **Pop out** gives
+Since the shared shell, the farm starts as an orb in a corner of the screen and this window is what **Pop out** gives
 ([presentation.md](presentation.md)); everything below still describes the popped-out window.
 
 The farm is meant to sit in a corner of the screen while an agent works, like a small desktop widget. In the real app this is a native window that is transparent, frameless and always on top, and does not take focus. `prototype/ant-farm/overlay.html` mocks it up over a fake Mac desktop:

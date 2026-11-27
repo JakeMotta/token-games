@@ -42,9 +42,8 @@ const extra = process.argv.flatMap((a, i) => process.argv[i - 1] === '--extra' ?
 await Promise.all([
   build({ ...common, entryPoints: { main: 'src/main/main.ts', preload: path.join(shell, 'src/main/preload.ts') }, outdir: 'dist', platform: 'node', format: 'cjs', external: ['electron'] }),
   build({ ...common, entryPoints: ['src/game/app.ts'], outfile: 'dist/app.js', platform: 'browser', format: 'iife' }),
-  build({ ...common, entryPoints: [path.join(shell, 'src/page/marker.ts')], outfile: 'dist/marker.js', platform: 'browser', format: 'iife' }),
   tests.length && build({ ...common, entryPoints: tests, outdir: 'dist/test', outbase: path.dirname(root), platform: 'node', format: 'cjs', external: ['electron'] }),
   ...extra.map(([src, out]) => build({ ...common, entryPoints: [src], outfile: path.join('dist', out), platform: 'node', format: 'cjs' })),
 ]);
-for (const f of ['shell.css', 'marker.html', 'marker.css']) fs.copyFileSync(path.join(shell, 'src/page', f), path.join(dist, f));
+for (const f of ['shell.css']) fs.copyFileSync(path.join(shell, 'src/page', f), path.join(dist, f));
 for (const f of fs.readdirSync(path.join(root, 'src/game'))) if (/\.(html|css|png)$/.test(f)) fs.copyFileSync(path.join(root, 'src/game', f), path.join(dist, f));

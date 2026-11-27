@@ -8,9 +8,9 @@ import { shellDefaults } from '@token-games/shell/settings';
 import { SettingsStore } from '@token-games/shell/main/store';
 import { applyPatch, defaultSettings, kit, resetSettings, sanitize } from '../src/shared/settings';
 
-test('defaults: in the notch, Desktop Blend, the Ridiculous map', () => {
+test('defaults: in the corner orb, Desktop Blend, the Ridiculous map', () => {
   const s = defaultSettings(5);
-  assert.equal(s.presentation, 'notch');
+  assert.equal(s.presentation, 'orb');
   assert.equal(s.palette, 'blend');
   assert.equal(s.mapSize, 'ridiculous'); assert.equal(s.calm, 0); assert.equal(s.fadeIdle, false); assert.equal(s.reducedMotion, false);
   assert.equal(s.seed, 5);
@@ -29,7 +29,7 @@ test('sanitize keeps good farm values and replaces bad ones', () => {
   assert.ok(!('claudeFeed' in sanitize({ claudeFeed: false }, base)), 'the feed is not a setting: it always watches');
 });
 
-test('reset brings back every default, the notch included, but keeps the farm', () => {
+test('reset brings back every default, the corner orb included, but keeps the farm', () => {
   const s = applyPatch(defaultSettings(42), { palette: 'terminal', calm: 0.7, fadeIdle: true, mapSize: 'huge', clickThrough: true, presentation: 'floating' });
   assert.deepEqual(resetSettings(s), defaultSettings(42));
   assert.equal(resetSettings(s).presentation, shellDefaults().presentation);

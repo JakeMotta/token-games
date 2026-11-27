@@ -36,7 +36,7 @@ console.log(`Made ${name} in ${path.relative(process.cwd(), dest) || dest}/
 Next:
   cd ${path.relative(process.cwd(), dest) || dest}
   npm install
-  npm start             # runs it in the notch
+  npm start             # runs it in a corner of the screen
   npm test && npm run test:smoke
 
 Then replace the jar (src/shared/jar.ts, src/game/app.ts) with your game, and add it to the Games list in README.md.`);

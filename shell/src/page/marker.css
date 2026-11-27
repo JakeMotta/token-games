@@ -1,7 +1,0 @@
-html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; }
-.mk { position: fixed; inset: 0; background: #000; color: #c9cbd1; border-radius: 0 0 14px 14px; display: flex; align-items: center; gap: 6px;
-  padding: 0 14px; cursor: pointer; font: 600 12px/1 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; font-variant-numeric: tabular-nums; }
-.pill .mk { border-radius: 0 0 11px 11px; padding: 0 10px; }
-.mk img { width: 16px; height: 16px; filter: invert(0.85); image-rendering: pixelated; }
-.sp { flex: 1; }
-.dot { width: 6px; height: 6px; border-radius: 50%; background: #c9a86a; box-shadow: 0 0 0 2px rgba(201, 168, 106, 0.2); }

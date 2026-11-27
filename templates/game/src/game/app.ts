@@ -1,6 +1,6 @@
-// The game's page: it draws the jar into #game, which the shell moves between the notch ('mini'), the drop-down
+// The game's page: it draws the jar into #game, which the shell moves between the orb ('mini', a small circle), the open card
 // ('expanded') and the popped-out window ('window'). The shell owns everything around it. Keep 'mini' cheap: it runs
-// all day in the notch, so draw only when something changed.
+// all day in the orb, so draw only when something changed.
 import type { GameContext, Scale } from '@token-games/shell/game';
 import type { UsageEvent } from '@token-games/shell/events';
 import { mountShell } from '@token-games/shell/page/shell-page';

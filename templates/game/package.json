@@ -2,7 +2,7 @@
   "name": "__GAME_ID__",
   "version": "0.1.0",
   "private": true,
-  "description": "Token Games: __GAME_NAME__. It lives in the notch and pops out into a window.",
+  "description": "Token Games: __GAME_NAME__. It lives in an orb in a corner of the screen and pops out into a window.",
   "main": "dist/main.js",
   "scripts": {
     "build": "node ../shell/scripts/build-game.mjs",

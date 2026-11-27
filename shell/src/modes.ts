@@ -1,23 +1,24 @@
 // The shell's states and how they change, as a pure function so every transition can be tested.
 //
-//   collapsed ──enter──▶ peek ──click──▶ expanded ──blur/Esc/toggle──▶ collapsed
-//       │                 └──leave──▶ collapsed          │
-//       └──────────────── pop ──▶ popping ──settled──▶ popped ──dock──▶ docking ──settled──▶ collapsed
+//   orb ──enter──▶ hover ──click──▶ expanded ──blur/Esc/toggle/click outside──▶ orb
+//    │              └──leave/drag──▶ orb
+//    └──────────────── pop ──▶ popping ──settled──▶ popped ──dock──▶ docking ──settled──▶ orb
 //
-// collapsed, peek, expanded and docking live in the notch; popping and popped are the floating window. With reduced
-// motion there is no flight: pop goes straight to popped and dock straight to collapsed.
+// orb, hover, expanded and docking live in the corner; popping and popped are the floating window. With reduced
+// motion there is no flight: pop goes straight to popped and dock straight to orb.
+import type { Shape } from './orb';
 import type { Presentation } from './settings';
-import type { Shape } from './notch';
 
-export const STATES = ['collapsed', 'peek', 'expanded', 'popping', 'popped', 'docking'] as const;
+export const STATES = ['orb', 'hover', 'expanded', 'popping', 'popped', 'docking'] as const;
 export type ShellState = (typeof STATES)[number];
 
 export type ShellEvent =
-  | 'enter' | 'leave' // the pointer over the island, or off it
-  | 'click' // a click on the resting or peeking island
-  | 'blur' | 'escape' // focus went elsewhere, Esc
-  | 'toggle' // the hotkey or the tray: open or close the drop-down
-  | 'pop' | 'dock' // Pop out ↗, ↩ Notch
+  | 'enter' | 'leave' // the pointer over the orb, or off the pill
+  | 'click' // a click on the resting or hovered orb
+  | 'drag' // the orb is being dragged to another corner
+  | 'blur' | 'escape' // focus went elsewhere, Esc, a click outside the card
+  | 'toggle' // the hotkey or the tray: open or close the card
+  | 'pop' | 'dock' // Pop out ↗, ↩ Corner
   | 'settled' // the window finished flying
   | 'display'; // the displays changed
 
@@ -25,26 +26,26 @@ export type ShellEvent =
 export const PAGE_EVENTS: readonly ShellEvent[] = ['click', 'escape', 'toggle', 'pop', 'dock'];
 
 export function next(s: ShellState, ev: ShellEvent, o: { reducedMotion?: boolean } = {}): ShellState {
-  if (ev === 'pop' && (s === 'collapsed' || s === 'peek' || s === 'expanded')) return o.reducedMotion ? 'popped' : 'popping';
-  if (ev === 'dock' && s === 'popped') return o.reducedMotion ? 'collapsed' : 'docking';
-  if (ev === 'settled') return s === 'popping' ? 'popped' : s === 'docking' ? 'collapsed' : s;
-  if (ev === 'display') return s === 'peek' || s === 'expanded' ? 'collapsed' : s;
+  if (ev === 'pop' && (s === 'orb' || s === 'hover' || s === 'expanded')) return o.reducedMotion ? 'popped' : 'popping';
+  if (ev === 'dock' && s === 'popped') return o.reducedMotion ? 'orb' : 'docking';
+  if (ev === 'settled') return s === 'popping' ? 'popped' : s === 'docking' ? 'orb' : s;
+  if (ev === 'display' || ev === 'drag') return s === 'hover' || s === 'expanded' ? 'orb' : s;
   switch (s) {
-    case 'collapsed': return ev === 'enter' ? 'peek' : ev === 'click' || ev === 'toggle' ? 'expanded' : s;
-    case 'peek': return ev === 'leave' ? 'collapsed' : ev === 'click' || ev === 'toggle' ? 'expanded' : s;
-    case 'expanded': return ev === 'blur' || ev === 'escape' || ev === 'toggle' ? 'collapsed' : s; // leaving doesn't close it
+    case 'orb': return ev === 'enter' ? 'hover' : ev === 'click' || ev === 'toggle' ? 'expanded' : s;
+    case 'hover': return ev === 'leave' ? 'orb' : ev === 'click' || ev === 'toggle' ? 'expanded' : s;
+    case 'expanded': return ev === 'blur' || ev === 'escape' || ev === 'toggle' ? 'orb' : s; // leaving doesn't close it
     default: return s;
   }
 }
 
-export const presentationOf = (s: ShellState): Presentation => (s === 'popping' || s === 'popped' ? 'floating' : 'notch');
+export const presentationOf = (s: ShellState): Presentation => (s === 'popping' || s === 'popped' ? 'floating' : 'orb');
 
-export const initialState = (p: Presentation): ShellState => (p === 'floating' ? 'popped' : 'collapsed');
+export const initialState = (p: Presentation): ShellState => (p === 'floating' ? 'popped' : 'orb');
 
-// The size the game draws at: a tiny live strip, the drop-down, or the window.
+// The size the game draws at: the tiny live view in the orb, the open card, or the window.
 export type Scale = 'mini' | 'expanded' | 'window';
 export const scaleOf = (s: ShellState): Scale => (s === 'expanded' ? 'expanded' : s === 'popping' || s === 'popped' ? 'window' : 'mini');
 
-// The island's outline in this state (none while the game is out in its window).
+// The shape in the corner in this state (none while the game is out in its window).
 export const shapeOf = (s: ShellState): Shape | null =>
-  s === 'peek' ? 'peek' : s === 'expanded' ? 'expanded' : s === 'collapsed' || s === 'docking' ? 'collapsed' : null;
+  s === 'hover' ? 'pill' : s === 'expanded' ? 'card' : s === 'orb' || s === 'docking' ? 'orb' : null;

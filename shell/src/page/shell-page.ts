@@ -1,21 +1,23 @@
-// The shell's side of a game's page: builds the island (the notch strip, the peek, the drop-down), the popped-out
-// window's frame (title bar, grip, size tag) and the Settings sheet, moves the game's root between them, and handles
-// the keys and settings every game shares. A game's page calls mountShell(game) once and does the rest through the
+// The shell's side of a game's page: builds the corner orb (its round live view, the hover pill, the open card), the
+// popped-out window's frame (title bar, grip, size tag) and the Settings sheet, moves the game's root between them,
+// and handles the keys and settings every game shares. A game's page calls mountShell(game) once and does the rest through the
 // GameContext it gets back in start().
 //
-// The main process decides the state (modes.ts); this page only shows it and sends intents (click, Esc, Pop out, …).
+// The main process decides the state (modes.ts); this page only shows it and sends intents (click, Esc, Pop out, …)
+// and, while the orb is dragged, the pointer in screen coordinates.
 import type { FeedStatus, ModeInfo, ShellApi, ShellBoot, ShellCommand } from '../api';
 import type { Game, GameContext, GameStatusLine, Theme } from '../game';
 import { gripCorner } from '../geometry';
 import { scaleOf, shapeOf, type Scale, type ShellEvent, type ShellState } from '../modes';
-import { islandSize } from '../notch';
+import { CARD, shapeSize } from '../orb';
 import { DOCKS, type ShellSettings } from '../settings';
 
 declare global { interface Window { tokenShell: ShellApi<any>; shellTest?: Record<string, unknown>; gameTest?: Record<string, unknown> } }
 
 const BAR = 20, BAR_FULL = 26;
 const FADE_MS = 130; // the page fades out this long before the window flies (main waits a little longer)
-const SHELL_KEYS = 'Esc closes · , settings · O pop out / back to the notch · H hide · popped out: 1 small · 2 large · F full screen · T click-through · D dock';
+const DRAG_PX = 4; // the orb follows the pointer only once it has moved this far, so a click stays a click
+const SHELL_KEYS = 'Esc closes · , settings · O pop out / back to the corner · H hide · popped out: 1 small · 2 large · F full screen · T click-through · D dock';
 
 const GEAR = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6" cy="6" r="1.8"/><path d="M6 .8v1.6M6 9.6v1.6M.8 6h1.6M9.6 6h1.6M2.3 2.3l1.1 1.1M8.6 8.6l1.1 1.1M2.3 9.7l1.1-1.1M8.6 3.4l1.1-1.1"/></svg>';
 const FULL = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 4.5V1h3.5M11 4.5V1H7.5M1 7.5V11h3.5M11 7.5V11H7.5"/></svg>';
@@ -23,7 +25,10 @@ const HIDE = '<svg viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5">
 
 const DISPLAY_HTML = `
 <h4>Display</h4>
-<div class="tg-row">Lives <span class="tg-chips" id="tg-pres"><button data-pres="notch">In the notch</button><button data-pres="floating">Floating window</button></span></div>
+<div class="tg-row">Lives <span class="tg-chips" id="tg-pres"><button data-pres="orb">In the corner</button><button data-pres="floating">Floating window</button></span></div>
+<div class="tg-row">Corner <span class="tg-docks" id="tg-corners">
+  <button data-corner="tl" title="Top left">◰</button><button data-corner="tr" title="Top right">◳</button>
+  <button data-corner="bl" title="Bottom left">◱</button><button data-corner="br" title="Bottom right">◲</button></span></div>
 <p class="tg-note" id="tg-presNote"></p>
 <div class="tg-floatset">
   <div class="tg-chips" id="tg-sizes"><button data-size="small">Small</button><button data-size="large">Large</button><button id="tg-pFull">Full screen</button></div>
@@ -50,26 +55,27 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
 
   // ---------- the DOM ----------
 
-  const island = el('div', 'tg-island');
-  island.id = 'tg-island';
-  const handle = el('div', 'tg-handle');
-  handle.title = 'Close (Esc)';
-  const ear = el('div', 'tg-ear l');
-  const earR = el('div', 'tg-ear r');
-  const count = el('span', 'tg-count'), dot = el('span', 'tg-dot');
-  earR.append(count, el('span', 'tg-icon', game.icon || ''), dot);
-  const peek = el('div', 'tg-peek'), strip = el('div', 'tg-strip'), peekStat = el('div', 'tg-stat');
-  peek.append(strip, peekStat);
-  const drop = el('div', 'tg-drop'), big = el('div', 'tg-big'), dropBar = el('div', 'tg-stat tg-dbar');
+  // In the corner: one shape that is the orb at rest, the pill on hover and the card when open, always hugging the
+  // corner of the screen, so each grows out of the orb.
+  const shape = el('div', 'tg-shape');
+  shape.id = 'tg-shape';
+  const orb = el('div', 'tg-orb'), eye = el('div', 'tg-eye'), badge = el('span', 'tg-badge');
+  orb.append(eye, badge);
+  const pill = el('div', 'tg-pillc'), pillName = el('div', 'tg-pname'), pillLine = el('div', 'tg-line');
+  const pillTitle = el('b'), pillCount = el('span', 'tg-pcount');
+  pillTitle.textContent = game.name;
+  pillName.append(el('span', 'tg-icon', game.icon || ''), pillTitle, pillCount);
+  pill.append(pillName, pillLine);
+  const card = el('div', 'tg-card'), big = el('div', 'tg-big'), cardBar = el('div', 'tg-cbar');
   const popBtn = el<HTMLButtonElement>('button', 'tg-pill', 'Pop out ↗'), setBtn = el<HTMLButtonElement>('button', 'tg-pill', 'Settings');
+  const shrinkBtn = el<HTMLButtonElement>('button', 'tg-pill tg-shrink', '–');
   popBtn.id = 'tg-pop'; popBtn.title = 'Pop out into a floating window (O)';
   setBtn.id = 'tg-set'; setBtn.title = 'Settings (,)';
-  const dropLine = el('span', 'tg-line');
-  dropBar.append(dropLine, el('span', 'tg-sp'), popBtn, setBtn);
-  drop.append(big, dropBar);
-  const peekLine = el('span', 'tg-line');
-  peekStat.append(peekLine);
-  island.append(handle, ear, earR, peek, drop);
+  shrinkBtn.id = 'tg-shrink'; shrinkBtn.title = 'Back to the orb (Esc)';
+  const cardLine = el('span', 'tg-line');
+  cardBar.append(cardLine, el('span', 'tg-sp'), popBtn, setBtn, shrinkBtn);
+  card.append(big, cardBar);
+  shape.append(card, pill, orb);
 
   const win = el('div', 'tg-win');
   win.id = 'tg-win';
@@ -78,7 +84,7 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
   name.textContent = game.name;
   const wbtns = el('span', 'tg-wbtns');
   const wbtn = (id: string, title: string, html: string) => { const b = el<HTMLButtonElement>('button', 'tg-wbtn', html); b.id = id; b.title = title; return b; };
-  const dockBtn = wbtn('tg-dock', 'Back to the notch (O)', '↩ Notch');
+  const dockBtn = wbtn('tg-dock', 'Back to the corner (O)', '↩ Corner');
   dockBtn.classList.add('tg-text');
   const fullBtn = wbtn('tg-full', 'Full screen (F; Esc leaves)', FULL), gearBtn = wbtn('tg-gear', 'Settings (,)', GEAR), hideBtn = wbtn('tg-hide', 'Hide to the menu bar (H)', HIDE);
   wbtns.append(...(game.barButtons || []), dockBtn, fullBtn, gearBtn, hideBtn);
@@ -94,7 +100,7 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
   const display = el('section', 'tg-display', DISPLAY_HTML);
   const foot = el('section', '', '<div class="tg-chips"><button id="tg-reset">Reset to defaults</button><button id="tg-close">Close</button></div><p class="tg-note tg-keys" id="tg-keys"></p>');
   panel.append(display, foot);
-  body.append(island, win);
+  body.append(shape, win);
   body.classList.add('tg');
   game.root.classList.add('tg-root');
 
@@ -104,10 +110,10 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
   // ---------- state ----------
 
   let S: S, dark = true, smoke = false, feed: FeedStatus | null = null, full = false;
-  let mode: ModeInfo = { state: 'collapsed', geo: { notch: false, top: 24, band: 25, notchWidth: 0, screen: { x: 0, y: 0, width: 1440, height: 900 } }, visible: true };
-  let shown: ShellState = 'collapsed'; // the layout on screen (lags the state by the fade while flying)
+  let mode: ModeInfo = { state: 'orb', geo: { corner: 'br', area: { x: 0, y: 0, width: 1440, height: 900 }, card: { ...CARD } }, visible: true };
+  let shown: ShellState = 'orb'; // the layout on screen (lags the state by the fade while flying)
   let scale: Scale = 'mini', flyT = 0, evtT = 0, sizeT = 0, grab = false, started = false;
-  const status = { count: '', title: '', lead: '', line: '' };
+  const status = { count: '', title: '', lead: '', line: '', warm: false };
 
   const topInset = (): number => (scale === 'window' ? (full ? BAR_FULL : BAR) : 0);
   const intent = (ev: ShellEvent) => api.intent(ev);
@@ -151,8 +157,7 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
 
   function showMode(): void {
     const st = mode.state;
-    body.dataset.notch = mode.geo.notch ? '1' : '0';
-    body.style.setProperty('--tg-band', mode.geo.band + 'px');
+    body.dataset.corner = mode.geo.corner;
     body.classList.toggle('tg-flying', st === 'popping' || st === 'docking');
     clearTimeout(flyT);
     // flying: fade out, then swap the layout while the window moves (with reduced motion there is no flight)
@@ -163,18 +168,18 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
   function layout(st: ShellState): void {
     shown = st;
     body.dataset.state = st;
-    const shape = shapeOf(st);
-    if (shape) {
-      const s = islandSize(shape, mode.geo);
-      island.style.width = s.width + 'px';
-      island.style.height = s.height + 'px';
+    const sh = shapeOf(st);
+    if (sh) {
+      const s = shapeSize(sh, mode.geo);
+      shape.style.width = s.width + 'px';
+      shape.style.height = s.height + 'px';
     }
-    const sc = scaleOf(st === 'docking' ? 'collapsed' : st);
-    const where = sc === 'window' ? host : sc === 'expanded' ? big : st === 'peek' ? strip : ear;
+    const sc = scaleOf(st === 'docking' ? 'orb' : st);
+    const where = sc === 'window' ? host : sc === 'expanded' ? big : eye;
     if (game.root.parentElement !== where) where.appendChild(game.root);
-    // the Settings sheet lives in the window, or in the drop-down
+    // the Settings sheet lives in the window, or in the open card
     if (sc === 'mini' && !panel.hidden) togglePanel(false);
-    const sheetHost = sc === 'window' ? win : big;
+    const sheetHost = sc === 'window' ? win : card;
     if (panel.parentElement !== sheetHost) sheetHost.appendChild(panel);
     if (sc !== 'window' && full) setFull(false);
     if (sc !== scale) { scale = sc; game.onScale?.(sc); }
@@ -184,16 +189,18 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
   // ---------- status, pulse, theme ----------
 
   function setStatus(s: GameStatusLine): void {
-    const lead = s.lead || '', line = s.line || '';
+    const lead = s.lead || '', line = s.line || '', warm = !!s.warm;
+    if (warm !== status.warm) { status.warm = warm; orb.classList.toggle('warm', warm); }
     if (s.count !== status.count || s.title !== status.title) {
       status.count = s.count; status.title = s.title;
-      count.textContent = s.count;
-      earR.title = s.count + ' ' + s.title;
+      badge.textContent = s.count;
+      pillCount.textContent = s.count ? s.count + ' ' + s.title : '';
+      orb.title = game.name + (s.count ? ': ' + s.count + ' ' + s.title : '');
       api.status({ count: s.count, title: s.title });
     }
     if (lead === status.lead && line === status.line) return;
     status.lead = lead; status.line = line;
-    for (const host of [meter, peekLine, dropLine]) {
+    for (const host of [meter, pillLine, cardLine]) {
       host.textContent = '';
       if (lead) { const b = document.createElement('b'); b.textContent = lead; host.append(b, line ? ' · ' : ''); }
       host.append(line);
@@ -201,16 +208,16 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
   }
 
   function pulse(text: string, kind: 'hot' | 'task' = 'hot'): void {
-    for (const p of [pulseDot, dot]) { p.classList.remove('hot', 'task'); void p.offsetWidth; p.classList.add(kind); }
+    for (const p of [pulseDot, orb]) { p.classList.remove('hot', 'task'); void p.offsetWidth; p.classList.add(kind); }
     evt.textContent = text;
     evt.classList.add('show');
     body.classList.add('tg-news');
-    peekLine.dataset.news = dropLine.dataset.news = text;
+    pillLine.dataset.news = cardLine.dataset.news = text;
     clearTimeout(evtT);
     evtT = window.setTimeout(() => {
       evt.classList.remove('show');
       body.classList.remove('tg-news');
-      for (const p of [pulseDot, dot]) p.classList.remove('hot', 'task');
+      for (const p of [pulseDot, orb]) p.classList.remove('hot', 'task');
     }, 2600);
   }
 
@@ -244,6 +251,7 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
     for (const b of $('tg-pres').querySelectorAll<HTMLButtonElement>('[data-pres]')) b.onclick = () => set({ presentation: b.dataset.pres } as Partial<S>);
     for (const b of $('tg-sizes').querySelectorAll<HTMLButtonElement>('[data-size]')) b.onclick = () => set({ size: b.dataset.size } as Partial<S>);
     for (const b of $('tg-docks').querySelectorAll<HTMLButtonElement>('[data-dock]')) b.onclick = () => set({ dock: b.dataset.dock } as Partial<S>);
+    for (const b of $('tg-corners').querySelectorAll<HTMLButtonElement>('[data-corner]')) b.onclick = () => set({ corner: b.dataset.corner } as Partial<S>);
     const op = $<HTMLInputElement>('tg-opacity');
     op.oninput = () => set({ opacity: +op.value / 100 } as Partial<S>);
     for (const id of ['alwaysOnTop', 'clickThrough', 'reducedMotion'] as const) {
@@ -259,9 +267,10 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
     if (!S || panel.hidden) return;
     const floating = scale === 'window';
     for (const b of $('tg-pres').querySelectorAll<HTMLButtonElement>('[data-pres]')) b.classList.toggle('on', b.dataset.pres === S.presentation);
-    $('tg-presNote').textContent = S.presentation === 'notch'
-      ? (mode.geo.notch ? 'Rests in the notch: hover to peek, click to open.' : 'Rests in the middle of the menu bar: hover to peek, click to open.') + ' Pop out for a window you can move and resize.'
-      : 'A floating window. ↩ Notch puts it back.';
+    for (const b of $('tg-corners').querySelectorAll<HTMLButtonElement>('[data-corner]')) b.classList.toggle('on', b.dataset.corner === S.corner);
+    $('tg-presNote').textContent = S.presentation === 'orb'
+      ? 'An orb in a corner of the screen: hover for the status, click to open, drag it to another corner. Pop out for a window you can move and resize.'
+      : 'A floating window. ↩ Corner puts it back in its corner.';
     for (const b of $('tg-sizes').querySelectorAll<HTMLButtonElement>('[data-size]')) b.classList.toggle('on', !full && b.dataset.size === S.size);
     $('tg-pFull').classList.toggle('on', full);
     ($('tg-pFull') as HTMLButtonElement).disabled = !floating;
@@ -275,7 +284,7 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
   }
 
   function togglePanel(open = panel.hidden): void {
-    if (open && scale === 'mini') { intent('toggle'); open = true; } // open the drop-down first
+    if (open && scale === 'mini') { intent('toggle'); open = true; } // open the card first
     panel.hidden = !open;
     body.classList.toggle('tg-open', open);
     renderPanel();
@@ -296,11 +305,34 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
 
   // ---------- input ----------
 
-  island.addEventListener('click', (e) => {
-    const t = e.target as HTMLElement;
-    if (shown === 'collapsed' || shown === 'peek') intent('click');
-    else if (shown === 'expanded' && t === handle) intent('escape');
+  // The orb and the pill: a click opens the card; a drag (past DRAG_PX) carries the orb to another corner, the main
+  // process moving the window under the pointer and settling it in the nearest corner on release.
+  let press: { id: number; x: number; y: number; dragging: boolean } | null = null;
+  shape.addEventListener('pointerdown', (e) => {
+    if ((shown !== 'orb' && shown !== 'hover') || e.button !== 0) return;
+    press = { id: e.pointerId, x: e.screenX, y: e.screenY, dragging: false };
+    try { shape.setPointerCapture(e.pointerId); } catch { /* the smoke test's pointer is not a real one */ }
   });
+  shape.addEventListener('pointermove', (e) => {
+    if (!press || e.pointerId !== press.id) return;
+    if (!press.dragging) {
+      if (Math.hypot(e.screenX - press.x, e.screenY - press.y) < DRAG_PX) return;
+      press.dragging = true;
+      body.classList.add('tg-dragging');
+      api.orbDrag({ phase: 'start', x: press.x, y: press.y });
+    }
+    api.orbDrag({ phase: 'move', x: e.screenX, y: e.screenY });
+  });
+  const release = (e: PointerEvent, cancel: boolean) => {
+    if (!press || e.pointerId !== press.id) return;
+    const p = press;
+    press = null;
+    if (p.dragging) { body.classList.remove('tg-dragging'); api.orbDrag({ phase: 'end', x: e.screenX, y: e.screenY }); }
+    else if (!cancel) intent('click');
+  };
+  shape.addEventListener('pointerup', (e) => release(e, false));
+  shape.addEventListener('pointercancel', (e) => release(e, true));
+  shrinkBtn.onclick = (e) => { e.stopPropagation(); intent('escape'); };
   popBtn.onclick = (e) => { e.stopPropagation(); intent('pop'); };
   setBtn.onclick = (e) => { e.stopPropagation(); togglePanel(); };
   dockBtn.onclick = () => intent('dock');
@@ -320,7 +352,7 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
     if (k === 'Escape') {
       if (!panel.hidden) togglePanel(false);
       else if (full) toggleFull(false);
-      else if (shown === 'expanded' || shown === 'peek') intent('escape');
+      else if (shown === 'expanded' || shown === 'hover') intent('escape');
     } else if (k === ',') togglePanel();
     else if (k === 'o') intent(inWin ? 'dock' : 'pop');
     else if (k === 'h') hideWindow();
@@ -382,17 +414,26 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
 
   // For the automated smoke test only: views of the shell's page, and a way to press keys and click like a player.
   function exposeTest(): void {
+    const ptr = (type: string, x: number, y: number) =>
+      shape.dispatchEvent(new PointerEvent(type, { pointerId: 7, button: 0, screenX: x, screenY: y, bubbles: true }));
     window.shellTest = {
       state: () => ({
-        state: mode.state, shown, scale, notch: mode.geo.notch, panelOpen: !panel.hidden, full, thru: body.classList.contains('tg-thru'),
-        island: { w: island.offsetWidth, h: island.offsetHeight }, root: { w: game.root.clientWidth, h: game.root.clientHeight },
-        rootIn: game.root.parentElement?.className || '', count: count.textContent, line: dropLine.textContent, topInset: topInset(),
+        state: mode.state, shown, scale, corner: body.dataset.corner, panelOpen: !panel.hidden, full, thru: body.classList.contains('tg-thru'),
+        shape: { w: shape.offsetWidth, h: shape.offsetHeight }, root: { w: game.root.clientWidth, h: game.root.clientHeight },
+        rootIn: game.root.parentElement?.className || '', count: badge.textContent, line: cardLine.textContent, topInset: topInset(),
+        warm: orb.classList.contains('warm'), pill: pill.innerText,
         presentation: S.presentation, back: getComputedStyle(document.documentElement).getPropertyValue('--g-back').trim(),
       }),
       key: (key: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key })),
       click: (id: string) => (document.getElementById(id) as HTMLElement).click(),
-      clickIsland: () => island.click(),
-      clickHandle: () => handle.click(),
+      // a press and release on the orb without moving: a click
+      clickOrb: () => { ptr('pointerdown', 100, 100); ptr('pointerup', 100, 100); },
+      // a press on the orb at (x, y) on screen, moved in steps by (dx, dy), then released: a drag
+      dragOrb: (x: number, y: number, dx: number, dy: number) => {
+        ptr('pointerdown', x, y);
+        for (let i = 1; i <= 4; i++) ptr('pointermove', x + (dx * i) / 4, y + (dy * i) / 4);
+        ptr('pointerup', x + dx, y + dy);
+      },
       text: () => panel.innerText + '\n' + bar.innerText,
     };
     if (game.testHooks) window.gameTest = game.testHooks();

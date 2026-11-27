@@ -1,5 +1,5 @@
 // The Ant Farm's page: runs the simulation and draws it into #farm, which the shell (shell/src/page/shell-page.ts)
-// moves between the notch, the peek strip, the drop-down and the popped-out window. The shell owns the title bar, the
+// moves between the corner orb's round eye, its open card and the popped-out window. The shell owns the title bar, the
 // Display settings, the tray and the Claude Code feed; this file adds the farm, its camera and its own settings.
 // The farm grows only from real Claude Code usage, which the shell forwards; there is no other way to feed it.
 import type { GameContext, Scale } from '@token-games/shell/game';
@@ -101,11 +101,11 @@ function status(): void {
   const h = sim.health();
   points = score(scoreInput(sim)).total;
   if (sim.over()) {
-    C.setStatus({ count: '0', title: 'ants', lead: '★ ' + num(points), line: 'game over · ★ ' + num(points) + (runs.best ? ' · best ' + num(Math.max(points, runs.best.score)) : '') });
+    C.setStatus({ count: '0', title: 'ants', warm: true, lead: '★ ' + num(points), line: 'game over' + (runs.best ? ' · best ' + num(Math.max(points, runs.best.score)) : '') });
     return;
   }
   C.setStatus({
-    count: String(h.workers), title: h.workers === 1 ? 'ant' : 'ants', lead: '⚡' + Math.floor(sim.energy),
+    count: String(h.workers), title: h.workers === 1 ? 'ant' : 'ants', warm: h.mood !== 'fed', lead: '⚡' + Math.floor(sim.energy),
     line: h.workers + ' ants · ' + h.food + ' food' + MOOD[h.mood] + ' · ★ ' + num(points) +
       (feed && (feed.error || !feed.files) ? ' · waiting for Claude Code' : ''),
   });
@@ -138,7 +138,7 @@ function drawThumbs(): void {
 }
 
 // ---------- the loop: the simulation at 20 steps a second; the picture at 60, 30 or 8 frames a second in the window
-// and the drop-down, 4 or 2 in the notch, fewer with reduced motion ----------
+// and the open card, 4 or 2 in the orb, fewer with reduced motion ----------
 
 function running(): boolean { return ready && (smoke || !document.hidden); }
 
@@ -164,7 +164,7 @@ function frame(): void {
   if (C.panelOpen && t - lastThumbs > 1000) { lastThumbs = t; drawThumbs(); renderHealth(); }
   if (t - lastSave > SAVE_EVERY) save();
   // reduced motion: few frames, so less flicker at the edge of your eye; moving the camera gets every frame.
-  // Resting in the notch the farm is a few pixels tall: a handful of frames is plenty and costs next to nothing.
+  // Resting in the orb the farm is a few pixels across: a handful of frames is plenty and costs next to nothing.
   const fps = mini() ? (S.reducedMotion ? 1 : busy ? 4 : 2)
     : moving && !S.reducedMotion ? 60 : S.reducedMotion ? (moving ? 15 : busy ? 5 : 2) : busy || dim !== want ? 30 : 8;
   timer = window.setTimeout(frame, 1000 / fps);
@@ -387,8 +387,8 @@ followBtn.innerHTML = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor
 followBtn.onclick = () => follow();
 
 // Two fingers on a trackpad pan, 1:1 and at once; a pinch zooms around the pointer; a mouse wheel zooms; dragging pans
-// and glides on when let go. Double-click (or A) lets the camera follow the colony again. In the notch the farm is
-// only a picture: a click there opens the drop-down.
+// and glides on when let go. Double-click (or A) lets the camera follow the colony again. In the orb the farm is
+// only a picture: a click there opens the card, a drag moves the orb to another corner.
 view.addEventListener('wheel', (e) => {
   if (mini()) return;
   e.preventDefault();

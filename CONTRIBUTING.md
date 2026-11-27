@@ -8,9 +8,9 @@ inside your game is up to you, as long as only real agent usage moves it forward
 1. **Usage only.** Progress comes from `UsageEvent`s the shell forwards (`tokens`, `task_done`, `session_start`,
    `agent_waiting`). No cheat, feed, debug or "add tokens" controls of any kind. Idle regen, if any, must not let a
    player progress without an agent working.
-2. **Notch first, pop out.** Your game draws at three scales the shell picks: `mini` (a tiny strip in the island's
-   left ear, a few dozen pixels wide), `expanded` (the drop-down, about 600 × 275) and `window` (320 × 180 up to
-   full screen). Make each readable.
+2. **A corner orb first, pop out.** Your game draws at three scales the shell picks: `mini` (the orb's round eye,
+   about 54 px across), `expanded` (the open card, 440 × 330 with its bar) and `window` (320 × 180 up to full screen).
+   Make each readable.
 3. **Cheap when collapsed.** In `mini`, draw 1–4 frames a second and skip whatever nobody can see. Keep the
    simulation on the real clock so a slow frame rate doesn't slow the game.
 4. **Calm.** Quiet palettes, no flashing; follow `settings.reducedMotion`; fade when idle where it fits.
@@ -24,12 +24,13 @@ inside your game is up to you, as long as only real agent usage moves it forward
 ## A new game in 10 minutes
 
 1. **Make it.** From the repo root: `npm run new-game -- my-game "My Game"`, then `cd my-game && npm install`.
-2. **Run it.** `npm start`. The jar sits in the notch; click it, pop it out, open Settings (`,`).
+2. **Run it.** `npm start`. The jar sits in an orb in a corner; click it, drag it, pop it out, open Settings (`,`).
 3. **Your logic.** Replace `src/shared/jar.ts` with your game's state. Keep it free of the DOM; give it
    `feed(ev: UsageEvent)`, `save()` and `load()`. Write tests in `test/` (`npm test`).
 4. **Your view.** In `src/game/app.ts`, draw into `#game` sized from its own `clientWidth`/`clientHeight` (minus
-   `ctx.topInset` in the window). Use `onScale` to switch between the strip, the drop-down and the window.
-5. **Talk to the shell.** `ctx.setStatus({ count, title, lead, line })` for the island and title bar,
+   `ctx.topInset` in the window). Use `onScale` to switch between the orb, the card and the window.
+5. **Talk to the shell.** `ctx.setStatus({ count, title, lead, line, warm })` for the orb, its pill and the title bar (`warm` tints
+   the orb's ring when the game needs the player),
    `ctx.pulse('+3 grains')` for a quiet moment of news, `ctx.setTheme(...)` for your colours, `ctx.save(...)` /
    `ctx.load()` for your save file, `ctx.set(...)` to change a setting.
 6. **Your settings.** Add fields in `src/shared/settings.ts` (defaults, sanitize, what Reset keeps) and their
@@ -41,7 +42,7 @@ inside your game is up to you, as long as only real agent usage moves it forward
 
 ## Art
 
-Pixel art fits the notch. [PixelLab](https://pixellab.ai) is fine for sprites but optional; hand-made art is just as
+Pixel art fits the orb. [PixelLab](https://pixellab.ai) is fine for sprites but optional; hand-made art is just as
 welcome. Keep any API key in your environment, never in the repo, and commit only the finished images (PNG or SVG)
 under your game's folder.
 
@@ -49,7 +50,8 @@ under your game's folder.
 
 - Unit tests: `test/*.test.ts` in your game, run with the shell's own tests by `npm test`.
 - The smoke test (`npm run test:smoke`) starts the real app with a temporary profile and a fake Claude Code
-  folder, walks every mode (notch, peek, drop-down, pop out, dock back, the window's sizes and corners, Settings,
+  folder, walks every mode (the orb in its corner, the pill, the card, dragging to
+  another corner, the hotkey, pop out, dock back, the window's sizes and corners, Settings,
   Reset, a restart), runs your game's checks, and **never shows a window**. Feed your game in it only with
   `k.transcript(...)`, which writes a real transcript line.
 - Run one at a time; don't start a second Electron test while one runs.

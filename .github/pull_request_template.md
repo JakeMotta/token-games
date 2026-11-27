@@ -12,7 +12,7 @@
 ## Rules
 
 - [ ] Only real agent usage moves the game forward: no cheat, feed, debug or "add tokens" controls
-- [ ] Calm in the notch, cheap when collapsed, Reduced motion respected
+- [ ] Calm in the corner orb, cheap when collapsed, Reduced motion respected
 - [ ] No keys, tokens or personal data committed
 - [ ] **Docs match the shell:** if this changes the wrapper (`shell/`, `templates/`, `scripts/`, the manifest format,
       the root `package.json`, install or run commands, or how the app behaves on someone's computer), I updated

@@ -1,4 +1,4 @@
-/* The game's own styles. The island, the window frame, the title bar and the Settings sheet are the shell's
+/* The game's own styles. The corner orb, the window frame, the title bar and the Settings sheet are the shell's
    (shell/src/page/shell.css); use its colours (--g-back, --g-ink, --g-dim, --g-hot, --g-line), set by ctx.setTheme. */
 .game { background: var(--g-back); }
 #view { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }

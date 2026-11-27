@@ -1,8 +1,10 @@
 // The settings every game shares (how it presents itself and its popped-out window), and how a game adds its own.
 // One flat settings.json holds both. Pure, so the main process, the page and the tests share one definition.
 
-// Where the game lives: in the notch (or a pill in the menu bar), or popped out as a floating window.
-export const PRESENTATIONS = ['notch', 'floating'] as const;
+import { CORNERS, type Corner } from './orb';
+
+// Where the game lives: in an orb in a corner of the screen, or popped out as a floating window.
+export const PRESENTATIONS = ['orb', 'floating'] as const;
 export type Presentation = (typeof PRESENTATIONS)[number];
 
 export const DOCKS = ['tl', 'tr', 'bl', 'br', 'free'] as const;
@@ -15,7 +17,10 @@ export interface Bounds { x: number; y: number; width: number; height: number }
 
 export interface ShellSettings {
   presentation: Presentation;
-  reducedMotion: boolean; // no animation in the notch or the window, few frames a second
+  reducedMotion: boolean; // no animation in the corner or the window, few frames a second
+  // the orb
+  corner: Corner; // the corner of the screen the orb rests in
+  display: number | null; // the display it rests on (its id), or null for the main one
   // the popped-out window
   size: SizePreset;
   width: number; // the window size (16:9); presets set it, the grip changes it
@@ -32,7 +37,7 @@ export const MIN_OPACITY = 0.25;
 
 export function shellDefaults(): ShellSettings {
   return {
-    presentation: 'notch', reducedMotion: false,
+    presentation: 'orb', reducedMotion: false, corner: 'br', display: null,
     size: 'small', width: PRESET_WIDTH.small, clickThrough: false, opacity: 1, dock: 'br', bounds: null, alwaysOnTop: true,
   };
 }
@@ -55,8 +60,11 @@ export function sanitizeShell(r: Record<string, unknown>, base: ShellSettings): 
   let width = Math.round(num(r.width, MIN_WIDTH, 8192, base.width));
   if (size !== 'custom') width = PRESET_WIDTH[size];
   return {
-    presentation: oneOf(PRESENTATIONS, r.presentation, base.presentation),
+    // the orb took the notch's place: a settings file from then rests in the corner
+    presentation: r.presentation === 'notch' ? 'orb' : oneOf(PRESENTATIONS, r.presentation, base.presentation),
     reducedMotion: bool(r.reducedMotion, base.reducedMotion),
+    corner: oneOf(CORNERS, r.corner, base.corner),
+    display: r.display === null ? null : typeof r.display === 'number' && Number.isInteger(r.display) ? r.display : base.display,
     size, width,
     clickThrough: bool(r.clickThrough, base.clickThrough),
     opacity: num(r.opacity, MIN_OPACITY, 1, base.opacity),

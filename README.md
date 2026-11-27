@@ -4,10 +4,10 @@ Idle games that play themselves from the work your AI agent does. Every token Cl
 finishes moves the game forward, and nothing else does: no buttons to grind, no cheats. Codex and other agents come
 later.
 
-Every game lives in the **notch**: a tiny live strip beside the camera. Point at it and it peeks open; click and it
-drops down; **Pop out ↗** turns it into a small floating window, and **↩ Notch** sends it back. On a Mac without a
-notch (or a second display) it hangs from the middle of the menu bar as a small pill. See
-[docs/presentation.md](docs/presentation.md).
+Every game lives in a **corner orb**: a small round window in a corner of the screen with a live view of the game
+and a count. Point at it and a pill grows out with its name and status; click and it opens into a card; **Pop out ↗**
+turns it into a small floating window, and **↩ Corner** sends it back. Drag the orb to any corner of any display and
+it stays there. See [docs/presentation.md](docs/presentation.md).
 
 ## Games
 
@@ -19,7 +19,7 @@ Planned: a tower defense where tokens queue the waves; a site where people find,
 
 ## Run a game
 
-Needs Node 20 or newer, on macOS (Windows and Linux run it as a pill in the menu bar or a floating window; less tested).
+Needs Node 20 or newer, on macOS (Windows and Linux run it the same way; less tested).
 
 ```sh
 cd ant-farm
@@ -27,10 +27,11 @@ npm install
 npm start
 ```
 
-It starts in the notch. Click the island to drop it down, **Pop out ↗** for the window. The menu-bar icon has
-everything (open, pop out, back to the notch, Settings, size, docking, click-through, Reduced motion, Reset to
-defaults, quit), and **Alt+Cmd+T** (Alt+Ctrl+T) works anywhere: in the notch it opens and closes the drop-down,
-popped out it switches click-through. Settings are saved as you change them; Settings → Display → Presentation
+It starts as an orb in the bottom-right corner. Click it to open the card, **Pop out ↗** for the window, drag it
+to move it to another corner. The menu-bar icon has everything (show, open, pop out, back to the corner, the corner,
+Settings, size, docking, click-through, Reduced motion, Reset to defaults, quit), and **Alt+Cmd+T** (Alt+Ctrl+T)
+works anywhere: it shows a hidden game, in the corner it opens and closes the card, popped out it switches
+click-through. Settings are saved as you change them; Settings → Display → Presentation
 chooses where it starts.
 
 ## Make a game
@@ -45,7 +46,7 @@ the jar with your game. Read [CONTRIBUTING.md](CONTRIBUTING.md) first; it has th
 
 ## The repo
 
-- `shell/`: the wrapper every game runs in: notch and window modes, tray, hotkey, settings, the Claude Code feed,
+- `shell/`: the wrapper every game runs in: the corner orb and window modes, tray, hotkey, settings, the Claude Code feed,
   the build and the hidden smoke test ([shell/README.md](shell/README.md)).
 - `<game>/`: one folder per game, each with a `game.json` manifest ([docs/manifest.md](docs/manifest.md)).
 - `templates/game/`, `scripts/`: the starter game, `npm run new-game`, `npm run docs-check`.

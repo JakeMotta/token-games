@@ -2,7 +2,7 @@
 // a catalog that lists and installs games. The format is documented in docs/manifest.md; change both together.
 // The build (shell/scripts/build-game.mjs) checks it and stops on any problem.
 
-export const SHELL_VERSION = '1.0.0'; // the shell's own version (shell/package.json); a game asks for at least minShellVersion
+export const SHELL_VERSION = '1.1.0'; // the shell's own version (shell/package.json); a game asks for at least minShellVersion
 export const MANIFEST_VERSION = 1;
 
 // What a game may ask the shell for. 'claude-usage': read the user's Claude Code transcripts for token counts only.
@@ -12,7 +12,7 @@ export type Permission = (typeof PERMISSIONS)[number];
 export interface GameManifest {
   manifestVersion: 1;
   id: string; // the folder name, lowercase-with-dashes; also the app's name (its settings folder)
-  name: string; // shown in the island, the window and the menu bar
+  name: string; // shown in the orb's pill, the window and the menu bar
   description: string; // one sentence
   author: string;
   version: string; // the game's own version, x.y.z

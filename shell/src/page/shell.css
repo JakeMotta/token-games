@@ -1,56 +1,82 @@
-/* The shell's page: the island in the notch (or a pill in the menu bar), the popped-out window's frame and the
-   Settings sheet. The window's colours come from the game (ctx.setTheme) as --g-* variables; the island is always
-   black, like the notch it hugs. Sizes match notch.ts, which the main process uses to know where the island is. */
+/* The shell's page: the orb in a corner of the screen (its hover pill and open card), the popped-out window's frame
+   and the Settings sheet. The window's colours come from the game (ctx.setTheme) as --g-* variables; the orb keeps
+   the shell's own quiet colours, light or dark with the system. Sizes match orb.ts, which the main process uses to
+   know where the orb is. */
 html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; }
 body.tg {
   --g-back: #1b1c1f; --g-bar: rgba(30, 31, 35, 0.7); --g-ink: #a2a5ab; --g-dim: #76797f; --g-hot: #8f8671; --g-task: #8f8671;
-  --g-line: rgba(255, 255, 255, 0.07); --g-panel: rgba(27, 28, 31, 0.94); --tg-band: 37px;
+  --g-line: rgba(255, 255, 255, 0.07); --g-panel: rgba(27, 28, 31, 0.94);
+  --o-back: rgba(244, 243, 239, 0.96); --o-ink: #3b3d42; --o-dim: #7b7e85; --o-edge: rgba(0, 0, 0, 0.09); --o-btn: #ffffff;
+  --o-ring: #8fa67b; --o-warm: #c39a66; --o-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
   --tg-ease: cubic-bezier(0.25, 0.9, 0.3, 1); /* calm: no overshoot */
   font: 11px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   transition: opacity 0.12s;
 }
+body.tg.tg-dark { --o-back: rgba(24, 25, 28, 0.95); --o-ink: #d9dadf; --o-dim: #92959c; --o-edge: rgba(255, 255, 255, 0.08); --o-btn: #222327;
+  --o-ring: #7f9670; --o-warm: #b58d5c; --o-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); }
 body.tg-flying { opacity: 0; }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--g-hot); outline-offset: 1px; }
 
-/* ---------- the island ---------- */
-.tg-island { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 350px; height: var(--tg-band); box-sizing: border-box;
-  background: #000; color: #d9dadf; overflow: hidden; cursor: pointer; border-radius: 0 0 14px 14px;
-  transition: width 0.36s var(--tg-ease), height 0.36s var(--tg-ease), border-radius 0.36s var(--tg-ease);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0); }
-body[data-state="peek"] .tg-island { border-radius: 0 0 22px 22px; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25); }
-body[data-state="expanded"] .tg-island { border-radius: 0 0 28px 28px; cursor: default; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3); }
-body[data-notch="0"] .tg-island { border-radius: 0 0 11px 11px; }
-body[data-state="popping"] .tg-island, body[data-state="popped"] .tg-island { display: none; }
+/* ---------- the orb, the pill and the card: one shape hugging the window's corner ---------- */
+.tg-shape { position: absolute; width: 64px; height: 64px; box-sizing: border-box; overflow: hidden; border-radius: 32px;
+  background: var(--o-back); color: var(--o-ink); border: 1px solid var(--o-edge); box-shadow: var(--o-shadow); cursor: pointer;
+  transition: width 0.32s var(--tg-ease), height 0.32s var(--tg-ease), border-radius 0.32s var(--tg-ease); }
+body[data-corner="tl"] .tg-shape { top: 0; left: 0; }
+body[data-corner="tr"] .tg-shape { top: 0; right: 0; }
+body[data-corner="bl"] .tg-shape { bottom: 0; left: 0; }
+body[data-corner="br"] .tg-shape, body:not([data-corner]) .tg-shape { bottom: 0; right: 0; }
+body[data-state="expanded"] .tg-shape { border-radius: 26px; cursor: default; }
+body[data-state="popping"] .tg-shape, body[data-state="popped"] .tg-shape { display: none; }
+body.tg-dragging .tg-shape { cursor: grabbing; }
 
-.tg-handle { position: absolute; left: 0; right: 0; top: 0; height: var(--tg-band); pointer-events: none; }
-body[data-state="expanded"] .tg-handle { pointer-events: auto; cursor: pointer; }
-.tg-ear { position: absolute; top: calc((var(--tg-band) - 22px) / 2); height: 22px; display: flex; align-items: center; gap: 6px; transition: opacity 0.2s; }
-.tg-ear.l { left: 12px; width: 58px; border-radius: 6px; overflow: hidden; }
-.tg-ear.r { right: 14px; font: 600 12px/1 -apple-system, system-ui, sans-serif; color: #c9cbd1; font-variant-numeric: tabular-nums; pointer-events: none; }
-body[data-notch="0"] .tg-ear { top: 3px; height: 19px; }
-body[data-notch="0"] .tg-ear.l { width: 120px; left: 8px; border-radius: 5px; }
-body[data-notch="0"] .tg-ear.r { right: 10px; }
-body[data-state="peek"] .tg-ear.l, body[data-state="expanded"] .tg-ear.l { opacity: 0; }
+/* the orb sits in the shape's corner, whatever the shape grows into */
+.tg-orb { position: absolute; width: 62px; height: 62px; border-radius: 50%; }
+body[data-corner="tl"] .tg-orb { top: 0; left: 0; }
+body[data-corner="tr"] .tg-orb { top: 0; right: 0; }
+body[data-corner="bl"] .tg-orb { bottom: 0; left: 0; }
+body[data-corner="br"] .tg-orb, body:not([data-corner]) .tg-orb { bottom: 0; right: 0; }
+.tg-orb::after { content: ''; position: absolute; inset: 2px; border-radius: 50%; border: 2px solid var(--o-ring); opacity: 0.75; pointer-events: none;
+  transition: border-color 0.6s, opacity 0.6s; }
+.tg-orb.warm::after { border-color: var(--o-warm); opacity: 0.9; }
+.tg-orb.hot::after, .tg-orb.task::after { opacity: 1; }
+.tg-eye { position: absolute; inset: 4px; border-radius: 50%; overflow: hidden; background: var(--g-back); }
+.tg-badge { position: absolute; left: 50%; bottom: 5px; transform: translateX(-50%); min-width: 12px; padding: 0 4px; border-radius: 7px;
+  background: rgba(0, 0, 0, 0.55); color: #e6e7ea; font: 600 9.5px/13px -apple-system, system-ui, sans-serif; text-align: center;
+  font-variant-numeric: tabular-nums; pointer-events: none; }
+.tg-badge:empty { display: none; }
+body[data-state="expanded"] .tg-orb { opacity: 0; pointer-events: none; transition: opacity 0.15s; }
+
+/* the hover pill: the name and the status beside the orb */
+.tg-pillc { position: absolute; top: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0;
+  opacity: 0; pointer-events: none; transition: opacity 0.15s; white-space: nowrap; }
+body[data-corner$="l"] .tg-pillc { left: 70px; right: 14px; }
+body[data-corner$="r"] .tg-pillc, body:not([data-corner]) .tg-pillc { left: 16px; right: 70px; text-align: right; }
+body[data-state="hover"] .tg-pillc { opacity: 1; transition: opacity 0.2s 0.12s; }
+.tg-pname { display: flex; align-items: center; gap: 5px; font-size: 12px; min-width: 0; }
+body[data-corner$="r"] .tg-pname, body:not([data-corner]) .tg-pname { justify-content: flex-end; }
+.tg-pname b { font-weight: 600; }
+.tg-pcount { color: var(--o-dim); font-variant-numeric: tabular-nums; }
+.tg-pillc .tg-line { color: var(--o-dim); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.tg-pillc .tg-line b { color: var(--o-ink); font-weight: 600; }
 .tg-icon { display: flex; align-items: center; }
+.tg-icon:empty { display: none; }
 .tg-icon svg { display: block; }
-.tg-dot { width: 6px; height: 6px; border-radius: 50%; background: #8fa67b; box-shadow: 0 0 0 2px rgba(143, 166, 123, 0.18); transition: background 0.3s, box-shadow 0.3s; }
-.tg-dot.hot, .tg-dot.task { background: #b5c79f; box-shadow: 0 0 0 3px rgba(143, 166, 123, 0.3); }
 
-.tg-peek, .tg-drop { position: absolute; left: 0; right: 0; top: var(--tg-band); bottom: 0; display: flex; flex-direction: column; box-sizing: border-box;
-  opacity: 0; pointer-events: none; transition: opacity 0.18s; }
-.tg-peek { padding: 6px 14px 8px; }
-.tg-drop { padding: 6px 16px 12px; }
-body[data-state="peek"] .tg-peek, body[data-state="expanded"] .tg-drop { opacity: 1; pointer-events: auto; transition: opacity 0.25s 0.14s; }
-.tg-strip { height: 52px; flex: none; border-radius: 9px; overflow: hidden; position: relative; }
-.tg-big { flex: 1; min-height: 0; border-radius: 12px; overflow: hidden; position: relative; }
-.tg-stat { margin-top: 6px; color: #a9acb4; display: flex; align-items: center; gap: 10px; white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
-.tg-stat b { color: #d9dadf; font-weight: 600; }
-.tg-dbar { margin-top: 8px; flex: none; height: 24px; }
+/* the open card: the game big, a row of buttons on the side of the orb's corner */
+.tg-card { position: absolute; inset: 0; padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;
+  opacity: 0; pointer-events: none; transition: opacity 0.15s; }
+body[data-corner^="t"] .tg-card { flex-direction: column-reverse; }
+body[data-state="expanded"] .tg-card { opacity: 1; pointer-events: auto; transition: opacity 0.25s 0.14s; }
+.tg-big { flex: 1; min-height: 0; border-radius: 17px; overflow: hidden; position: relative; background: var(--g-back); }
+.tg-cbar { flex: none; height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 4px; color: var(--o-dim); white-space: nowrap; overflow: hidden;
+  font-variant-numeric: tabular-nums; }
+.tg-cbar b { color: var(--o-ink); font-weight: 600; }
 .tg-line { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .tg-sp { flex: 1; }
-.tg-pill { font: inherit; font-size: 11.5px; border: 1px solid #3a3b40; background: #1b1c20; color: #d9dadf; border-radius: 6px; padding: 3px 9px; cursor: pointer; flex: none; }
-.tg-pill:hover { border-color: #55565c; }
-body.tg-news .tg-stat .tg-line::after { content: "  ·  " attr(data-news); }
+.tg-pill { font: inherit; font-size: 11.5px; border: 1px solid var(--o-edge); background: var(--o-btn); color: var(--o-ink); border-radius: 7px; padding: 3px 9px; cursor: pointer; flex: none; }
+.tg-pill:hover { border-color: var(--o-dim); }
+.tg-shrink { width: 24px; padding: 3px 0; text-align: center; }
+body.tg-news .tg-cbar .tg-line::after, body.tg-news .tg-pillc .tg-line::after { content: "  ·  " attr(data-news); }
 
 /* ---------- the popped-out window ---------- */
 .tg-win { position: fixed; inset: 0; border-radius: 10px; overflow: hidden; background: var(--g-back); outline: 1px solid var(--g-line); outline-offset: -1px;
@@ -124,7 +150,7 @@ body.tg-full .tg-win > .tg-panel { top: 26px; }
 .tg-chips button:disabled { opacity: 0.4; cursor: default; }
 .tg-docks { display: flex; gap: 3px; margin-left: auto; }
 .tg-docks button { padding: 1px 5px; }
-/* the floating window's settings matter only once it's out; in the notch they are kept but quiet */
+/* the floating window's settings matter only once it's out; in the corner they are kept but quiet */
 body:not([data-state="popped"]) .tg-floatset { opacity: 0.6; }
 
 /* reduced motion: nothing grows, slides or fades */

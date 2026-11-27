@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import { missingDocs } from './check-docs.mjs';
 
 test('a shell change without the docs fails, naming the missing ones', () => {
-  assert.deepEqual(missingDocs(['shell/src/notch.ts']).missing, ['CLAUDE.md', 'README.md']);
-  assert.deepEqual(missingDocs(['shell/src/notch.ts', 'README.md']).missing, ['CLAUDE.md']);
+  assert.deepEqual(missingDocs(['shell/src/orb.ts']).missing, ['CLAUDE.md', 'README.md']);
+  assert.deepEqual(missingDocs(['shell/src/orb.ts', 'README.md']).missing, ['CLAUDE.md']);
 });
 
 test('a shell change with CLAUDE.md and README.md passes', () => {
@@ -19,7 +19,7 @@ test('the template, the repo scripts and the root package.json count as the wrap
 });
 
 test('gameplay inside one game, tests and docs alone need nothing', () => {
-  for (const f of ['ant-farm/src/sim/sim.ts', 'ant-farm/package.json', 'shell/test/notch.test.ts', 'scripts/check-docs.test.mjs', 'docs/presentation.md', 'prototype/ant-farm/index.html']) {
+  for (const f of ['ant-farm/src/sim/sim.ts', 'ant-farm/package.json', 'shell/test/orb.test.ts', 'scripts/check-docs.test.mjs', 'docs/presentation.md', 'prototype/ant-farm/index.html']) {
     assert.deepEqual(missingDocs([f]).missing, [], f);
   }
 });

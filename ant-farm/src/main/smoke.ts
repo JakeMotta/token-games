@@ -33,7 +33,7 @@ export const farmSmoke: GameSmoke<Settings> = {
     st = await state(k);
     check('a new transcript line feeds tokens and a finished turn', fed && st.counts.tokens === 1 && st.tokens > 0, st.counts);
     check('real tokens are the only thing that raises energy', st.energy > e0, { before: e0, after: st.energy });
-    check('the island counts the ants', await until(async () => (await k.js('shellTest.state()')).count === String(st.health.workers)), await k.js('shellTest.state()'));
+    check('the orb counts the ants', await until(async () => (await k.js('shellTest.state()')).count === String(st.health.workers)), await k.js('shellTest.state()'));
 
     // the camera: two-finger scroll pans 1:1, a pinch zooms, A follows the colony again
     const c0 = (await state(k)).cam;
@@ -77,7 +77,34 @@ export const farmSmoke: GameSmoke<Settings> = {
     check('Desktop Blend follows light mode', await until(async () => (await k.js('shellTest.state()')).back === '#c8c5c0'), (await k.js('shellTest.state()')).back);
     await shot('window-blend-light');
     nativeTheme.themeSource = 'dark';
-    k.update({ calm: 0.3, fadeIdle: true } as Partial<Settings>); // for Reset to put back
+
+    // game over: the last ant dies (a test hook ages them all; nothing a player can reach), the score stays, the orb
+    // turns warm, and a fresh farm starts from the Game Over screen
+    const seed0 = (await state(k)).seed;
+    k.update({ size: 'large' } as Partial<Settings>);
+    const over = await until(async () => { await js('gameTest.endColony()'); return (await js('gameTest.score()')).shown; }, 20000);
+    const sc = await js('gameTest.score()');
+    check('when the last ant dies the Game Over screen shows the score and the breakdown', over && sc.over && sc.points > 0 && /game over/i.test(sc.text) && /best/i.test(sc.text), sc);
+    check('the run is kept in the local record', sc.runs.list.length >= 1 && sc.runs.best.score >= sc.points, sc.runs);
+    check('the orb turns warm and counts no ants', await until(async () => { const p = await k.js('shellTest.state()'); return p.warm && p.count === '0'; }), await k.js('shellTest.state()'));
+    await k.shots('game-over-window');
+    k.dispatch('dock');
+    await until(() => k.state() === 'orb', 3000);
+    await k.shots('game-over-orb');
+    k.dispatch('toggle');
+    check('the open card shows Game Over too', await until(async () => k.state() === 'expanded' && (await js('gameTest.score()')).shown), await js('gameTest.score()'));
+    await k.shots('game-over-card');
+    await js('gameTest.restart()');
+    check('Restart starts a fresh farm with a living colony', await until(async () => {
+      const x = await state(k), s2 = await js('gameTest.score()');
+      return !s2.over && !s2.shown && x.seed !== seed0 && x.health.workers > 0;
+    }), { state: (await state(k)).seed, score: await js('gameTest.score()') });
+    check('…and the record keeps the run that ended', (await js('gameTest.score()')).runs.list.length >= 1);
+    seed = k.store.get().seed; // the fresh farm's map, which Reset must keep
+    k.dispatch('escape');
+    k.dispatch('pop');
+    await until(() => k.state() === 'popped', 3000);
+    k.update({ size: 'small', calm: 0.3, fadeIdle: true } as Partial<Settings>); // calm and fade for Reset to put back
   },
 
   async reset(k) {

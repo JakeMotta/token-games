@@ -3,12 +3,12 @@
 // through the GameContext it hands them.
 import type { UsageEvent } from './events';
 import type { ShellEvent, ShellState } from './modes';
-import type { NotchGeo } from './notch';
+import type { OrbGeo } from './orb';
 import type { ShellSettings } from './settings';
 
 export interface ModeInfo {
   state: ShellState;
-  geo: NotchGeo; // where the island is and whether there is a notch
+  geo: OrbGeo; // the orb's corner, its display's work area and the card's size
   visible: boolean;
 }
 
@@ -30,8 +30,9 @@ export interface FeedStatus { watching: boolean; files: number; root: string; er
 export type ShellCommand = 'settings' | 'fullscreen-on' | 'fullscreen-off';
 
 export interface ResizeDrag { phase: 'start' | 'move' | 'end'; x: number; y: number } // screen coordinates
+export type OrbDrag = ResizeDrag; // the orb dragged to another corner, the same way
 
-// What the island's right ear and the popped-out marker show: a number and a word, kept short.
+// What the menu-bar tooltip shows: a number and a word, kept short.
 export interface GameStatus { count: string; title: string }
 
 export interface ShellApi<S extends ShellSettings = ShellSettings> {
@@ -41,6 +42,7 @@ export interface ShellApi<S extends ShellSettings = ShellSettings> {
   setFullscreen(on: boolean): Promise<boolean>;
   resizeDrag(d: ResizeDrag): void;
   setGrab(on: boolean): void; // while click-through is on: take the mouse back (Alt held)
+  orbDrag(d: OrbDrag): void; // the orb is being dragged; the main process moves the window and settles it in a corner
   intent(ev: ShellEvent): void; // click, escape, toggle, pop, dock
   status(s: GameStatus): void;
   hide(): void;
@@ -54,12 +56,11 @@ export interface ShellApi<S extends ShellSettings = ShellSettings> {
   onFeed(fn: (f: FeedStatus) => void): void;
   onCommand(fn: (c: ShellCommand) => void): void;
   onMode(fn: (m: ModeInfo) => void): void;
-  onStatus(fn: (s: GameStatus) => void): void; // the marker window, while the game is popped out
 }
 
 export const CH = {
   state: 'shell:state', set: 'shell:set', reset: 'shell:reset', fullscreen: 'shell:fullscreen', resize: 'shell:resize',
-  grab: 'shell:grab', intent: 'shell:intent', status: 'shell:status', hide: 'shell:hide', quit: 'shell:quit',
+  grab: 'shell:grab', orbDrag: 'shell:orb-drag', intent: 'shell:intent', status: 'shell:status', hide: 'shell:hide', quit: 'shell:quit',
   settings: 'shell:settings', dark: 'shell:dark', event: 'shell:event', feed: 'shell:feed', command: 'shell:command', mode: 'shell:mode',
   save: 'shell:save', saveNow: 'shell:save-now', load: 'shell:load',
 } as const;

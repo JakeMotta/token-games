@@ -7,6 +7,6 @@
   "version": "0.1.0",
   "entry": { "main": "dist/main.js", "page": "dist/index.html" },
   "icon": "icon.svg",
-  "minShellVersion": "1.0.0",
+  "minShellVersion": "1.1.0",
   "permissions": ["claude-usage"]
 }

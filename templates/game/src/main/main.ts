@@ -1,4 +1,4 @@
-// The Electron main process: the shell does all of it (the notch island, the pop-out window, the tray, the settings
+// The Electron main process: the shell does all of it (the corner orb, the pop-out window, the tray, the settings
 // file, the Claude Code feed, the hidden smoke test). The game only names itself and hands over its settings.
 import { startShell } from '@token-games/shell/main/shell';
 import { pixelIcon } from '@token-games/shell/main/pixel-icon';

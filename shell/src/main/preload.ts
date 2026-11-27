@@ -11,6 +11,7 @@ const api: ShellApi = {
   setFullscreen: (v) => ipcRenderer.invoke(CH.fullscreen, v),
   resizeDrag: (d) => ipcRenderer.send(CH.resize, d),
   setGrab: (v) => ipcRenderer.send(CH.grab, v),
+  orbDrag: (d) => ipcRenderer.send(CH.orbDrag, d),
   intent: (ev) => ipcRenderer.send(CH.intent, ev),
   status: (st) => ipcRenderer.send(CH.status, st),
   hide: () => ipcRenderer.send(CH.hide),
@@ -24,7 +25,6 @@ const api: ShellApi = {
   onFeed: on(CH.feed),
   onCommand: on(CH.command),
   onMode: on(CH.mode),
-  onStatus: on(CH.status),
 };
 
 contextBridge.exposeInMainWorld('tokenShell', api);
