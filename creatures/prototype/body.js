@@ -12,7 +12,7 @@
   const TRI = 2;       // a thin plate: triangle a, b, c with half thickness r1
 
   // Materials (what colour a piece takes).
-  const MAT = { BODY: 0, ACCENT: 1, WING: 2, LEAF: 3, PETAL: 4, DARK: 5, EGG: 6, SHELL_IN: 7 };
+  const MAT = { BODY: 0, ACCENT: 1, WING: 2, LEAF: 3, PETAL: 4, DARK: 5, EGG: 6, SHELL_IN: 7, TONGUE: 8 };
 
   const v = {
     add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
@@ -30,6 +30,11 @@
     // rotate p around the z axis through o (positive tips +x up)
     rotZ: (p, o, ang) => { const c = Math.cos(ang), s = Math.sin(ang), x = p[0] - o[0], y = p[1] - o[1]; return [o[0] + c * x - s * y, o[1] + s * x + c * y, p[2]]; },
   };
+  // rotate p around any unit axis through o (right-handed: about +z, positive tips +x up, like rotZ)
+  function rotAbout(p, o, k, ang) {
+    const c = Math.cos(ang), s = Math.sin(ang), d = v.sub(p, o), kd = v.dot(k, d), x = v.cross(k, d);
+    return v.add(o, v.add(v.add(v.mul(d, c), v.mul(x, s)), v.mul(k, kd * (1 - c))));
+  }
 
   // A frame for a segment: axis along it, u its "up" (in the plane of the body), side across.
   function frame(axis, upHint) {
@@ -119,15 +124,26 @@
     return { knee, end, stretch };
   }
 
-  // The walk moves the body on its legs: bob (up), sway (sideways), pitch (nose up) and roll (lean right), about the
-  // middle of the torso. Feet stay where the walker put them; only hips, torso, head, tail and wings move.
+  // The walk moves the body on its legs: bob (up), sway (sideways), pitch (nose up), roll (lean right) and bend (the
+  // spine curves into a turn, positive = left, both ends toward the turn's centre), about the middle of the torso.
+  // Feet stay where the walker put them; only hips, torso, head, tail and wings move. R(d, p) turns a direction that
+  // sits at point p (the bend depends on where along the body it is).
   function bodyTransform(L, body) {
     body = body || {};
-    const bob = body.bob || 0, sway = body.sway || 0, pitch = body.pitch || 0, roll = body.roll || 0;
-    if (!bob && !sway && !pitch && !roll) return null;
+    const bob = body.bob || 0, sway = body.sway || 0, pitch = body.pitch || 0, roll = body.roll || 0, bend = body.bend || 0;
+    if (!bob && !sway && !pitch && !roll && !bend) return null;
     const o = L.tsp.pts[Math.floor(L.tsp.pts.length / 2)];
-    const R = (d) => v.rotX(v.rotZ(d, [0, 0, 0], pitch), [0, 0, 0], roll);
-    const T = (p) => { const q = v.rotX(v.rotZ(p, o, pitch), o, roll); return [q[0], q[1] + bob, q[2] + sway]; };
+    const half = Math.max(1e-6, v.len(v.sub(L.tsp.pts[L.tsp.pts.length - 1], L.tsp.pts[0])) / 2);
+    const bendAt = (p) => bend * Math.max(-1.6, Math.min(1.6, (p[0] - o[0]) / half));
+    const R = (d, p) => {
+      if (bend && p) d = v.rotY(d, [0, 0, 0], bendAt(p));
+      return v.rotX(v.rotZ(d, [0, 0, 0], pitch), [0, 0, 0], roll);
+    };
+    const T = (p) => {
+      const b = bend ? v.rotY(p, o, bendAt(p)) : p;
+      const q = v.rotX(v.rotZ(b, o, pitch), o, roll);
+      return [q[0], q[1] + bob, q[2] + sway];
+    };
     return { T, R };
   }
 
@@ -163,7 +179,8 @@
   }
 
   // Build the creature. pose: { breathe, lookYaw, headNod, tailSway, tailLift, wingFlap, feet (local, like
-  // layout().feet, on the ground frame), body: { bob, sway, pitch, roll } (see bodyTransform), blink, expression }.
+  // layout().feet, on the ground frame), body: { bob, sway, pitch, roll, bend } (see bodyTransform), blink, expression,
+  // mouthOpen (0..1), swallow (0..1, a lump on its way down) }. `mouth` is where the mouth is (the walker aims it at food).
   // The scene reports each leg's hip, knee, foot and stretch in `legs` (for the walk's debug overlay and tests).
   function build(ph, pose) {
     pose = pose || {};
@@ -357,15 +374,89 @@
         decals.push({ kind: 'blush', from: eq.p, dir: bdir, r: eyeR * 0.9, amount: ph.blush, side });
       }
     }
-    // Mouth: a line through three anchors (one jaw corner, the chin, the other corner); the renderer joins whichever show.
+    // Mouth: every creature has one that opens (pose.mouthOpen, 0..1) to bite and chew. ph.mouth.kind picks the shape:
+    // jaw (a hinged lower jaw), beak (two horny halves), mandibles (side pincers), slit (a plain line that parts) or
+    // tongue (a mouth that opens with a tongue lolling out). A mark line on the face goes with all but the beak.
+    const kind = ph.mouth.kind || 'jaw';
+    const open = Math.max(0, Math.min(1, pose.mouthOpen || 0));
     const mq = hAt(0.96), mf = frame(mq.d), cq = hAt(0.8 - 0.25 * ph.mouth.width), cf = frame(cq.d);
-    const corner = (side) => ({ from: cq.p, dir: v.norm(v.add(v.add(v.mul(cf.ax, 0.35), v.mul(cf.u, -0.45)), v.mul(cf.side, side * 0.8))) });
-    decals.push({ kind: 'mouth', pts: [corner(-1), { from: mq.p, dir: v.norm(v.add(v.mul(mf.ax, 0.8), v.mul(mf.u, -0.55))) }, corner(1)],
-      from: mq.p, dir: mf.ax, width: (0.4 + 0.8 * ph.mouth.width) * Math.max(mq.w, 0.04 * s),
-      smile: ph.mouth.smile, fangs: ph.fangs, expression: pose.expression || ph.expression });
+    const tip = hAt(1), tf = frame(tip.d), mid = hAt(0.75), cheek = hAt(0.45);
+    // Sizes come from the thick part of the head (a snout can taper to a point); the mouth runs along the underside
+    // from a hinge under the cheek to the front of the snout.
+    const hw = Math.max(mid.w, tip.w), hh = Math.max(mid.h, tip.h);
+    const snout = v.add(tip.p, v.mul(tf.ax, tip.w * 0.9));
+    const mouthPt = v.add(v.add(tip.p, v.mul(tf.ax, tip.w * 0.55)), v.mul(tf.u, -tip.h * 0.45));
+    const hinge = v.add(cheek.p, v.mul(frame(cheek.d).u, -cheek.h * 0.55));
+    const jawLine = v.sub(mouthPt, hinge), jawLen = v.len(jawLine), jawDir = v.norm(jawLine);
+    const extra = [];
+    const turnDown = (p, o, ang) => rotAbout(p, o, tf.side, -ang);
+    // the dark inside of an open mouth, along the jaw line (hidden in the head when shut)
+    const cavity = (amount) => {
+      if (amount < 0.02) return;
+      const c = v.add(v.lerp(hinge, mouthPt, 0.6), v.mul(tf.u, -hh * 0.05 * amount));
+      extra.push(ellipsoid(c, jawDir, jawLen * 0.45, hh * (0.08 + 0.3 * amount), hw * 0.5, 'mouth', MAT.DARK, { k2: 0.002, upHint: tf.u }));
+    };
+    if (kind === 'jaw') {
+      // the lower jaw drops and tips its front down (hinged at the cheek)
+      const a = open * 0.45;
+      const c = v.add(v.add(v.lerp(hinge, mouthPt, 0.55), v.mul(tf.u, -hh * (0.12 + 0.3 * open))), v.mul(jawDir, jawLen * 0.12 * open));
+      extra.push(ellipsoid(c, rotAbout(jawDir, [0, 0, 0], tf.side, -a), jawLen * 0.55, hh * 0.3, hw * 0.65, 'jaw', MAT.BODY,
+        { k2: k * 0.3, upHint: tf.u }));
+      cavity(open);
+    } else if (kind === 'beak') {
+      const base = v.add(mid.p, v.mul(tf.u, -hh * 0.05));
+      const len = v.len(v.sub(snout, base)) + hw * (0.9 + 0.6 * ph.mouth.width);
+      const r = Math.min(hw, hh) * 0.72;
+      const upTip = v.add(v.add(base, v.mul(tf.ax, len)), v.mul(tf.u, -hh * 0.3));
+      extra.push(cone(base, upTip, r, 0.006 * s, 0.75, 'beak', MAT.ACCENT, { k2: 0.01, upHint: tf.u }));
+      const lowBase = v.add(base, v.mul(tf.u, -r * 0.7));
+      const lowTip = turnDown(v.add(v.add(lowBase, v.mul(tf.ax, len * 0.85)), v.mul(tf.u, -hh * 0.05)), lowBase, 0.06 + open * 0.5);
+      extra.push(cone(lowBase, lowTip, r * 0.8, 0.005 * s, 0.6, 'beak', MAT.ACCENT, { k2: 0.008, upHint: tf.u }));
+      if (open > 0.02) extra.push(ellipsoid(v.add(lowBase, v.mul(tf.ax, len * 0.45)), tf.ax, len * 0.35, r * 0.5 * open, r * 0.6, 'mouth', MAT.DARK,
+        { k2: 0.002, upHint: tf.u }));
+    } else if (kind === 'mandibles') {
+      const ml = hw * (1.1 + 0.5 * ph.mouth.width), mw = Math.max(0.008 * s, hw * 0.15);
+      for (const side of [-1, 1]) {
+        const base = v.add(v.add(mouthPt, v.mul(tf.ax, -hw * 0.1)), v.mul(tf.side, side * hw * 0.4));
+        const out = v.norm(v.add(tf.ax, v.mul(tf.side, side * (0.15 + open * 0.75))));
+        const knee = v.add(v.add(base, v.mul(out, ml * 0.55)), v.mul(tf.u, -hh * 0.1));
+        const hook = v.norm(v.add(tf.ax, v.mul(tf.side, -side * (0.9 - open * 0.4))));
+        const end = v.add(v.add(knee, v.mul(hook, ml * 0.5)), v.mul(tf.u, -hh * 0.05));
+        extra.push(cone(base, knee, mw, mw * 0.8, 1, 'mandible', MAT.ACCENT, { k2: 0.004 }));
+        extra.push(cone(knee, end, mw * 0.8, 0.003 * s, 1, 'mandible', MAT.ACCENT, { k2: 0.002 }));
+      }
+      cavity(open * 0.6);
+    } else if (kind === 'tongue') {
+      cavity(open);
+      if (open > 0.08) {
+        const root = v.lerp(hinge, mouthPt, 0.6);
+        const end = v.add(v.add(mouthPt, v.mul(tf.ax, hw * (0.2 + 0.6 * open))), v.mul(tf.u, -hh * (0.2 + 0.4 * open)));
+        extra.push(cone(root, end, hw * 0.22, hw * 0.2, 0.45, 'tongue', MAT.TONGUE, { k2: 0.004, upHint: tf.u }));
+      }
+    } else cavity(open * 0.7); // slit
+    for (const p of extra) { p.bs = bound(p); if (p.k2 == null) p.k2 = k; prims.push(p); }
+    if (kind !== 'beak') {
+      const corner = (side) => ({ from: cq.p, dir: v.norm(v.add(v.add(v.mul(cf.ax, 0.35), v.mul(cf.u, -0.45)), v.mul(cf.side, side * 0.8))) });
+      decals.push({ kind: 'mouth', pts: [corner(-1), { from: mq.p, dir: v.norm(v.add(v.mul(mf.ax, 0.8), v.mul(mf.u, -0.55))) }, corner(1)],
+        from: mq.p, dir: mf.ax, width: (0.4 + 0.8 * ph.mouth.width) * Math.max(mq.w, 0.04 * s), mouth: kind, open,
+        smile: kind === 'slit' ? 0 : ph.mouth.smile, fangs: kind === 'jaw' ? ph.fangs : 0, expression: pose.expression || ph.expression });
+    }
+
+    // Swallowing: a lump slides from the back of the head down the neck into the chest (pose.swallow 0..1).
+    const sw = pose.swallow || 0;
+    if (sw > 0 && sw < 1) {
+      const path = [{ p: headStart, w: headR[0].w }, { p: neckBase, w: neckLen > 0.03 * s ? neckR[0].w : front.w * 0.6 },
+        { p: along(tsp, torsoR, 0.6).p, w: front.w * 0.4 }];
+      const f = sw * 2, i = Math.min(1, Math.floor(f)), u = f - i;
+      const c = v.lerp(path[i].p, path[i + 1].p, u), w0 = path[i].w + (path[i + 1].w - path[i].w) * u;
+      const r = w0 * (0.8 + 0.42 * Math.sin(Math.PI * sw));
+      const lump = ellipsoid(c, v.sub(path[i + 1].p, path[i].p), r * 1.3, r, r, 'neck', MAT.BODY, { k2: k * 0.6 });
+      lump.bs = bound(lump); prims.push(lump);
+    }
 
     if (BT) moveBody(prims, decals, BT);
-    return { prims, decals, k, scale: s, layout: L, legs, kind: 'creature' };
+    const mouth = { p: BT ? BT.T(mouthPt) : mouthPt, open, kind };
+    return { prims, decals, k, scale: s, layout: L, legs, kind: 'creature', mouth };
   }
 
   // Apply the walk's body transform to everything but the legs (which were solved from the moved hips).
@@ -373,13 +464,14 @@
     const LEG = { leg: 1, foot: 1, claw: 1 };
     for (const p of prims) {
       if (LEG[p.piece]) continue;
+      const at = p.a;
       p.a = BT.T(p.a); if (p.b) p.b = BT.T(p.b); if (p.c) p.c = BT.T(p.c);
-      p.ax = BT.R(p.ax); p.u = BT.R(p.u); p.side = BT.R(p.side);
+      p.ax = BT.R(p.ax, at); p.u = BT.R(p.u, at); p.side = BT.R(p.side, at);
       p.bs = bound(p);
     }
     for (const d of decals) {
-      d.from = BT.T(d.from); d.dir = BT.R(d.dir);
-      if (d.pts) d.pts = d.pts.map((q) => ({ from: BT.T(q.from), dir: BT.R(q.dir) }));
+      d.dir = BT.R(d.dir, d.from); d.from = BT.T(d.from);
+      if (d.pts) d.pts = d.pts.map((q) => ({ from: BT.T(q.from), dir: BT.R(q.dir, q.from) }));
     }
   }
 

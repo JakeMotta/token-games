@@ -88,7 +88,7 @@ const colours = (res) => { const s = new Set(); for (let i = 0; i < res.mask.len
 const brightest = (res) => { let b = 0; for (let i = 0; i < res.mask.length; i++) if (res.mask[i] === 1) b = Math.max(b, res.rgba[i * 4] + res.rgba[i * 4 + 1] + res.rgba[i * 4 + 2]); return b; };
 
 test('every look draws the creature, its egg and the hatching, each look differently', () => {
-  assert.ok(R.looks.length >= 6);
+  assert.deepEqual(R.looks, ['gochi', 'cel', 'pixel']);
   const c = G.randomCreature('looks');
   const ph = G.express(c, { level: 80 }), look = G.eggLook(c);
   const seen = new Set();
@@ -131,10 +131,10 @@ test('pixel palettes limit the colours: Game Boy is four greens', () => {
 });
 
 test('the shine slider takes the glint away', () => {
-  const ph = G.express(G.randomCreature('shiny'), { level: 100, overrides: { gloss: 1 } });
+  const ph = G.express(G.randomCreature('shiny'), { level: 100, overrides: { gloss: 1, 'mouth.kind': 0 } }); // a jaw: bone-white mandibles would outshine the glint
   const hi = brightest(draw(ph, { shine: 1 })), lo = brightest(draw(ph, { shine: 0 }));
   assert.ok(lo < hi, `shine 0 brightest ${lo} < shine 1 brightest ${hi}`);
-  for (const style of ['matte', 'cel']) assert.ok(brightest(draw(ph, { style, shine: 0 })) <= brightest(draw(ph, { style, shine: 1 })), style);
+  for (const style of ['gochi', 'cel']) assert.ok(brightest(draw(ph, { style, shine: 0 })) <= brightest(draw(ph, { style, shine: 1 })), style);
 });
 
 test('wings: only big enough wings lift the body', () => {

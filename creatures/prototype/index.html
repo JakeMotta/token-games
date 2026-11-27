@@ -33,7 +33,13 @@
   @media (max-width: 860px) { .grid { grid-template-columns: minmax(0, 1fr); } }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; min-width: 0; }
   #stageBox { position: relative; border-radius: 10px; overflow: hidden; background: var(--stage); }
-  #stage { display: block; width: 100%; image-rendering: pixelated; image-rendering: crisp-edges; aspect-ratio: 240 / 140; }
+  #stage { display: block; width: 100%; image-rendering: pixelated; image-rendering: crisp-edges; aspect-ratio: 384 / 216; cursor: crosshair; }
+  #stageBox .meter { position: absolute; left: 10px; bottom: 8px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: #2a2433; background: rgba(255,255,255,.72); border-radius: 999px; padding: 2px 8px; }
+  #stageBox.dark .meter { color: #fff; background: rgba(0,0,0,.35); }
+  #stageBox .meter i { display: block; width: 64px; height: 6px; border-radius: 3px; background: rgba(0,0,0,.15); overflow: hidden; }
+  #stageBox .meter b { display: block; height: 100%; width: 0; background: var(--good); transition: width .3s; }
+  #stageBox .meter b.low { background: #e8833a; }
+  #stageBox:not(.dark) .who { color: #2a2433; text-shadow: 0 1px 0 rgba(255,255,255,.6); }
   #stageBox .who { position: absolute; left: 10px; top: 8px; color: #fff; font-family: "Lilita One", system-ui; font-size: 18px; text-shadow: 0 2px 0 rgba(0,0,0,.35); }
   #stageBox .who small { font-family: system-ui; font-size: 12px; opacity: .8; margin-left: 6px; }
   #stageBox .badge { position: absolute; right: 10px; top: 10px; background: var(--accent); color: var(--accent-ink); border-radius: 8px; padding: 2px 8px; font-weight: 700; font-size: 12px; }
@@ -87,9 +93,10 @@
   <div class="grid">
     <section class="card">
       <div id="stageBox">
-        <canvas id="stage" width="240" height="140"></canvas>
+        <canvas id="stage" width="384" height="216"></canvas>
         <div class="who"><span id="name">…</span><small id="stageName"></small></div>
         <div class="badge" id="rarity"></div>
+        <div class="meter" aria-label="Hunger"><span>hunger</span><i><b id="hungerBar"></b></i><span id="mood">idle</span></div>
       </div>
 
       <div class="temper">
@@ -115,6 +122,15 @@
         <button id="debug">Walk debug</button>
       </div>
       <div class="row">
+        <span class="note" style="margin:0">Habitat:</span>
+        <div class="steps" id="habitats"></div>
+      </div>
+      <div class="row" id="foodRow">
+        <span class="note" style="margin:0"><b>Food (prototype only):</b></span>
+        <div class="steps" id="foods"></div>
+        <span class="note" style="margin:0">Pick one, then click the floor to drop it. In the game, food comes only from tokens of real Claude Code use; there is no feed button.</span>
+      </div>
+      <div class="row">
         <span class="note" style="margin:0">Face:</span>
         <div class="steps" id="faces"></div>
       </div>
@@ -135,10 +151,6 @@
         <span>Shine</span>
         <input id="shine" type="range" min="0" max="1" step="0.05" value="1" aria-label="Shine">
         <b id="shineVal">1.00</b>
-      </div>
-      <div class="row">
-        <span class="note" style="margin:0">Backdrop:</span>
-        <div class="steps" id="backs"></div>
       </div>
     </section>
 
@@ -179,6 +191,7 @@
 <script src="body.js"></script>
 <script src="render.js"></script>
 <script src="motion.js"></script>
+<script src="habitats.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

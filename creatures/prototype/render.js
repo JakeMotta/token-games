@@ -179,6 +179,7 @@
       leaf: ramp(108 + (ph.decor.hue - 180) * 0.08, 0.6, 0.45),
       petal: ramp(ph.decor.hue, 0.65, 0.7),
       dark: ramp(hue, c.sat * 0.4, 0.2),
+      tongue: ramp(350, 0.62, 0.66),
       tip: ramp(40, 0.25, 0.92),
       mark: ramp(hue + (ph.pattern.light >= 0 ? 0 : 10), c.sat * (ph.pattern.light >= 0 ? 0.45 : 1.05), markL),
     };
@@ -194,6 +195,7 @@
     if (q.mat === MAT.LEAF) return pal.leaf;
     if (q.mat === MAT.PETAL) return pal.petal;
     if (q.mat === MAT.DARK) return pal.dark;
+    if (q.mat === MAT.TONGUE) return pal.tongue;
     const tAlong = pr.t0 + (pr.t1 - pr.t0) * Math.max(0, Math.min(1, h.fc.along / Math.max(1e-6, q.len || 1)));
     if (q.piece === 'tail' && pr.tip > 0.3 && tAlong > 1 - pr.tip * 0.5) return pal.tip;
     const main = q.piece === 'torso' || q.piece === 'neck' || q.piece === 'head' || q.piece === 'tail';
@@ -252,15 +254,6 @@
       return { rgb: rp[gochiBand(scene, h, ro, h.light)], ink: rp[0] };
     },
   });
-  registerLook('matte', {
-    label: 'Matte',
-    // Flat paint: a body colour and one soft shadow, no glint, a softer outline. Shine only adds a faint top light.
-    shade(scene, pal, h, ro) {
-      const rp = rampOf(scene, pal, h), L = h.light;
-      const rgb = L < 0.3 ? mix(rp[2], rp[3], 0.35) : L < 0.95 ? rp[3] : mix(rp[3], rp[4], 0.4 * shineOf(ro));
-      return { rgb, ink: rp[1] };
-    },
-  });
   registerLook('cel', {
     label: 'Cel',
     // Cartoon cel: two hard tones split at the terminator, a bold outline, one small hard highlight.
@@ -283,45 +276,6 @@
     },
     post: (res, scene, pal, ro) => quantise(res, ro && ro.palette),
   });
-  registerLook('chunky', {
-    label: 'Chunky',
-    // Chunky pixels: quarter size, three flat tones, no dither, a 1px outline.
-    pixel: 4,
-    shade(scene, pal, h) {
-      const rp = rampOf(scene, pal, h), L = h.light;
-      return { rgb: L < 0.3 ? rp[1] : L < 0.75 ? rp[3] : rp[4], ink: rp[0] };
-    },
-    post: (res, scene, pal, ro) => quantise(res, ro && ro.palette),
-  });
-  registerLook('ink', {
-    label: 'Ink',
-    // Pen and ink: paper with a hint of the body colour, an ink outline, hatching in the shadows (crossed in the
-    // deepest), stippled markings.
-    shade(scene, pal, h) {
-      const rp = rampOf(scene, pal, h), L = h.light, x = h.x, y = h.y;
-      const inkC = mix(rp[0], [24, 20, 28], 0.6), paper = mix([250, 246, 234], rp[4], 0.22);
-      let on = false;
-      if (L < 0.2) on = (x + y) % 3 === 0 || (x - y + 300) % 3 === 0;
-      else if (L < 0.45) on = (x + y) % 3 === 0;
-      else if (L < 0.62) on = (x + y) % 6 === 0;
-      if (!on && scene.kind !== 'egg' && rp === pal.mark) on = (x * 7 + y * 13) % 5 === 0;
-      if (!on && scene.kind === 'egg' && rp === pal.mark) on = (x + y * 2) % 3 === 0;
-      return { rgb: on ? inkC : paper, ink: inkC };
-    },
-  });
-  registerLook('sticker', {
-    label: 'Sticker',
-    // Paper cut-out sticker: flat colour with one shadow tone, no ink line, a white die-cut border, a drop shadow and
-    // a little paper grain.
-    shade(scene, pal, h) {
-      const rp = rampOf(scene, pal, h);
-      const g = 1 + (vnoise(h.x * 1.7, h.y * 1.7, 3.3) - 0.5) * 0.08;
-      return { rgb: (h.light < 0.32 ? rp[2] : rp[3]).map((c) => Math.min(255, c * g)), ink: rp[2] };
-    },
-    inkEdges: false,
-    post: stickerBorder,
-  });
-
   // Fixed palettes for the pixel looks ('own' keeps the creature's colours).
   const PALETTES = {
     gameboy: [[15, 56, 15], [48, 98, 48], [139, 172, 15], [155, 188, 15]],
@@ -347,30 +301,6 @@
         for (const q of P) { const d = 2 * (c[0] - q[0]) ** 2 + 4 * (c[1] - q[1]) ** 2 + 3 * (c[2] - q[2]) ** 2; if (d < bd) { bd = d; best = q; } }
       }
       res.rgba[i * 4] = best[0]; res.rgba[i * 4 + 1] = best[1]; res.rgba[i * 4 + 2] = best[2];
-    }
-  }
-  function stickerBorder(res) {
-    const W = res.w, H = res.h, r = Math.max(1, Math.round(Math.min(W, H) / 48));
-    const body = res.mask.map((m) => (m === 1 ? 1 : 0));
-    const near = (x, y, rad) => {
-      for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++) {
-        if (dx * dx + dy * dy > rad * rad + rad) continue;
-        const xx = x + dx, yy = y + dy;
-        if (xx >= 0 && yy >= 0 && xx < W && yy < H && body[yy * W + xx]) return true;
-      }
-      return false;
-    };
-    const border = new Uint8Array(W * H);
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (!body[y * W + x] && near(x, y, r)) border[y * W + x] = 1;
-    // drop shadow down and right of the cut-out, then the white border on top
-    for (let y = H - 1; y >= 0; y--) for (let x = W - 1; x >= 0; x--) {
-      const i = y * W + x, sx = x - r, sy = y - r;
-      if (body[i] || border[i] || sx < 0 || sy < 0) continue;
-      const j = sy * W + sx;
-      if (body[j] || border[j]) { res.rgba[i * 4] = 40; res.rgba[i * 4 + 1] = 30; res.rgba[i * 4 + 2] = 30; res.rgba[i * 4 + 3] = 70; res.mask[i] = 2; }
-    }
-    for (let i = 0; i < W * H; i++) if (border[i]) {
-      res.rgba[i * 4] = 252; res.rgba[i * 4 + 1] = 250; res.rgba[i * 4 + 2] = 244; res.rgba[i * 4 + 3] = 255; res.mask[i] = 1;
     }
   }
   registerStyle('inside', { shade: () => ({ rgb: [42, 36, 46], ink: [42, 36, 46] }), inkEdges: false });
@@ -691,6 +621,17 @@
     const smile = ex === 'happy' ? 1 : ex === 'angry' ? -0.8 : ex === 'sleepy' ? 0 : d.smile;
     const vis = d.pts.map((q, i) => (q && q.vis ? { x: q.sx, y: q.sy - (i === 1 ? 0 : smile * 1.4), mid: i === 1 } : null)).filter(Boolean);
     if (vis.length === 1) { line(res, vis[0].x - 1, vis[0].y, vis[0].x + 1, vis[0].y, ink); return; }
+    // An open mouth (biting, chewing) parts below the line: a dark gap, deepest in the middle, pink at the bottom
+    // for a tongue. The 3D jaw, beak, mandibles or tongue open with it.
+    if (d.open > 0.15) {
+      const n = 24, span = vis.length - 1;
+      for (let k = 0; k <= n; k++) {
+        const t = (k / n) * span, i = Math.min(span - 1, Math.floor(t)), u = t - i;
+        const x = vis[i].x + (vis[i + 1].x - vis[i].x) * u, y = vis[i].y + (vis[i + 1].y - vis[i].y) * u;
+        const gap = Math.round(d.open * 3.2 * Math.sin(Math.PI * k / n));
+        for (let g = 1; g <= gap; g++) put(res, x, y + g, d.mouth === 'tongue' && g === gap && gap > 1 ? [226, 110, 132] : [58, 22, 34]);
+      }
+    }
     for (let i = 0; i + 1 < vis.length; i++) line(res, vis[i].x, vis[i].y, vis[i + 1].x, vis[i + 1].y, ink);
     if (d.fangs > 0.35) {
       const len = d.fangs > 0.75 ? 2 : 1;

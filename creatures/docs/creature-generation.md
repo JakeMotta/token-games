@@ -17,6 +17,15 @@ Pipeline: **seed → genome (two copies) → expressed genes → phenotype (+ te
 - Each of the four pieces is a spine (a bent curve with its own length, angle and curve) carrying rings. Neighbouring rings become **elliptical round cones**, so a piece is a "sausage with opinions". The tail ends in an optional tip (a pale or dark brush).
 - Parts attach at fixed fractions along the pieces: legs (0–3 pairs, thigh + shin cones, a foot, claws), wings (thin triangle membranes with finger bones), horns (curved cone chains), ears (pointed, round, long), decor (sprout, flower, antennae, spikes), a jaw with fangs.
 - Faces are **decals**, not geometry: eyes, glints, blush and a three-point mouth line are anchored to the surface and drawn after shading, so they stay crisp at sprite size. Expressions (neutral, happy, angry, sleepy, surprised) change eye openness, brows and mouth curve.
+- **Mouths** are real geometry that opens (`pose.mouthOpen`, 0–1) to bite and chew. Five kinds, one gene (`mouth.kind`):
+  - **jaw**: a hinged lower jaw (fangs on scary ones);
+  - **beak**: two horny halves;
+  - **mandibles**: side pincers that open sideways;
+  - **slit**: a plain line that parts;
+  - **tongue**: a mouth that opens with a tongue lolling out.
+
+  The open inside is a dark cavity shape inside the head, hidden when the mouth is shut; a true carve would cost an extra subtraction per ray step. The kind is picked from a hash of all the other genes rather than from the generator, so every seed made before mouths existed still grows exactly the same body. Six legs or antennae lean toward mandibles, so bugs look like bugs. Breeding inherits it like any gene. Sheet: [mouths](shots/mouths.png) (closed and open, each look).
+  - **Future type, not built: starfish stomach.** The mouth opens and a soft sack pushes out over the food, wraps it and pulls back in. It wants an inflating membrane shape and its own eating timeline, so it waits for a later pass.
 - `layout(ph)` puts the hips at a height that keeps the feet on the ground (`legIK` solves the knee), so the ground contact is always right regardless of leg length.
 
 ## 3. Rendering: "every pixel asks am I inside?" (`render.js`)
@@ -47,7 +56,7 @@ Pipeline: **seed → genome (two copies) → expressed genes → phenotype (+ te
 
 ### Looks (the style switcher)
 
-Seven finished looks share the body, light and pose and differ only in how a hit pixel becomes a colour: Original (`gochi`, the default), Matte, Cel, Pixel, Chunky, Ink and Sticker. Pixel and Chunky render at half or quarter size and blow up with nearest-neighbour, take an optional fixed palette (Game Boy, PICO-8, warm earth) and are 3–10 times cheaper. A Shine option (0–1) removes the glint in every look. `registerLook(name, { label, shade, pixel, inkWidth, decals, post })` adds one. Options, costs and the recommendation: [art-style-options.md](art-style-options.md).
+Three finished looks share the body, light and pose and differ only in how a hit pixel becomes a colour: Original (`gochi`, the default), Cel and Pixel (Jake kept these three in pass 3; Matte, Chunky, Ink and Sticker were removed). Pixel renders at half size and blows up with nearest-neighbour, takes an optional fixed palette (Game Boy, PICO-8, warm earth) and is 3–4 times cheaper. A Shine option (0–1) removes the glint in every look. `registerLook(name, { label, shade, pixel, inkWidth, decals, post })` adds one. Options, costs and the recommendation: [art-style-options.md](art-style-options.md).
 
 ### Motion: the walk (`motion.js`)
 
@@ -58,8 +67,11 @@ Nobody animates the walk; it is a gait clock and planted feet. The constants are
 - **Stride, cadence and speed** come from leg length: cadence scales with 1/√leg, stride with leg length, and a stride takes a whole number of 12 fps frames so walks loop crisply. A level 1 baby takes 60% of an adult's stride at a higher cadence and waddles more; adults stride.
 - **Reach**: the stride is capped so hip-to-foot never passes 95% of the leg (tested ≤ 0.985 with the body moving, for 2, 4 and 6 legs at every level 1–100); the body may crouch up to 10% of a leg to make room. Two-bone IK puts the knee forward.
 - **Body**: it bobs (highest over the planted foot when walking, dipping when hurrying), pitches toward the feet holding it, rolls and sways toward the standing side. The head counters part of the bob and pitch; the tail follows on a lagging spring; wings flap out of phase with the steps.
-- **Start, stop and turn**: speed ramps up in 0.45 s with a lean into it, the left hind foot first; stopping keeps stepping until every foot is back under its hip; it turns round only when stopped and settled.
-- **Walk debug** (`?debug=1` or the Walk debug button): ground contact lines, hip–knee–foot lines, planted feet green, swinging feet orange with a cross where they will land, and the gait's name, phase and duty. `?gait=walk|hurry` keeps it walking. `tools/walkstrip.js` draws frame strips and prints foot slip, stretch and how many feet are up per frame.
+- **Start and stop**: speed ramps up in 0.45 s with a lean into it, the left hind foot first; stopping keeps stepping until every foot is back under its hip.
+- **On a floor, not a line** (pass 3): the walker has a position (x, depth z) and a heading. It wanders to picked spots, goes to food, and steers away from the floor's edges, at a limited turn rate (`TURN_RATE`), so walking paths curve. The page draws it from yaw = −heading, so the same body shows side, 3/4, front and back views as it goes.
+- **Turns**: a big change of direction (over `PIVOT_ANGLE`) is a real turn: slow down, then pivot about the body on planted feet that step round in the gait (no sliding), up to `PIVOT_RATE`. The head leads (it looks into the turn first), the tail swings the other way, and the spine bends into the turn. Now and then (`SPIN_CHANCE`) it does a full 360° spin for fun. Near a wall or a target it pivots on the spot rather than arcing. Proof: [180° turn](shots/proof-turn-4legs.png), [two legs](shots/proof-turn-2legs.png), [360° spin, six legs](shots/proof-spin-6legs.png).
+- **Eating**: food it notices (after `NOTICE_TIME`) it walks to and faces, lowers its head, bites (the mouth opens, the food shrinks a bite at a time), chews, swallows (a lump runs down the neck) and is happy (a hop and sparkles). Hunger (0–1) rises slowly with time and each meal lowers it; above `HUNGRY` an idle creature looks hungry. Some time after a meal there is a small cute poop that fades. Proof: [eating](shots/proof-eat.png), [a beak in pixel, in the cave](shots/proof-eat-beak-pixel.png).
+- **Walk debug** (`?debug=1` or the Walk debug button): heading (yellow) and facing (cyan) arrows, the turn rate arc, the pivot point, the goal (red for food), the floor edges, ground contact lines, hip–knee–foot lines, planted feet green, swinging feet orange with a cross where they will land, and the gait's name, phase and duty. `?gait=walk|hurry` keeps it walking. `tools/walkstrip.js` draws frame strips and prints foot slip, stretch and how many feet are up per frame.
 
 Before this pass a foot stepped only once the body had got too far ahead of it, with a fixed step time, one diagonal rule for every leg count and one walking speed: hexapod legs were pulled to 1.1× their length, feet left in bursts and the body then glided on planted feet, and babies walked at the same speed as adults. Strips: [before](shots/walk-before-side.png), [after](shots/walk-after-side.png), [babies after](shots/walk-after-baby.png), [hurry](shots/walk-after-hurry.png).
 
@@ -111,6 +123,8 @@ Milestones: level 10 at 176k, child (26) at 1.5M, level 50 at 6.1M, teen (56) at
 
 There is no feed button, no "add level" key, no debug token injection in the game. The web model's level slider is a preview of what each level will look like, labelled as such; the game has no slider.
 
+**Food comes from tokens too.** In the game, the same weighted tokens that level the creature also drop food into its habitat (a few snacks an hour of real use, never from a button). The web model's food chips and click-to-drop are labelled **prototype only** and do not ship. Food never adds levels: levels come only from real Claude usage.
+
 ## 9. Calm, fade when idle, reduced motion
 
 Same settings and meanings as the ant farm, from the same shell (the web model honours only the system reduced-motion setting; Calm and fade belong to the overlay):
@@ -124,7 +138,8 @@ Same settings and meanings as the ant farm, from the same shell (the web model h
 - `genome.js`: seed, genes, breeding, temperament, growth, repair, traits, egg look, tokens → levels.
 - `body.js`: phenotype → primitives and decals (pieces, parts, face, egg).
 - `render.js`: SDF, ray marcher, styles, palette, ink, decals, camera framing.
-- `motion.js`: walker (gaits per leg count, planted feet, body bob and sway, tail and head springs, wings, hop, blink, look).
+- `motion.js`: walker (floor position and heading, steering, turns and spins, eating and hunger, gaits per leg count, planted feet, body bob and sway, tail and head springs, wings, hop, blink, look).
+- `habitats.js`: six code-drawn habitat floors with parallax and wind.
 - `app.js` + `index.html`: the web model page.
 - `test/`: unit tests (`node --test test/`) and `test/e2e.js` (headless page checks).
-- `tools/`: `sheets.js` (contact sheets in Node), `shots.js` (headless page screenshots), `walkstrip.js` (walk frame strips and foot metrics), `bundle.js` (single-file page), `png.js`.
+- `tools/`: `sheets.js` (contact sheets in Node), `shots.js` (headless page screenshots), `proof.js` (turn, spin, eating and habitat proof sheets, drawn by the page headless), `mouths.js` (mouth sheet), `walkstrip.js` (walk frame strips and foot metrics), `bundle.js` (single-file page), `png.js`.

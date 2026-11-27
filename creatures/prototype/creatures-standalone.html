@@ -33,7 +33,13 @@
   @media (max-width: 860px) { .grid { grid-template-columns: minmax(0, 1fr); } }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; min-width: 0; }
   #stageBox { position: relative; border-radius: 10px; overflow: hidden; background: var(--stage); }
-  #stage { display: block; width: 100%; image-rendering: pixelated; image-rendering: crisp-edges; aspect-ratio: 240 / 140; }
+  #stage { display: block; width: 100%; image-rendering: pixelated; image-rendering: crisp-edges; aspect-ratio: 384 / 216; cursor: crosshair; }
+  #stageBox .meter { position: absolute; left: 10px; bottom: 8px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: #2a2433; background: rgba(255,255,255,.72); border-radius: 999px; padding: 2px 8px; }
+  #stageBox.dark .meter { color: #fff; background: rgba(0,0,0,.35); }
+  #stageBox .meter i { display: block; width: 64px; height: 6px; border-radius: 3px; background: rgba(0,0,0,.15); overflow: hidden; }
+  #stageBox .meter b { display: block; height: 100%; width: 0; background: var(--good); transition: width .3s; }
+  #stageBox .meter b.low { background: #e8833a; }
+  #stageBox:not(.dark) .who { color: #2a2433; text-shadow: 0 1px 0 rgba(255,255,255,.6); }
   #stageBox .who { position: absolute; left: 10px; top: 8px; color: #fff; font-family: "Lilita One", system-ui; font-size: 18px; text-shadow: 0 2px 0 rgba(0,0,0,.35); }
   #stageBox .who small { font-family: system-ui; font-size: 12px; opacity: .8; margin-left: 6px; }
   #stageBox .badge { position: absolute; right: 10px; top: 10px; background: var(--accent); color: var(--accent-ink); border-radius: 8px; padding: 2px 8px; font-weight: 700; font-size: 12px; }
@@ -87,9 +93,10 @@
   <div class="grid">
     <section class="card">
       <div id="stageBox">
-        <canvas id="stage" width="240" height="140"></canvas>
+        <canvas id="stage" width="384" height="216"></canvas>
         <div class="who"><span id="name">…</span><small id="stageName"></small></div>
         <div class="badge" id="rarity"></div>
+        <div class="meter" aria-label="Hunger"><span>hunger</span><i><b id="hungerBar"></b></i><span id="mood">idle</span></div>
       </div>
 
       <div class="temper">
@@ -115,6 +122,15 @@
         <button id="debug">Walk debug</button>
       </div>
       <div class="row">
+        <span class="note" style="margin:0">Habitat:</span>
+        <div class="steps" id="habitats"></div>
+      </div>
+      <div class="row" id="foodRow">
+        <span class="note" style="margin:0"><b>Food (prototype only):</b></span>
+        <div class="steps" id="foods"></div>
+        <span class="note" style="margin:0">Pick one, then click the floor to drop it. In the game, food comes only from tokens of real Claude Code use; there is no feed button.</span>
+      </div>
+      <div class="row">
         <span class="note" style="margin:0">Face:</span>
         <div class="steps" id="faces"></div>
       </div>
@@ -135,10 +151,6 @@
         <span>Shine</span>
         <input id="shine" type="range" min="0" max="1" step="0.05" value="1" aria-label="Shine">
         <b id="shineVal">1.00</b>
-      </div>
-      <div class="row">
-        <span class="note" style="margin:0">Backdrop:</span>
-        <div class="steps" id="backs"></div>
       </div>
     </section>
 
@@ -259,6 +271,7 @@
   gene('eyes', 'eyes.dom', 0, 1);
   gene('face', 'mouth.width', 0, 1);
   gene('face', 'mouth.smile', -1, 1);
+  gene('face', 'mouth.kind', 0, 4.49);     // rounded: jaw, beak, mandibles, slit, tongue (drawn last, see randomCopy)
   gene('face', 'fangs', 0, 1);
   gene('face', 'blush', 0, 1);
   gene('face', 'face.dom', 0, 1);
@@ -287,6 +300,7 @@
 
   const LEG_KINDS = 4, EAR_KINDS = ['none', 'pointed', 'round', 'long'];
   const DECOR_KINDS = ['none', 'sprout', 'flower', 'antennae', 'spikes'];
+  const MOUTH_KINDS = ['jaw', 'beak', 'mandibles', 'slit', 'tongue'];
   const PATTERN_KINDS = ['none', 'spots', 'stripes', 'patches', 'speckles'];
   const WING_MIN = 0.42;
 
@@ -311,7 +325,7 @@
     const g = {};
     const set = (name, v) => { const [lo, hi] = GENES[name]; g[name] = clamp(v, lo, hi); };
     const any = (name) => set(name, rng.range(GENES[name][0], GENES[name][1]));
-    for (const n of GENE_NAMES) any(n); // start fully random, then shape the pieces
+    for (const n of GENE_NAMES) if (n !== 'mouth.kind') any(n); // start fully random, then shape the pieces
     const torsoR = rng.range(0.13, 0.33);
     const rings = (p, base, shape) => ringProfile(rng, RINGS[p], base, shape).forEach(([w, h], i) => {
       set(`${p}.rings[${i}].width`, w); set(`${p}.rings[${i}].height`, h);
@@ -333,6 +347,13 @@
     set('legs.width', torsoR * rng.range(0.22, 0.42));
     set('colour.light', rng.range(0.28, 0.68));
     set('temperament', rng.range(-0.6, 0.6));
+    // The mouth kind is picked from a hash of everything else, not from the generator, so every seed made before
+    // mouths existed still grows the same body. Six legs or antennae lean toward mandibles (bug-like).
+    const h = hashSeed(GENE_NAMES.map((n) => (g[n] ?? 0).toFixed(4)).join(',')) / 4294967296;
+    const buggy = Math.round(g['legs.pairs']) === 3 || Math.round(g['decor.kind']) === 3;
+    const cut = buggy ? [0.2, 0.3, 0.75, 0.88] : [0.35, 0.53, 0.68, 0.85]; // jaw, beak, mandibles, slit, then tongue
+    const pick = cut.findIndex((c) => h < c);
+    set('mouth.kind', (pick < 0 ? 4 : pick) + 0.2 + 0.1 * (h * 7 % 1));
     return g;
   }
 
@@ -523,7 +544,7 @@
       horns: { count: Math.round(g['horns.count']), length: g['horns.length'], curve: g['horns.curve'], spread: g['horns.spread'], width: g['horns.width'] },
       ears: { kind: EAR_KINDS[Math.round(g['ears.kind'])], size: g['ears.size'], angle: g['ears.angle'] },
       eyes: { size: g['eyes.size'], spacing: g['eyes.spacing'], height: g['eyes.height'], round: 0, slant: 0, glow: 0 },
-      mouth: { width: g['mouth.width'], smile: g['mouth.smile'] },
+      mouth: { width: g['mouth.width'], smile: g['mouth.smile'], kind: MOUTH_KINDS[Math.round(g['mouth.kind'])] || 'jaw' },
       fangs: g.fangs, blush: g.blush,
       decor: { kind: DECOR_KINDS[Math.round(g['decor.kind'])], size: g['decor.size'], hue: g['decor.hue'] },
       colour: { hue: g['colour.hue'], sat: g['colour.sat'], light: g['colour.light'], belly: g['colour.belly'],
@@ -603,10 +624,10 @@
   // A stable short fingerprint of a creature's shown numbers (for tests and the gallery).
   function fingerprint(creature) {
     const g = genotype(creature);
-    return hashSeed(GENE_NAMES.map((n) => g[n].toFixed(4)).join(',')).toString(36);
+    return hashSeed(GENE_NAMES.map((n) => (g[n] ?? 0).toFixed(4)).join(',')).toString(36);
   }
 
-  const api = { hashSeed, makeRng, GENES, GENE_NAMES, PIECES, PIECE, RINGS, WING_MIN, EAR_KINDS, DECOR_KINDS, PATTERN_KINDS,
+  const api = { hashSeed, makeRng, GENES, GENE_NAMES, PIECES, PIECE, RINGS, WING_MIN, EAR_KINDS, DECOR_KINDS, PATTERN_KINDS, MOUTH_KINDS,
     randomCreature, randomCopy, genotype, expressedCopyIndex, breed, breedName, randomName, phenotype, express, repair,
     applyTemperament, applyGrowth, traits, eggLook, fingerprint, STAGES, stageOf, growthOf, LEVEL_MAX, HEAD_MAX_RATIO,
     HATCH_TOKENS, LEVEL_BASE_TOKENS, LEVEL_EXP, tokensForLevelUp, tokensToReach, levelFromTokens, NUDGE, SURPRISE_CHANCE,
@@ -631,7 +652,7 @@
   const TRI = 2;       // a thin plate: triangle a, b, c with half thickness r1
 
   // Materials (what colour a piece takes).
-  const MAT = { BODY: 0, ACCENT: 1, WING: 2, LEAF: 3, PETAL: 4, DARK: 5, EGG: 6, SHELL_IN: 7 };
+  const MAT = { BODY: 0, ACCENT: 1, WING: 2, LEAF: 3, PETAL: 4, DARK: 5, EGG: 6, SHELL_IN: 7, TONGUE: 8 };
 
   const v = {
     add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
@@ -649,6 +670,11 @@
     // rotate p around the z axis through o (positive tips +x up)
     rotZ: (p, o, ang) => { const c = Math.cos(ang), s = Math.sin(ang), x = p[0] - o[0], y = p[1] - o[1]; return [o[0] + c * x - s * y, o[1] + s * x + c * y, p[2]]; },
   };
+  // rotate p around any unit axis through o (right-handed: about +z, positive tips +x up, like rotZ)
+  function rotAbout(p, o, k, ang) {
+    const c = Math.cos(ang), s = Math.sin(ang), d = v.sub(p, o), kd = v.dot(k, d), x = v.cross(k, d);
+    return v.add(o, v.add(v.add(v.mul(d, c), v.mul(x, s)), v.mul(k, kd * (1 - c))));
+  }
 
   // A frame for a segment: axis along it, u its "up" (in the plane of the body), side across.
   function frame(axis, upHint) {
@@ -738,15 +764,26 @@
     return { knee, end, stretch };
   }
 
-  // The walk moves the body on its legs: bob (up), sway (sideways), pitch (nose up) and roll (lean right), about the
-  // middle of the torso. Feet stay where the walker put them; only hips, torso, head, tail and wings move.
+  // The walk moves the body on its legs: bob (up), sway (sideways), pitch (nose up), roll (lean right) and bend (the
+  // spine curves into a turn, positive = left, both ends toward the turn's centre), about the middle of the torso.
+  // Feet stay where the walker put them; only hips, torso, head, tail and wings move. R(d, p) turns a direction that
+  // sits at point p (the bend depends on where along the body it is).
   function bodyTransform(L, body) {
     body = body || {};
-    const bob = body.bob || 0, sway = body.sway || 0, pitch = body.pitch || 0, roll = body.roll || 0;
-    if (!bob && !sway && !pitch && !roll) return null;
+    const bob = body.bob || 0, sway = body.sway || 0, pitch = body.pitch || 0, roll = body.roll || 0, bend = body.bend || 0;
+    if (!bob && !sway && !pitch && !roll && !bend) return null;
     const o = L.tsp.pts[Math.floor(L.tsp.pts.length / 2)];
-    const R = (d) => v.rotX(v.rotZ(d, [0, 0, 0], pitch), [0, 0, 0], roll);
-    const T = (p) => { const q = v.rotX(v.rotZ(p, o, pitch), o, roll); return [q[0], q[1] + bob, q[2] + sway]; };
+    const half = Math.max(1e-6, v.len(v.sub(L.tsp.pts[L.tsp.pts.length - 1], L.tsp.pts[0])) / 2);
+    const bendAt = (p) => bend * Math.max(-1.6, Math.min(1.6, (p[0] - o[0]) / half));
+    const R = (d, p) => {
+      if (bend && p) d = v.rotY(d, [0, 0, 0], bendAt(p));
+      return v.rotX(v.rotZ(d, [0, 0, 0], pitch), [0, 0, 0], roll);
+    };
+    const T = (p) => {
+      const b = bend ? v.rotY(p, o, bendAt(p)) : p;
+      const q = v.rotX(v.rotZ(b, o, pitch), o, roll);
+      return [q[0], q[1] + bob, q[2] + sway];
+    };
     return { T, R };
   }
 
@@ -782,7 +819,8 @@
   }
 
   // Build the creature. pose: { breathe, lookYaw, headNod, tailSway, tailLift, wingFlap, feet (local, like
-  // layout().feet, on the ground frame), body: { bob, sway, pitch, roll } (see bodyTransform), blink, expression }.
+  // layout().feet, on the ground frame), body: { bob, sway, pitch, roll, bend } (see bodyTransform), blink, expression,
+  // mouthOpen (0..1), swallow (0..1, a lump on its way down) }. `mouth` is where the mouth is (the walker aims it at food).
   // The scene reports each leg's hip, knee, foot and stretch in `legs` (for the walk's debug overlay and tests).
   function build(ph, pose) {
     pose = pose || {};
@@ -976,15 +1014,89 @@
         decals.push({ kind: 'blush', from: eq.p, dir: bdir, r: eyeR * 0.9, amount: ph.blush, side });
       }
     }
-    // Mouth: a line through three anchors (one jaw corner, the chin, the other corner); the renderer joins whichever show.
+    // Mouth: every creature has one that opens (pose.mouthOpen, 0..1) to bite and chew. ph.mouth.kind picks the shape:
+    // jaw (a hinged lower jaw), beak (two horny halves), mandibles (side pincers), slit (a plain line that parts) or
+    // tongue (a mouth that opens with a tongue lolling out). A mark line on the face goes with all but the beak.
+    const kind = ph.mouth.kind || 'jaw';
+    const open = Math.max(0, Math.min(1, pose.mouthOpen || 0));
     const mq = hAt(0.96), mf = frame(mq.d), cq = hAt(0.8 - 0.25 * ph.mouth.width), cf = frame(cq.d);
-    const corner = (side) => ({ from: cq.p, dir: v.norm(v.add(v.add(v.mul(cf.ax, 0.35), v.mul(cf.u, -0.45)), v.mul(cf.side, side * 0.8))) });
-    decals.push({ kind: 'mouth', pts: [corner(-1), { from: mq.p, dir: v.norm(v.add(v.mul(mf.ax, 0.8), v.mul(mf.u, -0.55))) }, corner(1)],
-      from: mq.p, dir: mf.ax, width: (0.4 + 0.8 * ph.mouth.width) * Math.max(mq.w, 0.04 * s),
-      smile: ph.mouth.smile, fangs: ph.fangs, expression: pose.expression || ph.expression });
+    const tip = hAt(1), tf = frame(tip.d), mid = hAt(0.75), cheek = hAt(0.45);
+    // Sizes come from the thick part of the head (a snout can taper to a point); the mouth runs along the underside
+    // from a hinge under the cheek to the front of the snout.
+    const hw = Math.max(mid.w, tip.w), hh = Math.max(mid.h, tip.h);
+    const snout = v.add(tip.p, v.mul(tf.ax, tip.w * 0.9));
+    const mouthPt = v.add(v.add(tip.p, v.mul(tf.ax, tip.w * 0.55)), v.mul(tf.u, -tip.h * 0.45));
+    const hinge = v.add(cheek.p, v.mul(frame(cheek.d).u, -cheek.h * 0.55));
+    const jawLine = v.sub(mouthPt, hinge), jawLen = v.len(jawLine), jawDir = v.norm(jawLine);
+    const extra = [];
+    const turnDown = (p, o, ang) => rotAbout(p, o, tf.side, -ang);
+    // the dark inside of an open mouth, along the jaw line (hidden in the head when shut)
+    const cavity = (amount) => {
+      if (amount < 0.02) return;
+      const c = v.add(v.lerp(hinge, mouthPt, 0.6), v.mul(tf.u, -hh * 0.05 * amount));
+      extra.push(ellipsoid(c, jawDir, jawLen * 0.45, hh * (0.08 + 0.3 * amount), hw * 0.5, 'mouth', MAT.DARK, { k2: 0.002, upHint: tf.u }));
+    };
+    if (kind === 'jaw') {
+      // the lower jaw drops and tips its front down (hinged at the cheek)
+      const a = open * 0.45;
+      const c = v.add(v.add(v.lerp(hinge, mouthPt, 0.55), v.mul(tf.u, -hh * (0.12 + 0.3 * open))), v.mul(jawDir, jawLen * 0.12 * open));
+      extra.push(ellipsoid(c, rotAbout(jawDir, [0, 0, 0], tf.side, -a), jawLen * 0.55, hh * 0.3, hw * 0.65, 'jaw', MAT.BODY,
+        { k2: k * 0.3, upHint: tf.u }));
+      cavity(open);
+    } else if (kind === 'beak') {
+      const base = v.add(mid.p, v.mul(tf.u, -hh * 0.05));
+      const len = v.len(v.sub(snout, base)) + hw * (0.9 + 0.6 * ph.mouth.width);
+      const r = Math.min(hw, hh) * 0.72;
+      const upTip = v.add(v.add(base, v.mul(tf.ax, len)), v.mul(tf.u, -hh * 0.3));
+      extra.push(cone(base, upTip, r, 0.006 * s, 0.75, 'beak', MAT.ACCENT, { k2: 0.01, upHint: tf.u }));
+      const lowBase = v.add(base, v.mul(tf.u, -r * 0.7));
+      const lowTip = turnDown(v.add(v.add(lowBase, v.mul(tf.ax, len * 0.85)), v.mul(tf.u, -hh * 0.05)), lowBase, 0.06 + open * 0.5);
+      extra.push(cone(lowBase, lowTip, r * 0.8, 0.005 * s, 0.6, 'beak', MAT.ACCENT, { k2: 0.008, upHint: tf.u }));
+      if (open > 0.02) extra.push(ellipsoid(v.add(lowBase, v.mul(tf.ax, len * 0.45)), tf.ax, len * 0.35, r * 0.5 * open, r * 0.6, 'mouth', MAT.DARK,
+        { k2: 0.002, upHint: tf.u }));
+    } else if (kind === 'mandibles') {
+      const ml = hw * (1.1 + 0.5 * ph.mouth.width), mw = Math.max(0.008 * s, hw * 0.15);
+      for (const side of [-1, 1]) {
+        const base = v.add(v.add(mouthPt, v.mul(tf.ax, -hw * 0.1)), v.mul(tf.side, side * hw * 0.4));
+        const out = v.norm(v.add(tf.ax, v.mul(tf.side, side * (0.15 + open * 0.75))));
+        const knee = v.add(v.add(base, v.mul(out, ml * 0.55)), v.mul(tf.u, -hh * 0.1));
+        const hook = v.norm(v.add(tf.ax, v.mul(tf.side, -side * (0.9 - open * 0.4))));
+        const end = v.add(v.add(knee, v.mul(hook, ml * 0.5)), v.mul(tf.u, -hh * 0.05));
+        extra.push(cone(base, knee, mw, mw * 0.8, 1, 'mandible', MAT.ACCENT, { k2: 0.004 }));
+        extra.push(cone(knee, end, mw * 0.8, 0.003 * s, 1, 'mandible', MAT.ACCENT, { k2: 0.002 }));
+      }
+      cavity(open * 0.6);
+    } else if (kind === 'tongue') {
+      cavity(open);
+      if (open > 0.08) {
+        const root = v.lerp(hinge, mouthPt, 0.6);
+        const end = v.add(v.add(mouthPt, v.mul(tf.ax, hw * (0.2 + 0.6 * open))), v.mul(tf.u, -hh * (0.2 + 0.4 * open)));
+        extra.push(cone(root, end, hw * 0.22, hw * 0.2, 0.45, 'tongue', MAT.TONGUE, { k2: 0.004, upHint: tf.u }));
+      }
+    } else cavity(open * 0.7); // slit
+    for (const p of extra) { p.bs = bound(p); if (p.k2 == null) p.k2 = k; prims.push(p); }
+    if (kind !== 'beak') {
+      const corner = (side) => ({ from: cq.p, dir: v.norm(v.add(v.add(v.mul(cf.ax, 0.35), v.mul(cf.u, -0.45)), v.mul(cf.side, side * 0.8))) });
+      decals.push({ kind: 'mouth', pts: [corner(-1), { from: mq.p, dir: v.norm(v.add(v.mul(mf.ax, 0.8), v.mul(mf.u, -0.55))) }, corner(1)],
+        from: mq.p, dir: mf.ax, width: (0.4 + 0.8 * ph.mouth.width) * Math.max(mq.w, 0.04 * s), mouth: kind, open,
+        smile: kind === 'slit' ? 0 : ph.mouth.smile, fangs: kind === 'jaw' ? ph.fangs : 0, expression: pose.expression || ph.expression });
+    }
+
+    // Swallowing: a lump slides from the back of the head down the neck into the chest (pose.swallow 0..1).
+    const sw = pose.swallow || 0;
+    if (sw > 0 && sw < 1) {
+      const path = [{ p: headStart, w: headR[0].w }, { p: neckBase, w: neckLen > 0.03 * s ? neckR[0].w : front.w * 0.6 },
+        { p: along(tsp, torsoR, 0.6).p, w: front.w * 0.4 }];
+      const f = sw * 2, i = Math.min(1, Math.floor(f)), u = f - i;
+      const c = v.lerp(path[i].p, path[i + 1].p, u), w0 = path[i].w + (path[i + 1].w - path[i].w) * u;
+      const r = w0 * (0.8 + 0.42 * Math.sin(Math.PI * sw));
+      const lump = ellipsoid(c, v.sub(path[i + 1].p, path[i].p), r * 1.3, r, r, 'neck', MAT.BODY, { k2: k * 0.6 });
+      lump.bs = bound(lump); prims.push(lump);
+    }
 
     if (BT) moveBody(prims, decals, BT);
-    return { prims, decals, k, scale: s, layout: L, legs, kind: 'creature' };
+    const mouth = { p: BT ? BT.T(mouthPt) : mouthPt, open, kind };
+    return { prims, decals, k, scale: s, layout: L, legs, kind: 'creature', mouth };
   }
 
   // Apply the walk's body transform to everything but the legs (which were solved from the moved hips).
@@ -992,13 +1104,14 @@
     const LEG = { leg: 1, foot: 1, claw: 1 };
     for (const p of prims) {
       if (LEG[p.piece]) continue;
+      const at = p.a;
       p.a = BT.T(p.a); if (p.b) p.b = BT.T(p.b); if (p.c) p.c = BT.T(p.c);
-      p.ax = BT.R(p.ax); p.u = BT.R(p.u); p.side = BT.R(p.side);
+      p.ax = BT.R(p.ax, at); p.u = BT.R(p.u, at); p.side = BT.R(p.side, at);
       p.bs = bound(p);
     }
     for (const d of decals) {
-      d.from = BT.T(d.from); d.dir = BT.R(d.dir);
-      if (d.pts) d.pts = d.pts.map((q) => ({ from: BT.T(q.from), dir: BT.R(q.dir) }));
+      d.dir = BT.R(d.dir, d.from); d.from = BT.T(d.from);
+      if (d.pts) d.pts = d.pts.map((q) => ({ from: BT.T(q.from), dir: BT.R(q.dir, q.from) }));
     }
   }
 
@@ -1215,6 +1328,7 @@
       leaf: ramp(108 + (ph.decor.hue - 180) * 0.08, 0.6, 0.45),
       petal: ramp(ph.decor.hue, 0.65, 0.7),
       dark: ramp(hue, c.sat * 0.4, 0.2),
+      tongue: ramp(350, 0.62, 0.66),
       tip: ramp(40, 0.25, 0.92),
       mark: ramp(hue + (ph.pattern.light >= 0 ? 0 : 10), c.sat * (ph.pattern.light >= 0 ? 0.45 : 1.05), markL),
     };
@@ -1230,6 +1344,7 @@
     if (q.mat === MAT.LEAF) return pal.leaf;
     if (q.mat === MAT.PETAL) return pal.petal;
     if (q.mat === MAT.DARK) return pal.dark;
+    if (q.mat === MAT.TONGUE) return pal.tongue;
     const tAlong = pr.t0 + (pr.t1 - pr.t0) * Math.max(0, Math.min(1, h.fc.along / Math.max(1e-6, q.len || 1)));
     if (q.piece === 'tail' && pr.tip > 0.3 && tAlong > 1 - pr.tip * 0.5) return pal.tip;
     const main = q.piece === 'torso' || q.piece === 'neck' || q.piece === 'head' || q.piece === 'tail';
@@ -1288,15 +1403,6 @@
       return { rgb: rp[gochiBand(scene, h, ro, h.light)], ink: rp[0] };
     },
   });
-  registerLook('matte', {
-    label: 'Matte',
-    // Flat paint: a body colour and one soft shadow, no glint, a softer outline. Shine only adds a faint top light.
-    shade(scene, pal, h, ro) {
-      const rp = rampOf(scene, pal, h), L = h.light;
-      const rgb = L < 0.3 ? mix(rp[2], rp[3], 0.35) : L < 0.95 ? rp[3] : mix(rp[3], rp[4], 0.4 * shineOf(ro));
-      return { rgb, ink: rp[1] };
-    },
-  });
   registerLook('cel', {
     label: 'Cel',
     // Cartoon cel: two hard tones split at the terminator, a bold outline, one small hard highlight.
@@ -1319,45 +1425,6 @@
     },
     post: (res, scene, pal, ro) => quantise(res, ro && ro.palette),
   });
-  registerLook('chunky', {
-    label: 'Chunky',
-    // Chunky pixels: quarter size, three flat tones, no dither, a 1px outline.
-    pixel: 4,
-    shade(scene, pal, h) {
-      const rp = rampOf(scene, pal, h), L = h.light;
-      return { rgb: L < 0.3 ? rp[1] : L < 0.75 ? rp[3] : rp[4], ink: rp[0] };
-    },
-    post: (res, scene, pal, ro) => quantise(res, ro && ro.palette),
-  });
-  registerLook('ink', {
-    label: 'Ink',
-    // Pen and ink: paper with a hint of the body colour, an ink outline, hatching in the shadows (crossed in the
-    // deepest), stippled markings.
-    shade(scene, pal, h) {
-      const rp = rampOf(scene, pal, h), L = h.light, x = h.x, y = h.y;
-      const inkC = mix(rp[0], [24, 20, 28], 0.6), paper = mix([250, 246, 234], rp[4], 0.22);
-      let on = false;
-      if (L < 0.2) on = (x + y) % 3 === 0 || (x - y + 300) % 3 === 0;
-      else if (L < 0.45) on = (x + y) % 3 === 0;
-      else if (L < 0.62) on = (x + y) % 6 === 0;
-      if (!on && scene.kind !== 'egg' && rp === pal.mark) on = (x * 7 + y * 13) % 5 === 0;
-      if (!on && scene.kind === 'egg' && rp === pal.mark) on = (x + y * 2) % 3 === 0;
-      return { rgb: on ? inkC : paper, ink: inkC };
-    },
-  });
-  registerLook('sticker', {
-    label: 'Sticker',
-    // Paper cut-out sticker: flat colour with one shadow tone, no ink line, a white die-cut border, a drop shadow and
-    // a little paper grain.
-    shade(scene, pal, h) {
-      const rp = rampOf(scene, pal, h);
-      const g = 1 + (vnoise(h.x * 1.7, h.y * 1.7, 3.3) - 0.5) * 0.08;
-      return { rgb: (h.light < 0.32 ? rp[2] : rp[3]).map((c) => Math.min(255, c * g)), ink: rp[2] };
-    },
-    inkEdges: false,
-    post: stickerBorder,
-  });
-
   // Fixed palettes for the pixel looks ('own' keeps the creature's colours).
   const PALETTES = {
     gameboy: [[15, 56, 15], [48, 98, 48], [139, 172, 15], [155, 188, 15]],
@@ -1383,30 +1450,6 @@
         for (const q of P) { const d = 2 * (c[0] - q[0]) ** 2 + 4 * (c[1] - q[1]) ** 2 + 3 * (c[2] - q[2]) ** 2; if (d < bd) { bd = d; best = q; } }
       }
       res.rgba[i * 4] = best[0]; res.rgba[i * 4 + 1] = best[1]; res.rgba[i * 4 + 2] = best[2];
-    }
-  }
-  function stickerBorder(res) {
-    const W = res.w, H = res.h, r = Math.max(1, Math.round(Math.min(W, H) / 48));
-    const body = res.mask.map((m) => (m === 1 ? 1 : 0));
-    const near = (x, y, rad) => {
-      for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++) {
-        if (dx * dx + dy * dy > rad * rad + rad) continue;
-        const xx = x + dx, yy = y + dy;
-        if (xx >= 0 && yy >= 0 && xx < W && yy < H && body[yy * W + xx]) return true;
-      }
-      return false;
-    };
-    const border = new Uint8Array(W * H);
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (!body[y * W + x] && near(x, y, r)) border[y * W + x] = 1;
-    // drop shadow down and right of the cut-out, then the white border on top
-    for (let y = H - 1; y >= 0; y--) for (let x = W - 1; x >= 0; x--) {
-      const i = y * W + x, sx = x - r, sy = y - r;
-      if (body[i] || border[i] || sx < 0 || sy < 0) continue;
-      const j = sy * W + sx;
-      if (body[j] || border[j]) { res.rgba[i * 4] = 40; res.rgba[i * 4 + 1] = 30; res.rgba[i * 4 + 2] = 30; res.rgba[i * 4 + 3] = 70; res.mask[i] = 2; }
-    }
-    for (let i = 0; i < W * H; i++) if (border[i]) {
-      res.rgba[i * 4] = 252; res.rgba[i * 4 + 1] = 250; res.rgba[i * 4 + 2] = 244; res.rgba[i * 4 + 3] = 255; res.mask[i] = 1;
     }
   }
   registerStyle('inside', { shade: () => ({ rgb: [42, 36, 46], ink: [42, 36, 46] }), inkEdges: false });
@@ -1727,6 +1770,17 @@
     const smile = ex === 'happy' ? 1 : ex === 'angry' ? -0.8 : ex === 'sleepy' ? 0 : d.smile;
     const vis = d.pts.map((q, i) => (q && q.vis ? { x: q.sx, y: q.sy - (i === 1 ? 0 : smile * 1.4), mid: i === 1 } : null)).filter(Boolean);
     if (vis.length === 1) { line(res, vis[0].x - 1, vis[0].y, vis[0].x + 1, vis[0].y, ink); return; }
+    // An open mouth (biting, chewing) parts below the line: a dark gap, deepest in the middle, pink at the bottom
+    // for a tongue. The 3D jaw, beak, mandibles or tongue open with it.
+    if (d.open > 0.15) {
+      const n = 24, span = vis.length - 1;
+      for (let k = 0; k <= n; k++) {
+        const t = (k / n) * span, i = Math.min(span - 1, Math.floor(t)), u = t - i;
+        const x = vis[i].x + (vis[i + 1].x - vis[i].x) * u, y = vis[i].y + (vis[i + 1].y - vis[i].y) * u;
+        const gap = Math.round(d.open * 3.2 * Math.sin(Math.PI * k / n));
+        for (let g = 1; g <= gap; g++) put(res, x, y + g, d.mouth === 'tongue' && g === gap && gap > 1 ? [226, 110, 132] : [58, 22, 34]);
+      }
+    }
     for (let i = 0; i + 1 < vis.length; i++) line(res, vis[i].x, vis[i].y, vis[i + 1].x, vis[i + 1].y, ink);
     if (d.fangs > 0.35) {
       const len = d.fangs > 0.75 ? 2 : 1;
@@ -1840,7 +1894,13 @@
    to the world while the body moves over it. Swing: it lifts and lands half a stride ahead of its rest spot, where the
    hip will be when it lands. Stride length and cadence come from leg length (long legs stride, short legs patter,
    babies waddle); the stride is capped so a leg is never pulled straighter than MAX_STRETCH. The body bobs, sways,
-   pitches and rolls with whichever feet are holding it up; the head steadies against it and the tail follows late. */
+   pitches and rolls with whichever feet are holding it up; the head steadies against it and the tail follows late.
+
+   It walks on a ground plane (x, z) with a heading: it wanders, goes to food or a spot, and steers away from the walls
+   at a limited turn rate. Bigger changes of direction are turns: slow down, then pivot on planted feet (a 180° turn,
+   now and then a 360° spin for fun), the head leading and the tail swinging the other way. Food it notices it walks
+   to, faces, lowers its head, bites (the food shrinks), chews, swallows (a lump goes down) and is happy; hunger rises
+   slowly with time and a meal lowers it. Pass a number pair for min/max x to walk on a line instead. */
 (function (root) {
   'use strict';
   const B = typeof module !== 'undefined' && module.exports ? require('./body.js') : root.CreatureBody;
@@ -1967,129 +2027,404 @@
       bobAmp, pitchAmp, rollAmp, swayAmp, legLen, mean: st.mean, range: st.range };
   }
 
+  // ---------- turning and behaviour ----------
+  // The creature walks on a ground plane (world x to the right, z toward the viewer) with a heading `th`
+  // (0 = facing right, +PI/2 = facing away, -PI/2 = facing the viewer). It steers with a limited yaw rate, so walking
+  // turns are arcs; a big turn (or one at a wall) is a stop and a pivot on planted feet. Positive yaw turns left.
+  const TURN_RATE = 1.1;           // rad/s: the fastest it turns while walking
+  const TURN_RADIUS = 0.55;        // the tightest walking arc, in body scales (yaw rate <= speed / radius)
+  const PIVOT_RATE = 1.5;          // rad/s: turning on the spot (for a LEG_REF leg; longer legs pivot slower)
+  const PIVOT_ANGLE = 1.75;        // rad (~100°): a heading error beyond this stops it and pivots instead of arcing
+  const PIVOT_DONE = 0.35;         // rad: a pivot ends when the error is this small, then it walks off on an arc
+  const PIVOT_SPEED = 0.15;        // share of walking speed under which it may pivot
+  const PIVOT_AT = { biped: 'centre', quadruped: 'hind', hexapod: 'centre', legless: 'centre' }; // what it turns about
+  const YAW_ACCEL = 4;             // rad/s²: how quickly a turn starts and stops
+  const TURN_STRIDE = 0.8;         // turning steps are this share of a straight stride (keeps the outer legs in reach)
+  const SKIP_TOL = 0.08;           // share of leg length: a foot whose next spot is this close stays planted (inner legs pivot)
+  const REACH_LIMIT = 0.96;        // hip-to-foot share a planted foot may reach before the body waits for it to step
+  const STEER_GAIN = 2.2;          // yaw rate per radian of heading error
+  const BEND_GAIN = 0.16, BEND_MAX = 0.3; // body curve along the turn (radians at the ends per rad/s of yaw)
+  const HEAD_LEAD = 0.35, TAIL_TURN = 0.45; // the head looks into the turn, the tail swings out of it
+  const EDGE_MARGIN = 0.12;        // body scales: how far ahead of its stopping point it looks for a wall
+  const SPIN_CHANCE = 0.08;        // share of idle choices that are a full 360° spin (play)
+  const LOOK_TURN_CHANCE = 0.15;   // share that are a turn on the spot to face somewhere else
+  // Eating.
+  const NOTICE_TIME = 0.5;         // seconds looking at new food before going for it
+  const EAT_LOWER = 0.45, BITE_OPEN = 0.2, BITE_SNAP = 0.08, CHEW_TIME = 0.6, CHEW_RATE = 4; // seconds, chews/s
+  const SWALLOW_TIME = 0.6, HAPPY_TIME = 1.3;
+  const EAT_NOD = 0.5, EAT_PITCH = 0.12; // head tips down, body leans in
+  const HUNGER_RATE = 1 / 900;     // hunger 0..1 rises this much per second (fed to hungry in ~10 minutes)
+  const HUNGRY = 0.65;             // hunger above this is the hungry state
+  const POOP_CHANCE = 0.3;         // after a meal, now and then a small calm dropping
+
+  const wrap = (a) => a - 2 * Math.PI * Math.floor((a + Math.PI) / (2 * Math.PI));
+
   function createWalker(ph, seed, opts) {
     opts = opts || {};
     const L = B.layout(ph);
     const rnd = mulberry(seed >>> 0 || 1);
     const gaits = { walk: gaitParams(ph, L, 'walk'), hurry: gaitParams(ph, L, 'hurry') };
-    const x = opts.x || 0;
-    return {
-      L, ph, rnd, gaits, time: 0, progress: 0, dir: 1, x, v: 0, accel: 0, phase: 0, walking: false, hurry: false,
-      idleFor: 1 + rnd() * 2, walkFor: 0, wantTurn: false, pause: 0, settled: true,
+    const fam = gaits.walk.family;
+    const hipX = L.hips.map((h) => h.p[0]);
+    const o = L.tsp.pts[Math.floor(L.tsp.pts.length / 2)];
+    const pivotX = !hipX.length ? o[0] : PIVOT_AT[fam] === 'hind' ? (hipX[0] + hipX[1]) / 2 : hipX.reduce((a, b) => a + b, 0) / hipX.length;
+    const legLen = gaits.walk.legLen;
+    const mouth = B.build(ph, {}).mouth;
+    const w = {
+      L, ph, rnd, gaits, time: 0, progress: 0, x: opts.x || 0, z: opts.z || 0, th: opts.heading || 0, v: 0, om: 0, accel: 0,
+      phase: 0, hurry: false, mode: 'idle', idleFor: 1 + rnd() * 2, goal: null, goFor: 0, turnLeft: 0, after: null, pivoting: false,
+      pivotX, pc: 0, pivotRate: clamp(PIVOT_RATE * Math.sqrt(LEG_REF / Math.max(0.02, legLen)), 0.8, 2.4),
+      rMin: TURN_RADIUS * L.s, pause: 0, settled: true, mouthX: mouth ? mouth.p[0] : 0.3 * L.s,
       offsets: gaits.walk.offsets.slice(), duty: gaits.walk.duty, cadence: 0, stride: 0,
-      feet: L.feet.map((f) => ({ wx: x + f[0], y: f[1], z: f[2], planted: true, skip: false, from: null, u: 0, target: null })),
-      body: { bob: 0, sway: 0, pitch: 0, roll: 0 }, bobV: 0, crouchW: 0,
+      feet: [], body: { bob: 0, sway: 0, pitch: 0, roll: 0, bend: 0 }, bobV: 0,
       tail: { a: 0, v: 0, lift: 0, lv: 0 }, head: { a: 0, v: 0 }, blinkIn: 1.5 + rnd() * 3, blink: 0, look: 0, lookTo: 0, lookIn: 2,
       lift: 0, flap: 0, flying: false, tries: 0, hop: 0, hopV: 0, tuck: 0,
+      hunger: opts.hunger == null ? 0.3 : opts.hunger, notice: 0, eat: null, mouthOpen: 0, swallow: 0, happy: 0,
+      eatLean: 0, eatNod: 0, poopIn: 0, events: [],
     };
+    w.feet = L.feet.map((f) => { const p = toWorld(w, f[0], f[2]); return { wx: p[0], wz: p[1], y: f[1], planted: true, skip: false, from: null, u: 0, target: null }; });
+    return w;
   }
   function mulberry(a) { return function () { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
-  // Body-local x of a foot (the body faces dir along the world x axis).
-  const localX = (w, wx) => (wx - w.x) * w.dir;
+  // Body-local (forward, right) <-> world ground (x, z) for a pose {x, z, th}.
+  function toWorld(p, lx, lz) { const t = p.th != null ? p.th : p.heading, c = Math.cos(t), s = Math.sin(t); return [p.x + c * lx + s * lz, p.z - s * lx + c * lz]; }
+  function toLocal(p, wx, wz) { const t = p.th != null ? p.th : p.heading, c = Math.cos(t), s = Math.sin(t), dx = wx - p.x, dz = wz - p.z; return [c * dx - s * dz, s * dx + c * dz]; }
+  // Where the body is after dt at forward speed v and yaw rate om, turning about the point `pc` along its own axis.
+  function advance(p, v, om, pc, dt) {
+    const dth = om * dt, thm = p.th + dth / 2, th = p.th + dth;
+    const x = p.x + Math.cos(thm) * v * dt + pc * (Math.cos(p.th) - Math.cos(th));
+    const z = p.z - Math.sin(thm) * v * dt - pc * (Math.sin(p.th) - Math.sin(th));
+    return { x, z, th };
+  }
+  const headingTo = (w, x, z) => Math.atan2(-(z - w.z), x - w.x);
 
-  // Advance the walker by dt seconds inside [minX, maxX] (world units). Returns the pose for CreatureBody.build plus
-  // where to draw it: { pose, x, dir, lift, flying, trying, feetState, targets, gait }.
-  // opts: { reduced: true } stops walking and hopping (Reduced motion); { walk: false } keeps it standing;
-  // { force: 'walk' | 'hurry' } walks without stopping (frame strips, tests); { hop: true } asks for a hop.
-  function step(w, dt, minX, maxX, opts) {
+  // Ask for a turn on the spot by `angle` radians (+ left): PI turns round, 2*PI is the play spin.
+  function turn(w, angle, after) { w.mode = 'turn'; w.turnLeft = angle; w.spinning = Math.abs(angle) > Math.PI * 1.5; w.after = after || null; w.pivoting = true; }
+  function spin(w, sign) { turn(w, (sign || 1) * 2 * Math.PI, null); }
+
+  // Advance the walker by dt seconds inside `area` ({minX, maxX, minZ, maxZ} for the body origin; the old
+  // (minX, maxX) pair still works and means a line). Returns the pose for CreatureBody.build plus where to draw it.
+  // opts: { reduced } no wandering, spinning or hopping (Reduced motion); { walk: false } keeps it standing;
+  // { force: 'walk' | 'hurry' } walks without stopping (frame strips, tests), { steer: rad/s } turning as it goes;
+  // { hop: true } asks for a hop; { food } a food item {x, z, bites, value} it will notice, walk to and eat.
+  function step(w, dt, area, maxX, opts) {
+    if (typeof area === 'number') area = { minX: area, maxX, minZ: 0, maxZ: 0, line: true };
+    else if (maxX && typeof maxX === 'object') opts = maxX;
     opts = opts || {};
     dt = clamp(dt, 0, 0.25);
     const n = Math.max(1, Math.ceil(dt / SUBSTEP - 1e-9));
-    for (let k = 0; k < n; k++) tick(w, dt / n, minX, maxX, k === 0 ? opts : Object.assign({}, opts, { hop: false }));
+    for (let k = 0; k < n; k++) tick(w, dt / n, area, k === 0 ? opts : Object.assign({}, opts, { hop: false }));
     return output(w);
   }
 
-  function tick(w, dt, minX, maxX, opts) {
+  // Room from the body origin to the area's edge along a ground direction.
+  function room(w, area, dx, dz) {
+    let t = Infinity;
+    if (dx > 1e-9) t = Math.min(t, (area.maxX - w.x) / dx); else if (dx < -1e-9) t = Math.min(t, (area.minX - w.x) / dx);
+    if (area.line) return Math.max(0, t);
+    if (dz > 1e-9) t = Math.min(t, (area.maxZ - w.z) / dz); else if (dz < -1e-9) t = Math.min(t, (area.minZ - w.z) / dz);
+    return Math.max(0, t);
+  }
+  // A turn round at a wall goes toward the side with more room (often sweeping through the front view). On a line it
+  // turns exactly round, either way.
+  function edgeTurn(w, area, after) {
+    if (area.line) {
+      const d = wrap((Math.cos(w.th) >= 0 ? Math.PI : 0) - w.th);
+      turn(w, Math.abs(d) > Math.PI - 1e-6 ? (w.rnd() < 0.5 ? 1 : -1) * Math.PI : d, after);
+      return;
+    }
+    const left = room(w, area, -Math.sin(w.th), -Math.cos(w.th)), right = room(w, area, Math.sin(w.th), Math.cos(w.th));
+    turn(w, (left > right ? 1 : -1) * (Math.PI - 0.35 * w.rnd()), after);
+  }
+  function randomGoal(w, area, ahead) {
+    for (let k = 0; k < 12; k++) {
+      const g = { x: area.minX + (area.maxX - area.minX) * w.rnd(), z: area.minZ + (area.maxZ - area.minZ) * w.rnd() };
+      const d = Math.hypot(g.x - w.x, g.z - w.z);
+      if (d < 0.25 * w.L.s) continue;
+      if (ahead && Math.abs(wrap(headingTo(w, g.x, g.z) - w.th)) > PIVOT_ANGLE * 0.8) continue;
+      return g;
+    }
+    return { x: (area.minX + area.maxX) / 2, z: (area.minZ + area.maxZ) / 2 };
+  }
+
+  // Behaviour: decide the commanded forward speed and yaw rate for this tick.
+  function decide(w, dt, area, opts, moving, force, gp, gw) {
+    const s = w.L.s;
+    const food = opts.food && !opts.food.gone && (opts.food.bites > 0 || (w.eat && w.eat.food === opts.food)) ? opts.food : null;
+    if (!food && w.mode === 'eat' && w.eat && w.eat.stage !== 'swallow' && w.eat.stage !== 'happy') { w.mode = 'idle'; w.idleFor = 1; w.eat = null; }
+    if (!food && w.goal && w.goal.food) { w.mode = 'idle'; w.idleFor = 1; w.goal = null; }
+    // Food: look at it, then go for it (unless already eating or in the middle of a spin).
+    if (food && w.mode !== 'eat' && !(w.goal && w.goal.food === food)) {
+      w.notice += dt;
+      w.lookTo = clamp(wrap(headingTo(w, food.x, food.z) - w.th), -0.7, 0.7);
+      if (w.notice >= NOTICE_TIME && !(w.mode === 'turn' && w.spinning)) {
+        w.mode = 'go'; w.goal = { food }; w.goFor = 30; w.hurry = w.hunger > HUNGRY; w.pivoting = false;
+      }
+    } else if (!food) w.notice = 0;
+    const tooFast = (v) => v > PIVOT_SPEED * gw.speed;
+    const limitTurn = (om, v, pivot) => { const lim = tooFast(v) ? Math.min(TURN_RATE, v / w.rMin) : pivot ? w.pivotRate : v / w.rMin; return clamp(om, -lim, lim); };
+    const decel = gw.speed / STOP_TIME;
+    const stopDist = w.v * w.v / (2 * decel) + EDGE_MARGIN * s;
+    const wall = () => room(w, area, Math.cos(w.th), -Math.sin(w.th)) < stopDist;
+    // A pivot keeps the way it started (a target near straight behind would otherwise flip it back and forth).
+    const pivotTo = (diff) => {
+      if (w.pivotSign && Math.sign(diff) !== w.pivotSign && Math.abs(diff) > Math.PI / 2) diff += w.pivotSign * 2 * Math.PI;
+      w.pivotSign = Math.sign(diff);
+      return { v: 0, om: Math.sign(diff) * Math.min(w.pivotRate, Math.sqrt(2 * YAW_ACCEL * Math.abs(diff)) + 0.05, Math.abs(diff) / dt), pivot: true };
+    };
+
+    if (w.mode === 'turn') {
+      const left = w.turnLeft;
+      if (Math.abs(left) < 2e-3) {
+        w.turnLeft = 0; w.spinning = false;
+        if (w.after === 'force') w.mode = 'go';
+        else if (w.after) { w.mode = 'go'; w.goal = w.after === 'ahead' ? randomGoal(w, area, true) : w.after; w.goFor = 12; }
+        else { w.mode = 'idle'; w.idleFor = TURN_PAUSE + w.rnd() * 1.5; }
+        w.after = null;
+        return { v: 0, om: 0 };
+      }
+      if (tooFast(w.v)) return { v: 0, om: area.line ? 0 : limitTurn(Math.sign(left) * TURN_RATE, w.v, false) };
+      return pivotTo(left);
+    }
+    if (force) {
+      w.hurry = force === 'hurry';
+      if (w.v > 0 && wall()) { edgeTurn(w, area, 'force'); return { v: 0, om: 0 }; }
+      return { v: gp.speed, om: limitTurn(opts.steer || 0, w.v, false) };
+    }
+    if (w.mode === 'eat') return { v: 0, om: 0 };
+    if (w.mode === 'idle') {
+      w.idleFor -= dt;
+      if (w.idleFor <= 0 && moving && !opts.reduced) {
+        const r = w.rnd();
+        const hungry = w.hunger > HUNGRY;
+        if (r < SPIN_CHANCE && !hungry) spin(w, w.rnd() < 0.5 ? 1 : -1);
+        else if (r < SPIN_CHANCE + LOOK_TURN_CHANCE) turn(w, (w.rnd() < 0.5 ? 1 : -1) * (0.6 + 1.4 * w.rnd()), null);
+        else { w.mode = 'go'; w.goal = randomGoal(w, area, false); w.goFor = 10 + 5 * w.rnd(); w.hurry = !hungry && w.rnd() < HURRY_CHANCE; }
+      }
+      return { v: 0, om: 0 };
+    }
+    if (!w.goal) { w.mode = 'idle'; w.idleFor = 1; return { v: 0, om: 0 }; }
+    // Going somewhere: steer toward the goal (for food, the spot where the mouth is over it).
+    w.goFor -= dt;
+    let gx, gz, face = null;
+    if (w.goal.food) {
+      // The spot (picked once) a neck's length from the food on this side, so the mouth ends up over it.
+      const f = w.goal.food;
+      if (!w.goal.at) {
+        const d = Math.hypot(f.x - w.x, f.z - w.z);
+        const ux = d > 1e-6 ? (w.x - f.x) / d : -Math.cos(w.th), uz = d > 1e-6 ? (w.z - f.z) / d : Math.sin(w.th);
+        w.goal.at = { x: clamp(f.x + ux * w.mouthX, area.minX, area.maxX), z: clamp(f.z + uz * w.mouthX, area.minZ, area.maxZ) };
+      }
+      gx = w.goal.at.x; gz = w.goal.at.z;
+      face = f;
+    } else { gx = w.goal.x; gz = w.goal.z; }
+    const dist = Math.hypot(gx - w.x, gz - w.z);
+    const arrive = Math.max(0.03 * s, 0.25 * gw.D);
+    if (dist < arrive || w.goFor <= 0 || !moving) {
+      if (face && moving) {
+        const diff = wrap(headingTo(w, face.x, face.z) - w.th);
+        if (tooFast(w.v)) return { v: 0, om: 0 };
+        if (Math.abs(diff) > 0.12) return pivotTo(diff);
+        if (w.v < 1e-4 && Math.abs(w.om) < 1e-3) { w.mode = 'eat'; w.eat = { stage: 'lower', t: 0, food: face }; w.goal = null; }
+        return { v: 0, om: 0 };
+      }
+      w.mode = 'idle'; w.idleFor = 1.2 + w.rnd() * 3.5; w.goal = null;
+      return { v: 0, om: 0 };
+    }
+    const diff = wrap(Math.atan2(-(gz - w.z), gx - w.x) - w.th);
+    if (Math.abs(diff) > PIVOT_ANGLE) w.pivoting = true;
+    if (w.pivoting) {
+      if (Math.abs(diff) < PIVOT_DONE) w.pivoting = false;
+      else {
+        if (tooFast(w.v)) return { v: 0, om: limitTurn(Math.sign(diff) * TURN_RATE, w.v, false) };
+        return pivotTo(diff);
+      }
+    }
+    if (wall() && Math.abs(diff) > 0.5) { edgeTurn(w, area, w.goal); return { v: 0, om: 0 }; }
+    const slow = Math.max(0.3, 1 - Math.abs(diff) / PIVOT_ANGLE);
+    const vArrive = Math.sqrt(2 * decel * Math.max(0, dist - arrive * 0.5));
+    const v = Math.min(gp.speed * slow, vArrive);
+    return { v, om: limitTurn(STEER_GAIN * diff, w.v, false) };
+  }
+
+  // The eating sequence, timed: lower the head, bite (open, snap shut: the food gets smaller), chew, and after the
+  // last bite swallow (a lump goes down) and be happy. Returns the mouth opening and how far head and body lean down.
+  function eating(w, dt, reduced) {
+    const e = w.eat, food = e.food;
+    e.t += dt;
+    let open = 0, nod = 0, lean = 0;
+    if (e.stage === 'lower') {
+      const u = Math.min(1, e.t / EAT_LOWER);
+      nod = u; lean = u; open = 0.5 * u;
+      if (e.t >= EAT_LOWER) { e.stage = 'bite'; e.t = 0; }
+    } else if (e.stage === 'bite') {
+      nod = 1; lean = 1;
+      if (e.t < BITE_OPEN) open = 0.5 + 0.5 * e.t / BITE_OPEN;
+      else if (e.t < BITE_OPEN + BITE_SNAP) open = 1 - (e.t - BITE_OPEN) / BITE_SNAP;
+      else {
+        if (!e.bitten) { e.bitten = true; food.bites = Math.max(0, food.bites - 1); food.held = true; w.events.push({ type: 'bite', left: food.bites }); }
+        const c = e.t - BITE_OPEN - BITE_SNAP;
+        nod = 0.6; open = 0.28 * Math.abs(Math.sin(Math.PI * CHEW_RATE * c));
+        if (c >= CHEW_TIME) { e.t = 0; e.bitten = false; if (food.bites <= 0) e.stage = 'swallow'; }
+      }
+    } else if (e.stage === 'swallow') {
+      nod = 0.2 * (1 - e.t / SWALLOW_TIME);
+      w.swallow = Math.min(1, e.t / SWALLOW_TIME);
+      if (e.t >= SWALLOW_TIME) {
+        food.gone = true; w.swallow = 0;
+        w.hunger = Math.max(0, w.hunger - (food.value == null ? 0.35 : food.value));
+        w.events.push({ type: 'swallow', kind: food.kind });
+        e.stage = 'happy'; e.t = 0; w.happy = HAPPY_TIME;
+        if (!reduced) w.hopV = 0.6 * w.L.s;
+        w.events.push({ type: 'happy' });
+        if (w.rnd() < POOP_CHANCE) w.poopIn = 4 + 4 * w.rnd();
+      }
+    } else if (e.stage === 'happy' && e.t >= HAPPY_TIME * 0.6) { w.mode = 'idle'; w.idleFor = 1.5 + w.rnd() * 2; w.eat = null; }
+    return { open, nod, lean };
+  }
+
+  function tick(w, dt, area, opts) {
     w.time += dt;
     const s = w.L.s;
     const reduced = !!opts.reduced;
-    const moving = !reduced && opts.walk !== false;
-    const force = moving && opts.force;
-
-    // Decide: idle a while, then walk a while (sometimes a dash); now and then turn round; always turn at the edges.
-    if (force) { w.walking = true; w.hurry = force === 'hurry'; }
-    else if (w.walking) { w.walkFor -= dt; if (w.walkFor <= 0 || !moving) { w.walking = false; w.idleFor = 1.5 + w.rnd() * 4; } }
-    else { w.idleFor -= dt; if (w.idleFor <= 0 && moving) { w.walking = true; w.walkFor = 2 + w.rnd() * 5; w.hurry = w.rnd() < HURRY_CHANCE; if (w.rnd() < 0.3) w.wantTurn = true; } }
-    const gp = w.gaits[w.hurry ? 'hurry' : 'walk'], gw = w.gaits.walk;
-    const decel = gw.speed / STOP_TIME, accel = gp.speed / START_TIME;
-    const ahead = w.dir > 0 ? maxX - w.x : w.x - minX;
-    if (moving && w.v * w.v / (2 * decel) + 0.02 * s >= ahead) w.wantTurn = true;
+    const moving = opts.walk !== false;
+    const force = moving && !reduced && opts.force;
+    w.hunger = Math.min(1, w.hunger + HUNGER_RATE * dt);
+    const gw = w.gaits.walk;
+    const cmd = w.tries || w.pause > 0 ? { v: 0, om: 0 } : decide(w, dt, area, opts, moving, force, w.gaits[w.hurry ? 'hurry' : 'walk'], gw);
+    if (!cmd.pivot) w.pivotSign = 0;
     w.pause = Math.max(0, w.pause - dt);
-    const vCmd = w.walking && !w.wantTurn && !w.pause && moving && !w.tries ? gp.speed : 0;
+    const gp = w.gaits[w.hurry ? 'hurry' : 'walk'];
+    const vCmd = cmd.v, omCmd = cmd.om;
+    const decel = gw.speed / STOP_TIME, accel = gp.speed / START_TIME;
     // Setting off from a stand: start the clock where the left hind foot is due to lift, so the first step is a step.
-    if (vCmd > 0 && w.v === 0 && w.settled && w.feet.length && w.tuck < 0.01) w.phase = frac(w.offsets[0] + w.duty);
+    if ((vCmd > 0 || omCmd) && w.v === 0 && w.om === 0 && w.settled && w.feet.length && w.tuck < 0.01) w.phase = frac(w.offsets[0] + w.duty);
     const v0 = w.v;
     w.v = clamp(vCmd, w.v - decel * dt, w.v + accel * dt);
-    w.accel = (w.v - v0) / Math.max(1e-6, dt);
-    const nx = w.x + w.dir * w.v * dt;
-    if (nx < minX || nx > maxX) { w.v = 0; w.wantTurn = true; } else { w.x = nx; w.progress += w.v * dt; }
-    const stopping = vCmd === 0;
+    w.om = clamp(omCmd, w.om - YAW_ACCEL * dt, w.om + YAW_ACCEL * dt);
+    if (cmd.pivot) w.om = clamp(w.om, -Math.abs(omCmd), Math.abs(omCmd));
+    if (Math.abs(w.om) < 1e-6 && !omCmd) w.om = 0;
+    // The turn's centre: the pivot point (hind hips for four legs) when slow, the body when walking.
+    w.pc = w.pivotX * clamp(1 - w.v / (0.5 * gw.speed), 0, 1);
+    // Near a wall (or on a line) the body would swing out of the habitat round that point: turn about itself instead.
+    // So does lining up on a spot nearby (the food), where swinging round the hips would keep moving it away.
+    if (w.pc) {
+      const P = toWorld(w, w.pc, 0), r = Math.abs(w.pc), g = w.goal && (w.goal.at || w.goal);
+      if (area.line || P[0] - r < area.minX || P[0] + r > area.maxX || P[1] - r < area.minZ || P[1] + r > area.maxZ ||
+        (g && g.x != null && Math.hypot(g.x - w.x, g.z - w.z) < 3 * r + 0.25 * gw.D)) w.pc = 0;
+    }
+    const stopping = vCmd === 0 && omCmd === 0;
 
-    // The gait: offsets and duty slide toward the current mode's; the clock runs at a cadence that grows with speed,
-    // and keeps running after a stop until the feet are back under the hips.
+    // Move the body, unless that would pull a planted foot out of reach: then move only as far as it can and let
+    // that foot step (it is overdue).
+    const BT = B.bodyTransform(w.L, w.body);
+    const hips = w.L.hips.map((hp) => (BT ? BT.T(hp.p) : hp.p));
+    const reachAt = (p, i) => { const f = w.feet[i], l = toLocal(p, f.wx, f.wz), h = hips[i]; return Math.hypot(l[0] - h[0], f.y - h[1], l[1] - h[2]) / w.L.legLen; };
+    let next = advance(w, w.v, w.om, w.pc, dt);
+    const overdue = new Set();
+    if (w.feet.length && w.tuck < 0.01 && (w.v || w.om)) {
+      const bad = (p) => w.feet.some((f, i) => f.planted && reachAt(p, i) > REACH_LIMIT && reachAt(p, i) > reachAt(w, i) + 1e-12);
+      if (bad(next)) {
+        let lo = 0, hi = 1;
+        for (let it = 0; it < 12; it++) { const m = (lo + hi) / 2; if (bad(advance(w, w.v * m, w.om * m, w.pc, dt))) hi = m; else lo = m; }
+        const over = advance(w, w.v * hi, w.om * hi, w.pc, dt);
+        w.feet.forEach((f, i) => { if (f.planted && reachAt(over, i) > REACH_LIMIT) overdue.add(i); });
+        w.v *= lo; w.om *= lo;
+        next = advance(w, w.v, w.om, w.pc, dt);
+      }
+    }
+    w.accel = (w.v - v0) / Math.max(1e-6, dt);
+    if (w.mode === 'turn') w.turnLeft -= next.th - w.th;
+    w.x = next.x; w.z = next.z; w.th = next.th;
+    w.progress += w.v * dt;
+
+    // The gait: offsets and duty slide toward the current mode's; the clock runs by distance (the fastest hip's), so
+    // a planted foot is never left further behind than a stride; turning takes shorter strides.
     const blend = Math.min(1, GAIT_BLEND * dt);
     w.offsets = w.offsets.map((o, i) => { const d = frac(gp.offsets[i] - o + 0.5) - 0.5; return frac(o + d * blend); });
     w.duty += (gp.duty - w.duty) * blend;
     const nFeet = w.feet.length;
-    const restOff = (i) => Math.abs(localX(w, w.feet[i].wx) - w.L.feet[i][0]);
-    w.settled = w.v < 1e-4 && w.feet.every((f, i) => f.planted && (f.skip || restOff(i) < SETTLE_TOL * gw.legLen));
-    // The clock runs by distance: one stance lasts exactly one stride of travel, so a planted foot can never be left
-    // further behind than the stride allows, however the speed changes. Slow walking takes shorter strides.
-    const strideAt = (v) => gp.D * (MIN_STRIDE + (1 - MIN_STRIDE) * Math.min(1, v / gp.speed));
-    const byDistance = w.v > 1e-4 ? w.v * w.duty / strideAt(w.v) : 0;
-    w.cadence = Math.max(byDistance, stopping && !w.settled ? gp.f * STOP_CADENCE : 0);
-    w.stride = w.cadence > 0 ? w.v * w.duty / w.cadence : 0;
-    // Speeding up: aim each landing for the stride it is heading for, so the body can't outrun the feet.
-    w.aim = vCmd > w.v ? strideAt(vCmd) : w.stride;
-    if (!nFeet && w.v > 1e-4) w.cadence = gp.f;
+    const restOff = (i) => { const l = toLocal(w, w.feet[i].wx, w.feet[i].wz), r = w.L.feet[i]; return Math.hypot(l[0] - r[0], l[1] - r[2]); };
+    w.settled = w.v < 1e-4 && Math.abs(w.om) < 1e-4 && w.feet.every((f, i) => f.planted && (f.skip || restOff(i) < SETTLE_TOL * gw.legLen));
+    const turnShare = clamp(Math.max(Math.abs(w.om), Math.abs(omCmd)) / w.pivotRate, 0, 1);
+    const Dn = gp.D * (1 - (1 - TURN_STRIDE) * turnShare);
+    const hipSpeed = (v, om, pc) => {
+      let m = nFeet ? 0 : v;
+      for (const hp of w.L.hips) m = Math.max(m, Math.hypot(v + om * hp.p[2], om * (hp.p[0] - pc)));
+      return m;
+    };
+    const strideAt = (sp) => Dn * (MIN_STRIDE + (1 - MIN_STRIDE) * Math.min(1, sp / gp.speed));
+    const cadenceFor = (v, om, pc) => { const hs = hipSpeed(v, om, pc); return hs > 1e-4 ? hs * w.duty / strideAt(hs) : 0; };
+    w.cadence = Math.max(cadenceFor(w.v, w.om, w.pc), stopping && !w.settled ? gp.f * STOP_CADENCE : 0);
+    w.stride = w.cadence > 0 ? hipSpeed(w.v, w.om, w.pc) * w.duty / w.cadence : 0;
+    if (!nFeet && (w.v > 1e-4 || Math.abs(w.om) > 1e-4)) w.cadence = gp.f;
     w.phase = frac(w.phase + w.cadence * dt);
+    // Speeding up (or turning harder): aim each landing for the motion it is heading for.
+    const vA = vCmd > w.v ? vCmd : w.v, omA = Math.abs(omCmd) > Math.abs(w.om) ? omCmd : w.om;
+    const cA = cadenceFor(vA, omA, w.pc), halfStance = cA > 0 ? w.duty / (2 * cA) : 0;
+    const reachR = 0.5 * Math.max(gp.D, gw.D);
 
-    // Turning round: only once stopped and settled, then a short pause before setting off the other way.
-    if (w.wantTurn && w.settled && w.v < 1e-4) {
-      w.dir = -w.dir; w.wantTurn = false; w.pause = TURN_PAUSE;
-      w.feet.forEach((f, i) => { f.wx = w.x + w.dir * w.L.feet[i][0]; f.planted = true; f.skip = false; });
-    }
-
-    // Feet. Tucked up in flight (and re-planted under the body for landing); otherwise stance or swing by phase.
+    // Feet. Tucked up in flight; otherwise stance or swing by phase.
     const tuckTo = w.lift > 0.02 * s ? 1 : 0;
     w.tuck += clamp(tuckTo - w.tuck, -4 * dt, 4 * dt);
     w.feet.forEach((f, i) => {
       const rest = w.L.feet[i];
-      if (w.tuck > 0.01) { f.wx = w.x + w.dir * rest[0]; f.y = rest[1]; f.z = rest[2]; f.planted = true; f.skip = false; f.target = null; return; }
+      if (w.tuck > 0.01) { const p = toWorld(w, rest[0], rest[2]); f.wx = p[0]; f.wz = p[1]; f.y = rest[1]; f.planted = true; f.skip = false; f.target = null; return; }
       const p = frac(w.phase - w.offsets[i]);
       const wrapped = f.lastP != null && p < f.lastP - 0.5;
       f.lastP = p;
+      // Where this foot should land: under its hip half a stance after touchdown, along the predicted arc, kept in reach.
+      const tLeft = w.cadence > 0 && !wrapped ? (1 - p) / w.cadence : 0;
+      const landing = () => {
+        const td = advance(w, w.v, w.om, w.pc, tLeft);
+        const at = advance(td, vA, omA, w.pc, halfStance);
+        const q = toWorld(at, rest[0], rest[2]);
+        const l = toLocal(td, q[0], q[1]), dx = l[0] - rest[0], dz = l[1] - rest[2], d = Math.hypot(dx, dz);
+        if (d > reachR) { const k = reachR / d; return toWorld(td, rest[0] + dx * k, rest[2] + dz * k); }
+        return q;
+      };
       if (f.planted) {
-        // Left too far behind (only in the first steps after standing, when feet start under the hips): step now.
-        const behind = w.v > 1e-4 && rest[0] - localX(w, f.wx) > gp.D / 2 + EARLY_TOL * gp.legLen && w.feet.some((o, j) => j !== i && o.planted);
+        // Left too far behind, or holding the body back: step now.
+        const l = toLocal(w, f.wx, f.wz);
+        const behind = (overdue.has(i) || ((w.v > 1e-4 || Math.abs(w.om) > 1e-4) && Math.hypot(l[0] - rest[0], l[1] - rest[2]) > gp.D / 2 + EARLY_TOL * gp.legLen))
+          && w.feet.some((o, j) => j !== i && o.planted);
         if (p < w.duty && !behind) { f.skip = false; return; }
         if (!behind) {
           if (f.skip) return;
-          // Its turn to step. When stopping, a foot already under its hip stays down.
+          // Its turn to step. A foot already where it would land stays down (when stopping, or the inner legs of a pivot).
           if (stopping && restOff(i) < SETTLE_TOL * gw.legLen) { f.skip = true; return; }
+          const q = landing();
+          if (!stopping && Math.hypot(q[0] - f.wx, q[1] - f.wz) < SKIP_TOL * gw.legLen) { f.skip = true; return; }
         }
-        f.planted = false; f.from = [f.wx, f.y]; f.u = 0; f.p0 = Math.min(p, w.duty);
+        f.planted = false; f.from = [f.wx, f.wz, f.y]; f.u = 0; f.p0 = Math.min(p, w.duty);
       }
-      // Swing: from where it lifted to half a stride ahead of the spot under the hip at touchdown, landing when the
-      // clock comes round to this foot's offset.
-      const tLeft = w.cadence > 0 && !wrapped ? (1 - p) / w.cadence : 0;
-      const land = w.x + w.dir * (w.v * tLeft + rest[0] + w.aim / 2);
-      f.target = [land, rest[1], rest[2]];
-      if (wrapped) { f.wx = land; f.y = rest[1]; f.planted = true; f.target = null; return; }
+      // Swing: from where it lifted to the landing spot, touching down when the clock comes round to this foot.
+      const land = landing();
+      f.target = [land[0], rest[1], land[1]];
+      if (wrapped) { f.wx = land[0]; f.wz = land[1]; f.y = rest[1]; f.planted = true; f.target = null; return; }
       const u = clamp(Math.max(f.u, (p - f.p0) / (1 - f.p0)), 0, 1);
       f.u = u;
       const e = u * u * u * (u * (u * 6 - 15) + 10); // minimum-jerk ease
-      const reach = Math.abs(land - f.from[0]);
+      const reach = Math.hypot(land[0] - f.from[0], land[1] - f.from[1]);
       const h = Math.min(gp.stepH, Math.max(gp.stepH * 0.35, reach * 0.6));
-      f.wx = f.from[0] + (land - f.from[0]) * e;
+      f.wx = f.from[0] + (land[0] - f.from[0]) * e;
+      f.wz = f.from[1] + (land[1] - f.from[1]) * e;
       f.y = rest[1] + h * Math.pow(Math.sin(Math.PI * Math.min(1, u)), 0.8);
-      f.z = rest[2];
     });
 
-    // Body motion from the feet holding it up, faded in with speed.
-    const share = Math.min(1.2, w.v / Math.max(1e-6, gw.speed));
-    const body = { bob: 0, sway: 0, pitch: 0, roll: 0 };
+    // Eating sets the mouth and how far the head and body lean down.
+    let eat = { open: 0, nod: 0, lean: 0 };
+    if (w.mode === 'eat' && w.eat) eat = eating(w, dt, reduced);
+    w.mouthOpen += (eat.open - w.mouthOpen) * Math.min(1, dt * 30);
+    w.eatLean += (eat.lean - w.eatLean) * Math.min(1, dt * 8);
+    w.eatNod += (eat.nod - w.eatNod) * Math.min(1, dt * 8);
+    w.happy = Math.max(0, w.happy - dt);
+    if (w.poopIn > 0) { w.poopIn -= dt; if (w.poopIn <= 0) { const p = toWorld(w, w.L.tsp.pts[0][0] - 0.05 * s, 0); w.events.push({ type: 'poop', x: p[0], z: p[1] }); } }
+
+    // Body motion from the feet holding it up, faded in with speed (or turning).
+    const share = Math.min(1.2, Math.max(w.v / Math.max(1e-6, gw.speed), 0.7 * Math.abs(w.om) / w.pivotRate));
+    const body = { bob: 0, sway: 0, pitch: 0, roll: 0, bend: 0 };
     if (nFeet && w.tuck < 0.99) {
       const sup = supports(w.phase, { offsets: w.offsets, duty: w.duty });
       const mean = sup.reduce((a, b) => a + b, 0) / nFeet;
@@ -2109,6 +2444,16 @@
       body.bob = gp.bobAmp * (0.5 - 0.5 * Math.cos(2 * Math.PI * w.phase)) * amp;
       body.pitch = gp.pitchAmp * Math.sin(2 * Math.PI * w.phase) * amp;
     }
+    // Eating: nose down a little, sinking so the hind hips don't rise.
+    if (w.eatLean > 1e-4 && nFeet) {
+      const o = w.L.tsp.pts[Math.floor(w.L.tsp.pts.length / 2)];
+      const back = Math.max(0, ...w.L.hips.map((hp) => o[0] - hp.p[0]));
+      body.pitch -= EAT_PITCH * w.eatLean;
+      body.bob -= EAT_PITCH * w.eatLean * back * 1.05;
+    }
+    // The body curves along the turn: both ends toward its centre.
+    body.bend = clamp(BEND_GAIN * w.om, -BEND_MAX, BEND_MAX);
+    if (Math.abs(body.bend) < 1e-9) body.bend = 0;
     const prevBobV = w.bobV;
     w.bobV = (body.bob - w.body.bob) / Math.max(1e-6, dt);
     const bobAcc = clamp((w.bobV - prevBobV) / Math.max(1e-6, dt), -40 * s, 40 * s);
@@ -2116,29 +2461,27 @@
 
     // Flying or trying: big enough wings lift off now and then; small ones flap hard and hop.
     const fly = canFly(w.ph);
-    let wingFlap = Math.sin(w.time * 1.3) * 0.05;
-    if (w.ph.wings && w.ph.wings.size > 0 && !reduced) {
+    if (w.ph.wings && w.ph.wings.size > 0 && !reduced && w.mode !== 'eat') {
       if (!w.flying && !w.tries && !force && w.rnd() < dt * 0.06) { if (fly) w.flying = 3 + w.rnd() * 4; else w.tries = 1.4; }
-      if (w.flying) { w.flying = Math.max(0, w.flying - dt); wingFlap = Math.sin(w.time * 11) * 0.7; }
-      else if (w.tries) { w.tries = Math.max(0, w.tries - dt); wingFlap = Math.sin(w.time * 22) * 0.8; if (w.hop === 0 && w.hopV === 0) w.hopV = 0.6 * s; }
-      else wingFlap += 0.12 * Math.min(1, share) * Math.sin(2 * Math.PI * (2 * w.phase + 0.15)); // balance flutter, two per stride
+      if (w.flying) w.flying = Math.max(0, w.flying - dt);
+      else if (w.tries) { w.tries = Math.max(0, w.tries - dt); if (w.hop === 0 && w.hopV === 0) w.hopV = 0.6 * s; }
     }
     const liftTarget = w.flying ? 0.28 * s + Math.sin(w.time * 2.2) * 0.03 * s : 0;
     w.lift += (liftTarget - w.lift) * Math.min(1, dt * 2.5);
 
-    // A little hop: on request (a level-up), or when trying to fly.
+    // A little hop: on request (a level-up), when trying to fly, or after a meal.
     if (opts.hop && w.hop === 0 && w.hopV === 0 && !reduced) w.hopV = 0.8 * s;
     if (w.hopV !== 0 || w.hop > 0) {
       w.hop += w.hopV * dt; w.hopV -= 6 * s * dt;
       if (w.hop <= 0) { w.hop = 0; w.hopV = 0; }
     }
 
-    // Tail on a spring: it lags the body's lean and bob, starts and stops, and sways a bit on its own.
+    // Tail on a spring: it lags the body's lean and bob, swings out of a turn, wags when happy, sways a bit on its own.
     const idleSway = Math.sin(w.time * 1.6) * 0.12 * (1 - Math.min(1, share)) * (reduced ? 0.3 : 1);
-    const tailTarget = idleSway + body.roll * 2.2;
+    const tailTarget = idleSway + body.roll * 2.2 + TAIL_TURN * w.om + (w.happy > 0 ? 0.25 * Math.sin(w.time * 14) : 0);
     w.tail.v += (TAIL_STIFF * (tailTarget - w.tail.a) - TAIL_DAMP * w.tail.v) * dt;
     w.tail.a += w.tail.v * dt;
-    const liftT = 0.12 * Math.min(1, share) + (w.flying ? -0.2 : 0);
+    const liftT = 0.12 * Math.min(1, share) + (w.flying ? -0.2 : 0) + (w.happy > 0 ? 0.2 : 0);
     w.tail.lv += (TAIL_STIFF * 0.6 * (liftT - w.tail.lift) - TAIL_DAMP * w.tail.lv - bobAcc * 0.5 / s - w.accel * 0.6 / s) * dt;
     w.tail.lift += w.tail.lv * dt;
 
@@ -2147,70 +2490,378 @@
     w.head.v += (HEAD_STIFF * (headT - w.head.a) - HEAD_DAMP * w.head.v - bobAcc * HEAD_NOD / s) * dt;
     w.head.a = clamp(w.head.a + w.head.v * dt, -0.3, 0.3);
 
-    // Blink every few seconds; look around now and then (eyes front while walking).
+    // Blink every few seconds; look around now and then (eyes front while walking, into the turn while turning).
     w.blinkIn -= dt;
     if (w.blinkIn <= 0) { w.blink = 0.13; w.blinkIn = 2 + w.rnd() * 4; }
     w.blink = Math.max(0, w.blink - dt);
     w.lookIn -= dt;
-    if (w.lookIn <= 0) { w.lookTo = (w.rnd() - 0.5) * 0.7; w.lookIn = 1.5 + w.rnd() * 3; }
-    const lookTo = w.v > 0.2 * gw.speed ? w.lookTo * 0.25 : w.lookTo;
-    w.look += (lookTo - w.look) * Math.min(1, dt * (reduced ? 1 : 4));
+    if (w.lookIn <= 0 && !w.notice) { w.lookTo = (w.rnd() - 0.5) * (w.hunger > HUNGRY ? 1.2 : 0.7); w.lookIn = 1.5 + w.rnd() * 3; }
+    const free = w.mode === 'eat' ? 0 : w.v > 0.2 * gw.speed ? w.lookTo * 0.25 : w.lookTo;
+    w.look += (clamp(free + HEAD_LEAD * w.om, -0.8, 0.8) - w.look) * Math.min(1, dt * (reduced ? 1 : 4));
   }
 
   function output(w) {
     const s = w.L.s;
     const tucked = (i) => [w.L.feet[i][0] - 0.03 * s, w.L.feet[i][1] + w.lift * 0.6, w.L.feet[i][2]];
+    const local = (wx, y, wz) => { const l = toLocal(w, wx, wz); return [l[0], y, l[1]]; };
     const feet = w.feet.map((f, i) => {
-      const g = [localX(w, f.wx), f.y, f.z];
+      const g = local(f.wx, f.y, f.wz);
       if (w.tuck <= 0.01) return g;
       const t = tucked(i), k = w.tuck * w.tuck * (3 - 2 * w.tuck);
       return [g[0] + (t[0] - g[0]) * k, g[1] + (t[1] - g[1]) * k, g[2] + (t[2] - g[2]) * k];
     });
     const pose = {
-      breathe: Math.sin(w.time * 2.2), lookYaw: w.look, headNod: w.head.a, tailSway: w.tail.a, tailLift: w.tail.lift,
+      breathe: Math.sin(w.time * 2.2), lookYaw: w.look, headNod: w.head.a - EAT_NOD * w.eatNod, tailSway: w.tail.a, tailLift: w.tail.lift,
       wingFlap: 0, feet, blink: w.blink > 0 ? 1 : 0, lift: w.lift + w.hop, body: Object.assign({}, w.body),
+      mouthOpen: w.mouthOpen, swallow: w.swallow, expression: w.happy > 0 ? 'happy' : null,
     };
     pose.wingFlap = w.flying ? Math.sin(w.time * 11) * 0.7 : w.tries ? Math.sin(w.time * 22) * 0.8 :
       Math.sin(w.time * 1.3) * 0.05 + (w.ph.wings && w.ph.wings.size > 0 ? 0.12 * Math.min(1, w.v / Math.max(1e-6, w.gaits.walk.speed)) * Math.sin(2 * Math.PI * (2 * w.phase + 0.15)) : 0);
     const gp = w.gaits[w.hurry ? 'hurry' : 'walk'];
+    const events = w.events; w.events = [];
+    const goal = !w.goal ? null : w.goal.food ? { x: w.goal.food.x, z: w.goal.food.z, food: true } : { x: w.goal.x, z: w.goal.z };
+    const state = w.mode === 'eat' ? 'eat' : w.mode === 'turn' ? (w.spinning ? 'spin' : 'turn') : w.mode === 'idle' && w.hunger > HUNGRY ? 'hungry' : w.mode;
     return {
-      pose, x: w.x, dir: w.dir, lift: pose.lift, flying: !!w.flying, trying: !!w.tries,
-      feetState: w.feet.map((f) => f.planted),
-      targets: w.feet.map((f) => (f.target && !f.planted ? [localX(w, f.target[0]), f.target[1], f.target[2]] : null)),
+      pose, x: w.x, z: w.z, th: w.th, heading: w.th, dir: Math.cos(w.th) >= 0 ? 1 : -1, yawRate: w.om, lift: pose.lift, flying: !!w.flying,
+      trying: !!w.tries, mode: w.mode, state, hunger: w.hunger, hungry: w.hunger > HUNGRY, events, pivot: toWorld(w, w.pc, 0), goal,
+      feetState: w.feet.map((f) => f.planted && w.tuck <= 0.01), // tucked up in flight is not standing
+      targets: w.feet.map((f) => (f.target && !f.planted ? local(f.target[0], f.target[1], f.target[2]) : null)),
       gait: { family: gp.family, name: gp.name, phase: w.phase, duty: w.duty, offsets: w.offsets.slice(), speed: w.v, cadence: w.cadence, stride: w.stride, settled: w.settled },
     };
   }
 
-  const api = { createWalker, step, gaitParams, supports, wingLift, canFly, GAITS, SPRITE_FPS, MAX_STRETCH, FLY_RATIO,
-    STRIDE_WALK, STRIDE_HURRY, CADENCE_REF, BABY_STRIDE };
+  const api = { createWalker, step, turn, spin, toWorld, toLocal, gaitParams, supports, wingLift, canFly, GAITS, SPRITE_FPS,
+    MAX_STRETCH, FLY_RATIO, STRIDE_WALK, STRIDE_HURRY, CADENCE_REF, BABY_STRIDE, TURN_RATE, TURN_RADIUS, PIVOT_RATE, PIVOT_ANGLE,
+    PIVOT_AT, TURN_STRIDE, SKIP_TOL, REACH_LIMIT, HUNGRY, HUNGER_RATE };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.CreatureMotion = api;
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
 <script>
+/* Creatures prototype: the habitats behind the creature, drawn in code (no image files). Each one matches the stage's
+   ground plane: a far edge (the horizon row, just above yFar) and a near edge at the bottom, with things further back
+   drawn smaller. Still layers are drawn once into offscreen canvases; a few things move: grass, flowers and leaves sway
+   in the wind, clouds drift, crystals glow and fireflies wander. The far layers slide a little with the creature
+   (parallax). With reduced motion the moving bits hold still and nothing slides.
+   CreatureHabitats.create(key, { W, H, yFar, yNear }) -> { draw(ctx, t, pan), dark } where pan is in stage pixels. */
+(function (root) {
+  'use strict';
+  const PAN = 10;                  // the far layers are this much wider on each side, for parallax
+  const FAR_SLIDE = 1, MID_SLIDE = 0.5;
+  const LIST = [
+    ['grass', 'Soft grass', 'low detail: soft hills, a few tufts'],
+    ['flat', 'Flat', 'minimal: one wall, one floor'],
+    ['meadow', 'Pixel meadow', 'high detail: banded sky, mountains, trees, flowers, clouds'],
+    ['cave', 'Cave at night', 'medium detail: rock, stalactites, glowing crystals, fireflies'],
+    ['wildwood', 'Wildwood', 'medium detail: chunky outlined pixels like Tap Slay Die\'s forest'],
+    ['studio', 'Studio', 'minimal: a soft photo-studio sweep'],
+  ];
+
+  function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  function canvas(w, h) {
+    const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
+    const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
+    return { c, ctx };
+  }
+  const box = (ctx, x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h))); };
+  function disc(ctx, cx, cy, r, col, ry) { // a pixel-edged ellipse
+    ctx.fillStyle = col; ry = ry == null ? r : ry;
+    for (let y = -Math.ceil(ry); y <= Math.ceil(ry); y++) {
+      const half = Math.round(r * Math.sqrt(Math.max(0, 1 - (y * y) / (ry * ry))));
+      if (half > 0) ctx.fillRect(Math.round(cx - half), Math.round(cy + y), half * 2, 1);
+    }
+  }
+  function vgrad(ctx, y0, y1, stops, x0, x1) {
+    const g = ctx.createLinearGradient(0, y0, 0, y1);
+    stops.forEach((s, i) => g.addColorStop(Array.isArray(s) ? s[0] : i / (stops.length - 1), Array.isArray(s) ? s[1] : s));
+    ctx.fillStyle = g; ctx.fillRect(x0 || 0, y0, (x1 || ctx.canvas.width) - (x0 || 0), y1 - y0);
+  }
+  function bands(ctx, y0, y1, cols) { // stepped colour bands with a dithered seam, the pixel-art sky
+    const n = cols.length, h = (y1 - y0) / n, W = ctx.canvas.width;
+    cols.forEach((c, i) => box(ctx, 0, y0 + i * h, W, h + 1, c));
+    for (let i = 1; i < n; i++) {
+      const y = Math.round(y0 + i * h);
+      ctx.fillStyle = cols[i - 1];
+      for (let x = 0; x < W; x += 2) ctx.fillRect(x + (x / 2) % 2, y, 1, 1);
+      ctx.fillStyle = cols[i];
+      for (let x = 1; x < W; x += 2) ctx.fillRect(x, y - 1, 1, 1);
+    }
+  }
+  // Things on the ground get smaller towards the back, like the creature.
+  const depthK = (g, y) => 0.72 + 0.28 * Math.max(0, Math.min(1, (y - g.yFar) / (g.yNear - g.yFar)));
+  // A blade or stem that bends in the wind, more at the tip.
+  function blade(ctx, x, y, h, lean, col) {
+    ctx.fillStyle = col;
+    for (let j = 0; j < h; j++) { const u = j / h; ctx.fillRect(Math.round(x + lean * u * u), Math.round(y - j), 1, 1); }
+    return [Math.round(x + lean), Math.round(y - h)];
+  }
+  const gust = (t) => 0.6 + 0.4 * Math.sin(t * 0.37) * Math.sin(t * 0.13 + 1);
+
+  const MAKERS = {
+    grass(g) {
+      const { W, H } = g, HZ = g.yFar - 10, r = rng(11);
+      const far = canvas(W + 2 * PAN, H), ground = canvas(W, H);
+      vgrad(far.ctx, 0, HZ + 2, ['#d7ece6', '#eef6e6']);
+      far.ctx.globalAlpha = 0.9;
+      disc(far.ctx, PAN + W * 0.22, HZ + 8, 150, '#c3dfb0', 24);
+      disc(far.ctx, PAN + W * 0.78, HZ + 10, 180, '#b2d6a0', 28);
+      vgrad(ground.ctx, HZ, H, ['#a9d38f', '#8cc176']);
+      ground.ctx.globalAlpha = 0.14;
+      for (let i = 0; i < 16; i++) { const y = HZ + 6 + r() * (H - HZ - 6), k = depthK(g, y); disc(ground.ctx, r() * W, y, (10 + r() * 22) * k, '#e6f6cf', (2 + r() * 4) * k); }
+      const tufts = [];
+      for (let i = 0; i < 34; i++) { const y = HZ + 4 + Math.pow(r(), 0.8) * (H - HZ - 4); tufts.push({ x: r() * W, y, k: depthK(g, y), p: r() * 6 }); }
+      tufts.sort((a, b) => a.y - b.y);
+      return {
+        dark: false,
+        draw(ctx, t, pan) {
+          ctx.drawImage(far.c, -PAN + pan * FAR_SLIDE, 0); ctx.drawImage(ground.c, 0, 0);
+          const wv = gust(t);
+          for (const f of tufts) for (let b = -1; b <= 1; b++) {
+            const sway = wv * Math.sin(t * 1.6 + f.x * 0.07 + f.p) * 1.6 * f.k;
+            blade(ctx, f.x + b * 1.5 * f.k, f.y, (4 + (b === 0 ? 2 : 0)) * f.k, b * 1.2 * f.k + sway, b === 0 ? '#6aa857' : '#7cb866');
+          }
+        },
+      };
+    },
+
+    flat(g) {
+      const { W, H } = g, HZ = g.yFar - 10;
+      const c = canvas(W, H);
+      box(c.ctx, 0, 0, W, HZ, '#efe7da');
+      vgrad(c.ctx, HZ, H, ['#e4d9c6', '#d9ccb6']);
+      box(c.ctx, 0, HZ, W, 1, '#d2c4ac');
+      return { dark: false, draw(ctx) { ctx.drawImage(c.c, 0, 0); } };
+    },
+
+    meadow(g) {
+      const { W, H } = g, HZ = g.yFar - 10, r = rng(7), FW = W + 2 * PAN;
+      const far = canvas(FW, H), mid = canvas(FW, H), ground = canvas(W, H);
+      bands(far.ctx, 0, HZ, ['#6fbbe9', '#7fc6ef', '#92d0f2', '#a7daf4', '#bfe5f6']);
+      disc(far.ctx, FW * 0.82, 26, 9, '#fff6c8'); disc(far.ctx, FW * 0.82, 26, 7, '#fffbe3');
+      // Mountains: a stepped ridge, far and pale, then nearer hills.
+      let h = 30;
+      for (let x = 0; x < FW; x += 2) { h = Math.max(12, Math.min(52, h + (r() - 0.5) * 7)); box(far.ctx, x, HZ - h, 2, h, '#9fc1dd'); if (h > 40) box(far.ctx, x, HZ - h, 2, 3, '#eef6fb'); }
+      h = 14;
+      for (let x = 0; x < FW; x += 2) { h = Math.max(6, Math.min(24, h + (r() - 0.5) * 4)); box(far.ctx, x, HZ - h, 2, h, '#7cb88a'); box(far.ctx, x, HZ - h, 2, 1, '#9fd6a3'); }
+      // A tree line on the horizon.
+      for (let x = -6; x < FW + 6; x += 9 + r() * 10) {
+        const rr = 5 + r() * 5, y = HZ - 3 - r() * 3;
+        box(mid.ctx, x - 1, y, 2, 6, '#5a4632');
+        disc(mid.ctx, x, y - rr * 0.6, rr, '#3f8b4e'); disc(mid.ctx, x - rr * 0.3, y - rr * 0.9, rr * 0.55, '#58a865');
+      }
+      box(ground.ctx, 0, HZ, W, H - HZ, '#7cc55c');
+      for (let y = HZ; y < H; y++) { // darker dithered rows towards the front
+        const u = (y - HZ) / (H - HZ);
+        if (y % 3 === 0) { ground.ctx.fillStyle = u > 0.5 ? '#6db54f' : '#86cd66'; for (let x = (y % 2); x < W; x += 2 + Math.floor(u * 3)) ground.ctx.fillRect(x, y, 1, 1); }
+      }
+      for (let i = 0; i < 30; i++) { const y = HZ + 3 + r() * (H - HZ - 3), k = depthK(g, y); disc(ground.ctx, r() * W, y, 2 * k, r() < 0.5 ? '#a8a294' : '#8f8a7e', 1.2 * k); }
+      const things = [];
+      const FLOWER = ['#ff5a7a', '#ffd84a', '#ffffff', '#b48cff', '#ff9a3c'];
+      for (let i = 0; i < 64; i++) { const y = HZ + 3 + r() * (H - HZ - 3); things.push({ x: r() * W, y, k: depthK(g, y), p: r() * 6, flower: FLOWER[Math.floor(r() * FLOWER.length)] }); }
+      for (let i = 0; i < 120; i++) { const y = HZ + 2 + r() * (H - HZ - 2); things.push({ x: r() * W, y, k: depthK(g, y), p: r() * 6, col: r() < 0.5 ? '#5aa845' : '#93db70' }); }
+      things.sort((a, b) => a.y - b.y);
+      const clouds = [0, 1, 2].map((i) => ({ x: r() * FW, y: 12 + i * 13 + r() * 6, w: 22 + r() * 18, v: 1.2 + r() * 1.5 }));
+      return {
+        dark: false,
+        draw(ctx, t, pan) {
+          ctx.drawImage(far.c, -PAN + pan * FAR_SLIDE, 0);
+          for (const c of clouds) {
+            const x = ((c.x - t * c.v) % (FW + 60) + FW + 60) % (FW + 60) - 30 - PAN + pan * FAR_SLIDE;
+            box(ctx, x, c.y, c.w, 5, '#ffffff'); box(ctx, x + c.w * 0.2, c.y - 3, c.w * 0.45, 4, '#ffffff'); box(ctx, x + 2, c.y + 5, c.w - 4, 2, '#e2f1fa');
+          }
+          ctx.drawImage(mid.c, -PAN + pan * MID_SLIDE, 0);
+          ctx.drawImage(ground.c, 0, 0);
+          const wv = gust(t);
+          for (const f of things) {
+            const sway = wv * Math.sin(t * 1.8 + f.x * 0.05 + f.p) * 1.4 * f.k;
+            if (f.flower) {
+              const tip = blade(ctx, f.x, f.y, (3 + f.p * 0.3) * f.k, sway, '#3f8f3a');
+              box(ctx, tip[0] - 1, tip[1] - 1, 2, 2, f.flower);
+              if (f.k > 0.9) box(ctx, tip[0], tip[1] - 1, 1, 1, '#fff3b0');
+            } else blade(ctx, f.x, f.y, 3 * f.k + 1, sway, f.col);
+          }
+        },
+      };
+    },
+
+    cave(g) {
+      const { W, H } = g, HZ = g.yFar - 10, r = rng(5), FW = W + 2 * PAN;
+      const far = canvas(FW, H), ground = canvas(W, H);
+      vgrad(far.ctx, 0, HZ + 2, ['#110f22', '#221d38']);
+      for (let i = 0; i < 40; i++) disc(far.ctx, r() * FW, r() * HZ, 6 + r() * 16, r() < 0.5 ? 'rgba(10,8,24,0.55)' : 'rgba(60,52,92,0.35)', 3 + r() * 8);
+      for (let x = 0; x < FW; x += 10 + r() * 16) { // stalactites
+        const len = 8 + r() * 26, w = 6 + r() * 8;
+        for (let j = 0; j < len; j++) {
+          const ww = Math.max(1, w * (1 - j / len));
+          box(far.ctx, x - ww / 2, j, ww, 1, '#2c2645'); box(far.ctx, x + ww / 2 - Math.max(1, ww * 0.35), j, Math.max(1, ww * 0.35), 1, '#1c1832');
+          if (ww > 2) box(far.ctx, x - ww / 2, j, 1, 1, '#4a4270');
+        }
+      }
+      vgrad(ground.ctx, HZ, H, ['#2b2541', '#3a3355']);
+      box(ground.ctx, 0, HZ, W, 1, '#4a4268');
+      for (let i = 0; i < 18; i++) { const y = HZ + 4 + r() * (H - HZ - 4), k = depthK(g, y), x = r() * W, rr = (3 + r() * 6) * k; disc(ground.ctx, x, y, rr, '#1f1a30', rr * 0.5); disc(ground.ctx, x, y - rr * 0.2, rr * 0.8, '#4a4266', rr * 0.25); }
+      const crystals = [];
+      for (let i = 0; i < 7; i++) {
+        const left = i % 2 === 0, y = HZ + 2 + r() * (H - HZ - 10);
+        crystals.push({ x: left ? r() * W * 0.22 : W - r() * W * 0.22, y, k: depthK(g, y), col: r() < 0.55 ? [111, 243, 255] : [255, 122, 224], n: 2 + Math.floor(r() * 3), p: r() * 6 });
+      }
+      const flies = [];
+      for (let i = 0; i < 11; i++) flies.push({ x: r() * W, y: 20 + r() * (H - 40), a: 10 + r() * 20, b: 4 + r() * 8, f: 0.2 + r() * 0.3, p: r() * 6 });
+      return {
+        dark: true,
+        draw(ctx, t, pan) {
+          ctx.drawImage(far.c, -PAN + pan * FAR_SLIDE, 0); ctx.drawImage(ground.c, 0, 0);
+          for (const c of crystals) {
+            const glow = 0.55 + 0.45 * Math.sin(t * 1.5 + c.p), rgb = c.col.join(',');
+            const gr = ctx.createRadialGradient(c.x, c.y - 4 * c.k, 0, c.x, c.y - 4 * c.k, 20 * c.k);
+            gr.addColorStop(0, 'rgba(' + rgb + ',' + (0.35 * glow) + ')'); gr.addColorStop(1, 'rgba(' + rgb + ',0)');
+            ctx.fillStyle = gr; ctx.fillRect(c.x - 20 * c.k, c.y - 24 * c.k, 40 * c.k, 40 * c.k);
+            for (let j = 0; j < c.n; j++) {
+              const x = c.x + (j - (c.n - 1) / 2) * 3 * c.k, h = (6 + ((j * 5 + c.n) % 4) * 2) * c.k, lean = (j - (c.n - 1) / 2) * 1.2 * c.k;
+              for (let y = 0; y < h; y++) { const ww = Math.max(1, 2.4 * c.k * (1 - y / h) + 0.6); box(ctx, x + lean * y / h - ww / 2, c.y - y, ww, 1, 'rgb(' + c.col.map((v) => Math.round(v * (0.55 + 0.45 * y / h))).join(',') + ')'); }
+              box(ctx, x + lean - 0.5, c.y - h, 1, 1, '#ffffff');
+            }
+          }
+          for (const f of flies) {
+            const x = f.x + Math.sin(t * f.f + f.p) * f.a, y = f.y + Math.sin(t * f.f * 1.7 + f.p * 2) * f.b, on = 0.4 + 0.6 * Math.max(0, Math.sin(t * 2.3 + f.p * 3));
+            ctx.fillStyle = 'rgba(255,240,150,' + (0.25 * on) + ')'; ctx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 3, 3);
+            ctx.fillStyle = 'rgba(255,248,190,' + on + ')'; ctx.fillRect(Math.round(x), Math.round(y), 1, 1);
+          }
+        },
+      };
+    },
+
+    // Tap Slay Die's forest: chunky pixels (drawn at half size, shown at 2x), black outlines, a teal forest, dark trunks,
+    // red mushrooms, a dirt clearing. Drawn from scratch in that style; no game files are used.
+    wildwood(g) {
+      const { W, H } = g, HZ = g.yFar - 10, r = rng(3), FW = W + 2 * PAN;
+      const lw = Math.ceil(FW / 2), lh = Math.ceil(H / 2), hz = Math.round(HZ / 2);
+      const farLo = canvas(lw, lh), midLo = canvas(lw, lh), groundLo = canvas(Math.ceil(W / 2), lh);
+      const outlined = (ctx, cx, cy, rr, col, hi) => { disc(ctx, cx, cy, rr + 1, '#0b0b10'); disc(ctx, cx, cy, rr, col); if (hi) disc(ctx, cx - rr * 0.3, cy - rr * 0.35, rr * 0.45, hi); };
+      bands(farLo.ctx, 0, hz + 1, ['#143236', '#173b3e', '#1b4545', '#20504d']);
+      for (let x = -4; x < lw + 4; x += 6 + r() * 6) { const hh = 10 + r() * 14; box(farLo.ctx, x, hz - hh, 5, hh, '#1a4342'); disc(farLo.ctx, x + 2, hz - hh, 5 + r() * 3, '#1f4f4b'); }
+      // Trunks and canopy, outlined.
+      for (let x = 2; x < lw; x += 16 + r() * 14) {
+        const tw = 4 + Math.floor(r() * 3), top = 6 + r() * 10;
+        box(midLo.ctx, x - 1, top, tw + 2, hz - top + 2, '#0b0b10'); box(midLo.ctx, x, top, tw, hz - top + 1, '#2c2130'); box(midLo.ctx, x + 1, top, 1, hz - top, '#3d2f42');
+        for (let k = 0; k < 3; k++) outlined(midLo.ctx, x + tw / 2 + (k - 1) * 6, top - 2 + (k === 1 ? -4 : 0), 6 + r() * 3, '#2f7a6a', '#44a088');
+      }
+      const gw = groundLo.c.width;
+      box(groundLo.ctx, 0, hz, gw, lh - hz, '#2f6450');
+      // The dirt clearing, wider at the front, with a lighter path down the middle.
+      for (let y = hz; y < lh; y++) {
+        const u = (y - hz) / (lh - hz), half = gw * (0.3 + 0.2 * u), pathHalf = gw * (0.06 + 0.12 * u);
+        box(groundLo.ctx, gw / 2 - half - 1, y, 2 * half + 2, 1, '#0b0b10');
+        box(groundLo.ctx, gw / 2 - half, y, 2 * half, 1, u < 0.3 ? '#6e4630' : '#7a5038');
+        box(groundLo.ctx, gw / 2 - pathHalf, y, 2 * pathHalf, 1, '#9a6a48');
+        if (y % 3 === 0) box(groundLo.ctx, gw / 2 - half + r() * half * 2, y, 1, 1, '#5a3826');
+      }
+      box(groundLo.ctx, 0, hz, gw, 1, '#0b0b10');
+      for (let i = 0; i < 8; i++) { // purple rocks
+        const left = i % 2 === 0, y = hz + 3 + r() * (lh - hz - 6), x = left ? r() * gw * 0.18 : gw - r() * gw * 0.18;
+        disc(groundLo.ctx, x, y, 3.2, '#0b0b10', 2.2); disc(groundLo.ctx, x, y, 2.4, '#5a4a6a', 1.5); box(groundLo.ctx, x - 1, y - 1, 1, 1, '#7d6a90');
+      }
+      const shrooms = [];
+      for (let i = 0; i < 7; i++) { const left = i % 2 === 0, y = hz + 4 + r() * (lh - hz - 6); shrooms.push({ x: left ? 3 + r() * gw * 0.2 : gw - 3 - r() * gw * 0.2, y, s: 1 + Math.round(r()) }); }
+      shrooms.sort((a, b) => a.y - b.y);
+      for (const m of shrooms) {
+        box(groundLo.ctx, m.x - 1, m.y - 3 * m.s, 3, 3 * m.s + 1, '#0b0b10'); box(groundLo.ctx, m.x, m.y - 3 * m.s, 1, 3 * m.s, '#e8d8c0');
+        disc(groundLo.ctx, m.x + 0.5, m.y - 3 * m.s, 2.5 * m.s + 1, '#0b0b10', 1.5 * m.s + 1); disc(groundLo.ctx, m.x + 0.5, m.y - 3 * m.s, 2.5 * m.s, '#d8413a', 1.5 * m.s);
+        box(groundLo.ctx, m.x - m.s, m.y - 3 * m.s - m.s, 1, 1, '#ffffff'); box(groundLo.ctx, m.x + m.s, m.y - 3 * m.s, 1, 1, '#ffffff');
+      }
+      const up = (lo, w) => { const c = canvas(w, H); c.ctx.drawImage(lo.c, 0, 0, lo.c.width * 2, lo.c.height * 2); return c; };
+      const far = up(farLo, FW), mid = up(midLo, FW), ground = up(groundLo, W);
+      const ferns = [];
+      for (let i = 0; i < 26; i++) { const left = i % 2 === 0, y = HZ + 4 + r() * (H - HZ - 4); ferns.push({ x: left ? r() * W * 0.24 : W - r() * W * 0.24, y, k: depthK(g, y), p: r() * 6 }); }
+      ferns.sort((a, b) => a.y - b.y);
+      const motes = [];
+      for (let i = 0; i < 9; i++) motes.push({ x: r() * W, y: 20 + r() * (HZ + 30), p: r() * 6 });
+      return {
+        dark: true,
+        draw(ctx, t, pan) {
+          ctx.drawImage(far.c, -PAN + pan * FAR_SLIDE, 0); ctx.drawImage(mid.c, -PAN + pan * MID_SLIDE, 0); ctx.drawImage(ground.c, 0, 0);
+          const wv = gust(t);
+          for (const f of ferns) {
+            const sway = wv * Math.sin(t * 1.4 + f.x * 0.06 + f.p) * 2 * f.k;
+            for (let b = -1; b <= 1; b++) {
+              const x = Math.round((f.x + b * 3 * f.k) / 2) * 2, h = Math.round((b === 0 ? 8 : 6) * f.k / 2) * 2, lean = Math.round((b * 3 * f.k + sway) / 2) * 2;
+              for (let j = 0; j < h; j += 2) { const u = j / h; box(ctx, x + Math.round(lean * u * u / 2) * 2 - 1, f.y - j - 1, 4, 2, '#0b0b10'); }
+              for (let j = 0; j < h; j += 2) { const u = j / h; box(ctx, x + Math.round(lean * u * u / 2) * 2, f.y - j, 2, 2, b === 0 ? '#3d9b6e' : '#2f7a58'); }
+            }
+          }
+          for (const m of motes) {
+            const x = m.x + Math.sin(t * 0.3 + m.p) * 14, y = m.y - ((t * 4 + m.p * 20) % 60), on = 0.5 + 0.5 * Math.sin(t * 2 + m.p);
+            ctx.fillStyle = 'rgba(184,255,207,' + (0.35 + 0.5 * on) + ')'; ctx.fillRect(Math.round(x / 2) * 2, Math.round(y / 2) * 2, 2, 2);
+          }
+        },
+      };
+    },
+
+    studio(g) {
+      const { W, H } = g, HZ = g.yFar - 10;
+      const c = canvas(W, H);
+      vgrad(c.ctx, 0, H, [[0, '#f7f4f1'], [HZ / H * 0.8, '#f0ebe6'], [Math.min(0.95, (HZ + 24) / H), '#e5dfd9'], [1, '#ece7e2']]);
+      const spot = c.ctx.createRadialGradient(W / 2, (g.yFar + g.yNear) / 2, 0, W / 2, (g.yFar + g.yNear) / 2, W * 0.45);
+      spot.addColorStop(0, 'rgba(255,255,255,0.55)'); spot.addColorStop(1, 'rgba(255,255,255,0)');
+      c.ctx.fillStyle = spot; c.ctx.fillRect(0, 0, W, H);
+      const vig = c.ctx.createRadialGradient(W / 2, H / 2, W * 0.3, W / 2, H / 2, W * 0.7);
+      vig.addColorStop(0, 'rgba(60,40,30,0)'); vig.addColorStop(1, 'rgba(60,40,30,0.09)');
+      c.ctx.fillStyle = vig; c.ctx.fillRect(0, 0, W, H);
+      return { dark: false, draw(ctx) { ctx.drawImage(c.c, 0, 0); } };
+    },
+  };
+
+  function create(key, geom) { return (MAKERS[key] || MAKERS.grass)(geom); }
+  const api = { LIST, create, keys: LIST.map((h) => h[0]), PAN };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.CreatureHabitats = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
 /* Creature Hatchery: the page. Eggs, hatching, the temperament slider, a level preview, gene sliders, the genome as a
-   list of numbers, breeding, and a collection. Rendering and motion live in render.js and motion.js.
+   list of numbers, breeding, and a collection, on a habitat floor the creature walks, turns and eats on. Rendering,
+   motion and the habitats live in render.js, motion.js and habitats.js.
    URL: ?seed=<s> starts from that egg; &level=<1-100> &temperament=<-1..1> &hatched=1 show the creature; &pause=1 holds
-   still (for screenshots); &view=inside|flat|pieces; &style=<look> (gochi, matte, cel, pixel, chunky, ink, sticker);
-   &palette=gameboy|pico8|earth (pixel looks); &shine=<0-1>; &debug=1 draws the walk (planted feet, swing targets, legs,
-   ground line, gait); &gait=walk|hurry keeps it walking; &back=night|paper|peach|clear; &test=1 runs the self-checks. */
+   still (for screenshots); &view=inside|flat|pieces; &style=gochi|cel|pixel; &palette=gameboy|pico8|earth (pixel look);
+   &shine=<0-1>; &habitat=grass|flat|meadow|cave|wildwood|studio; &debug=1 draws the walk (heading and facing, turn
+   pivot, goal, floor edges, planted feet, swing targets, legs, gait); &gait=walk|hurry keeps it walking;
+   &heading=<radians> which way it faces; &hunger=<0-1>; &food=berry|seed|leaf|apple|fish puts one down in front of it;
+   &test=1 runs the self-checks.
+   Dropping food by clicking the stage is for this prototype page only. In the game food comes from tokens of real
+   Claude Code use, and levels only from real use; there are no buttons that add either. */
 (function () {
   'use strict';
-  const G = window.CreatureGenome, R = window.CreatureRender, M = window.CreatureMotion;
+  const G = window.CreatureGenome, R = window.CreatureRender, M = window.CreatureMotion, HAB = window.CreatureHabitats;
   const $ = (id) => document.getElementById(id);
   const params = new URLSearchParams(location.search);
   const TEST = params.get('test') === '1';
-  const PAUSE = params.get('pause') === '1' || TEST;
+  const PROOF = params.get('proof');               // turn|spin|eat|habitats: draw a proof sheet for tools/proof.js
+  const PAUSE = params.get('pause') === '1' || TEST || !!PROOF;
   const GAIT = ['walk', 'hurry'].includes(params.get('gait')) ? params.get('gait') : null; // keep walking (or hurrying)
   const reducedMotion = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 
-  const STAGE_W = 240, STAGE_H = 140, GROUND = 118;      // stage grid (logical pixels) and the ground row
-  const SPRITE_W = 150, SPRITE_H = 120, SPRITE_GROUND = 100;
-  const SPRITE_FPS = 12;                                   // the video's creatures animate on a slow pixel-art clock
+  const STAGE_W = 384, STAGE_H = 216;   // stage grid (logical pixels)
+  const Y_FAR = 112, Y_NEAR = 204;      // rows of the floor's far and near edges
+  const K_FAR = 0.72;                   // things at the far edge are drawn this much smaller
+  const PITCH = 0.45;                   // camera tilt; the world camera looks across the floor (screen right is +x)
+  const FIT_W = 104, FIT_H = 84;        // a grown-up fills about this box at the front of the floor
+  const MIN_PX = 0.016;                 // world units per pixel, at least, so small adults stay small
+  const EDGE_X = 48;                    // pixels kept clear at each side of the floor
+  const PAN_MAX = 6;                    // parallax: the far layers slide up to this many pixels as it walks
+  const START_HEADING = -0.8;           // facing a little towards us: the 3/4 view
+  const SPRITE_FPS = 12;                // the video's creatures animate on a slow pixel-art clock
   const HATCH = { wobble: 1.2, crack: [0.5, 1.7], open: [1.7, 2.3], baby: 2.1, fade: [2.4, 3.2] };
   const GALLERY_KEY = 'creature-hatchery-v1', GALLERY_MAX = 40;
-  const BACKS = { night: [42, 38, 56], paper: [240, 232, 216], peach: [251, 214, 190], clear: null };
+  const HABITAT_ALIAS = { night: 'cave', paper: 'flat', peach: 'studio', clear: 'studio' }; // the old ?back= names
+  // Food for the prototype's drop-a-snack click: bites to finish it, how much hunger it takes away, size in pixels.
+  const FOODS = {
+    berry: { bites: 2, value: 0.2, size: 4 }, seed: { bites: 1, value: 0.1, size: 3 }, leaf: { bites: 3, value: 0.25, size: 6 },
+    apple: { bites: 4, value: 0.4, size: 6 }, fish: { bites: 4, value: 0.45, size: 8 },
+  };
+  const MAX_FOOD = 6, DROP_TIME = 0.45, DROP_HEIGHT = 46, POOP_LIFE = 9, SPARKLE_LIFE = 1.3, CRUMB_LIFE = 0.5;
+  const STATE_WORDS = { idle: 'idle', go: 'walking', turn: 'turning', spin: 'spinning!', eat: 'eating', hungry: 'hungry' };
   const FACES = ['neutral', 'happy', 'angry', 'sleepy', 'surprised'];
   const PALETTE_NAMES = { gameboy: 'Game Boy', pico8: 'PICO-8', earth: 'warm earth' };
   const VIEWS = [['gochi', 'Finished'], ['pieces', 'Melted pieces'], ['flat', 'One colour'], ['inside', 'Inside?']];
@@ -2223,13 +2874,15 @@
   ];
   const INTEGER_GENES = new Set(['legs.pairs', 'horns.count', 'ears.kind', 'decor.kind', 'pattern.kind', 'wings.fingers']);
 
+  const habitatParam = params.get('habitat') || params.get('back');
   const S = {
     creature: null, overrides: {}, special: { body: 1, head: 1 }, temperament: 0, level: 1, expression: 'neutral',
-    repair: true, view: params.get('view') || 'gochi', walk: !PAUSE, back: params.get('back') || 'night',
+    repair: true, view: params.get('view') || 'gochi', walk: !PAUSE,
+    habitat: HAB.keys.includes(habitatParam) ? habitatParam : HABITAT_ALIAS[habitatParam] || 'grass', hab: null,
     style: R.looks.includes(params.get('style')) ? params.get('style') : 'gochi',
     palette: R.PALETTES[params.get('palette')] ? params.get('palette') : 'own',
     shine: params.get('shine') != null ? Math.max(0, Math.min(1, Number(params.get('shine')) || 0)) : 1,
-    debug: params.get('debug') === '1',
+    debug: params.get('debug') === '1', food: 'berry', foods: [], poops: [], fx: [], pan: 0,
     phase: 'egg', hatchT: 0, gallery: [], picks: [], current: -1, reveal: null, cam: null, ph: null, walker: null,
   };
 
@@ -2258,19 +2911,57 @@
   function phenotypeAt(level) {
     return G.express(S.creature, { overrides: overridesFor(S.creature), temperament: S.temperament, level, repair: S.repair, expression: S.expression });
   }
-  // Re-derive the body numbers and the camera. The camera is framed on the adult so growing shows as getting bigger.
+  // ---------- the floor ----------
+  // The stage shows a floor from a little above: z runs from the back (S.zFar, row Y_FAR) to the front (S.zNear, row
+  // Y_NEAR), x across, and things further back are drawn smaller (k). The creature is rendered with a camera turned by
+  // its heading, so turning shows it side-on, from the front, from behind and in between.
+  const depthOf = (z) => (z - S.zFar) / (S.zNear - S.zFar);
+  function toStage(x, z, y) {
+    const t = depthOf(z), k = K_FAR + (1 - K_FAR) * t;
+    return { x: STAGE_W / 2 + x * k / S.px, y: Y_FAR + (Y_NEAR - Y_FAR) * t - (y || 0) * Math.cos(PITCH) * k / S.px, k };
+  }
+  function fromStage(sx, sy) {
+    const t = Math.max(0, Math.min(1, (sy - Y_FAR) / (Y_NEAR - Y_FAR))), k = K_FAR + (1 - K_FAR) * t;
+    return { x: (sx - STAGE_W / 2) * S.px / k, z: S.zFar + t * (S.zNear - S.zFar) };
+  }
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  // The sprite grid fits the grown-up from every side, with room above for hops and flying.
+  function spriteBox(scene, px) {
+    let half = 0, top = 0, bottom = 0;
+    const pts = scene.prims.map((p) => p.bs);
+    if (scene.shadow) pts.push([scene.shadow.cx, 0, 0, Math.max(scene.shadow.rx, scene.shadow.rz)]);
+    for (let i = 0; i < 8; i++) {
+      const c = R.camera({ w: 1, h: 1, px, yaw: i * Math.PI / 4, pitch: PITCH, center: [0, 0, 0] });
+      for (const b of pts) {
+        const rx = dot(b, c.r), uy = dot(b, c.u);
+        half = Math.max(half, Math.abs(rx) + b[3]); top = Math.max(top, uy + b[3]); bottom = Math.max(bottom, b[3] - uy);
+      }
+    }
+    const w = Math.ceil(2 * half * 1.06 / px) + 4, ground = Math.ceil((top * 1.06 + 0.4 * (top + bottom)) / px) + 2;
+    return { w: w + (w % 2), h: ground + Math.ceil(bottom * 1.06 / px) + 3, ground };
+  }
+  // A sprite camera seeing the body from `yaw` (body frame) at depth scale k, with the body's origin on the sprite's
+  // ground row, in the middle.
+  function spriteCam(yaw, k) {
+    const px = S.px / k, c = R.camera({ w: S.sw, h: S.sh, px, yaw, pitch: PITCH, center: [0, 0, 0] }), off = (S.sg - S.sh / 2) * px;
+    return { w: S.sw, h: S.sh, px, yaw, pitch: PITCH, center: [c.u[0] * off, c.u[1] * off, c.u[2] * off] };
+  }
+  // Re-derive the body numbers, the scale and the floor. The scale is set by the adult so growing shows as getting bigger.
   function refresh() {
     S.ph = phenotypeAt(S.level);
     const adult = R.creatureScene(phenotypeAt(G.LEVEL_MAX), {});
-    const fit = R.frameCamera(adult, SPRITE_W, SPRITE_H, { fit: true });
-    const egg = R.eggScene(G.eggLook(S.creature), {});
-    const px = Math.max(fit.px, 0.0125);
-    S.cam = R.frameCamera(adult, SPRITE_W, SPRITE_H, { px, groundRow: SPRITE_GROUND });
-    // Keep the camera's horizontal centre on the body origin so walking doesn't jitter.
-    S.eggCam = R.frameCamera(egg, SPRITE_W, SPRITE_H, { px, groundRow: SPRITE_GROUND });
-    const x0 = S.walker ? S.walker.x : 0, dir = S.walker ? S.walker.dir : 1;
-    S.walker = M.createWalker(S.ph, G.hashSeed(String(S.creature.seed)), { x: x0 });
-    S.walker.dir = dir;
+    S.px = Math.max(R.frameCamera(adult, FIT_W, FIT_H, { fit: true }).px, MIN_PX);
+    const bx = spriteBox(adult, S.px);
+    S.sw = bx.w; S.sh = bx.h; S.sg = bx.ground;
+    sprite.width = S.sw; sprite.height = S.sh;
+    const depth = (Y_NEAR - Y_FAR) * S.px / Math.sin(PITCH) / ((1 + K_FAR) / 2);
+    S.zFar = -depth / 2; S.zNear = depth / 2;
+    S.area = { minX: -(STAGE_W / 2 - EDGE_X) * S.px, maxX: (STAGE_W / 2 - EDGE_X) * S.px, minZ: S.zFar + 0.06 * depth, maxZ: S.zNear - 0.14 * depth };
+    const w0 = S.walker;
+    S.cam = spriteCam(-(w0 ? w0.th : START_HEADING), 1); // the still view (self-checks, the first frame)
+    S.walker = M.createWalker(S.ph, G.hashSeed(String(S.creature.seed)), {
+      x: w0 ? w0.x : 0, z: w0 ? w0.z : 0, heading: w0 ? w0.th : START_HEADING, hunger: w0 ? w0.hunger : S.startHunger,
+    });
     S.lastFrame = 0;
     S.dirty = true;
     updatePanels();
@@ -2285,7 +2976,7 @@
     S.level = opts.level || 1;
     S.phase = opts.phase || 'egg';
     S.hatchT = 0;
-    S.walker = null;
+    S.walker = null; S.foods = []; S.poops = []; S.fx = [];
     $('seed').value = c.parents ? '' : String(c.seed);
     $('temper').value = S.temperament;
     $('level').value = S.level;
@@ -2333,89 +3024,237 @@
   // ---------- drawing ----------
   const stage = $('stage'), sctx = stage.getContext('2d');
   sctx.imageSmoothingEnabled = false;
-  const sprite = document.createElement('canvas'); sprite.width = SPRITE_W; sprite.height = SPRITE_H;
+  const sprite = document.createElement('canvas');
   const spctx = sprite.getContext('2d');
 
-  function drawBackdrop() {
-    const b = BACKS[S.back];
-    if (!b) { // a checkerboard shows the sprite really is see-through
-      for (let y = 0; y < STAGE_H; y += 8) for (let x = 0; x < STAGE_W; x += 8) {
-        sctx.fillStyle = ((x + y) / 8) % 2 ? '#d9d4de' : '#f2eef5'; sctx.fillRect(x, y, 8, 8);
-      }
-      return;
-    }
-    sctx.fillStyle = 'rgb(' + b.join(',') + ')'; sctx.fillRect(0, 0, STAGE_W, STAGE_H);
-    // A faint floor band, like the video's flat colour cards
-    sctx.fillStyle = 'rgba(0,0,0,0.06)'; sctx.fillRect(0, GROUND - 4, STAGE_W, STAGE_H - GROUND + 4);
+  function setHabitat(key) {
+    S.habitat = key;
+    S.hab = HAB.create(key, { W: STAGE_W, H: STAGE_H, yFar: Y_FAR, yNear: Y_NEAR });
+    $('stageBox').classList.toggle('dark', S.hab.dark);
+    S.dirty = true;
   }
-  function putSprite(res, worldX, dir, alpha) {
+  // Paint a render onto the stage with the body's origin standing on the floor at (x, z). Returns the sprite's corner.
+  function putSprite(res, x, z, alpha) {
     const img = spctx.createImageData(res.w, res.h);
     const rows = S.reveal != null ? Math.floor(S.reveal) : res.h;
     if (rows >= res.h) img.data.set(res.rgba);
     else img.data.set(res.rgba.subarray(0, rows * res.w * 4));
-    spctx.clearRect(0, 0, SPRITE_W, SPRITE_H);
+    spctx.clearRect(0, 0, sprite.width, sprite.height);
     spctx.putImageData(img, 0, 0);
     if (S.reveal != null && rows < res.h) { spctx.fillStyle = '#f6d34a'; spctx.fillRect(0, rows, res.w, 1); }
-    const cam = R.camera(res.cam), o = R.project(cam, [0, 0, 0]);
-    const sx = Math.round(STAGE_W / 2 + worldX / res.cam.px), sy = GROUND - Math.round(o.y);
+    const p = toStage(x, z), sx = Math.round(p.x) - S.sw / 2, sy = Math.round(p.y) - S.sg;
     sctx.save();
     sctx.globalAlpha = alpha == null ? 1 : alpha;
-    if (dir < 0) { sctx.translate(sx + Math.round(o.x), sy); sctx.scale(-1, 1); sctx.drawImage(sprite, 0, 0); }
-    else sctx.drawImage(sprite, sx - Math.round(o.x), sy);
+    sctx.drawImage(sprite, sx, sy);
     sctx.restore();
+    return { sx, sy };
   }
   // The finished view draws in the chosen look; the other views are the debug looks. The look never touches the genome.
   function lookOpts() {
     return { style: S.view === 'gochi' ? S.style : S.view, shine: S.shine, palette: S.palette === 'own' ? null : S.palette };
   }
-  function renderCreature(pose) {
+  function renderCreature(pose, cam) {
     const sc = R.creatureScene(S.ph, pose);
     S.lastScene = sc;
-    return R.render(sc, S.cam, lookOpts());
+    return R.render(sc, cam || S.cam, lookOpts());
   }
-  function renderEgg(pose) {
-    return R.render(R.eggScene(G.eggLook(S.creature), pose), S.eggCam, lookOpts());
+  function renderEgg(pose, cam) {
+    return R.render(R.eggScene(G.eggLook(S.creature), pose), cam || S.cam, lookOpts());
   }
-  // Walk debug: the ground contact lines (one per row of feet), each leg hip-knee-foot, planted feet (green), feet in swing (orange) and where
-  // they will land (cross), and the gait's name and phase. Points are in the body's frame, placed like putSprite.
-  function drawDebug(res, st) {
-    const cam = R.camera(res.cam), o = R.project(cam, [0, 0, 0]);
-    const sx = Math.round(STAGE_W / 2 + st.x / res.cam.px), sy = GROUND - Math.round(o.y);
-    const at = (p, onGround) => {
-      const q = R.project(cam, [p[0], onGround ? 0 : p[1] + (st.lift || 0), p[2]]);
-      return [st.dir < 0 ? sx + Math.round(o.x) - q.x : sx - Math.round(o.x) + q.x, sy + q.y];
-    };
-    const line = (a, b, colour) => { sctx.strokeStyle = colour; sctx.beginPath(); sctx.moveTo(a[0], a[1]); sctx.lineTo(b[0], b[1]); sctx.stroke(); };
-    const dot = (p, colour, r) => { sctx.fillStyle = colour; sctx.fillRect(Math.round(p[0] - r), Math.round(p[1] - r), r * 2, r * 2); };
-    sctx.save();
-    sctx.lineWidth = 0.5;
-    const legs = (S.lastScene && S.lastScene.legs) || [];
-    for (const side of [-1, 1]) {
-      const row = legs.filter((lg) => Math.sign(lg.foot[2]) === side);
-      if (!row.length) continue;
-      const xs = row.map((lg) => lg.foot[0]), z = row[0].foot[2], reach = row[0].hip[1];
-      line(at([Math.min(...xs) - reach, 0, z], true), at([Math.max(...xs) + reach, 0, z], true), 'rgba(120,200,255,0.75)');
+  // The camera for the creature where it stands: turned by its heading (the world camera looks along -z, so the body
+  // is seen from yaw = -heading) and scaled by how far back it is.
+  const camAt = (x, z, heading) => spriteCam(-heading, toStage(x, z).k);
+
+  // ---------- food, poop and sparkles (food drops are for this prototype page only) ----------
+  function dropFood(x, z, kind, landed) {
+    const f = FOODS[kind] || FOODS.berry;
+    if (S.foods.filter((o) => !o.gone).length >= MAX_FOOD) S.foods.shift();
+    const a = S.area;
+    const food = { kind: FOODS[kind] ? kind : 'berry', x: Math.max(a.minX, Math.min(a.maxX, x)), z: Math.max(a.minZ, Math.min(a.maxZ, z)),
+      bites: f.bites, maxBites: f.bites, value: f.value, age: landed ? DROP_TIME : 0 };
+    S.foods.push(food);
+    S.dirty = true;
+    return food;
+  }
+  // The meal it is on, else the nearest food that has landed.
+  function foodFor(w) {
+    if (w.eat && w.eat.food && !w.eat.food.gone) return w.eat.food;
+    if (w.goal && w.goal.food && !w.goal.food.gone && w.goal.food.bites > 0) return w.goal.food;
+    let best = null, bd = Infinity;
+    for (const f of S.foods) {
+      if (f.gone || f.bites <= 0 || f.age < DROP_TIME) continue;
+      const d = Math.hypot(f.x - w.x, f.z - w.z);
+      if (d < bd) { bd = d; best = f; }
     }
-    if (!legs.length) line([0, GROUND + 0.5], [STAGE_W, GROUND + 0.5], 'rgba(120,200,255,0.75)');
-    legs.forEach((lg, k) => {
-      const c = lg.hip[2] < 0 ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.9)';
-      line(at(lg.hip), at(lg.knee), c); line(at(lg.knee), at(lg.foot), c);
-      dot(at(lg.foot), st.feetState[k] ? '#5fe08a' : '#ffa53a', 1.5);
-      const t = st.targets && st.targets[k];
-      if (t) { const p = at(t); line([p[0] - 2, p[1] - 2], [p[0] + 2, p[1] + 2], '#ffa53a'); line([p[0] - 2, p[1] + 2], [p[0] + 2, p[1] - 2], '#ffa53a'); }
-    });
-    sctx.fillStyle = 'rgba(255,255,255,0.85)'; sctx.font = '7px monospace';
-    sctx.fillText(st.gait.name + ' ' + st.gait.phase.toFixed(2) + ' duty ' + st.gait.duty.toFixed(2) + ' v ' + (st.gait.speed / S.ph.scale).toFixed(2), 3, STAGE_H - 4);
+    return best;
+  }
+  function drawFood(f) {
+    const def = FOODS[f.kind], u = Math.min(1, f.age / DROP_TIME), up = (1 - u * u) * DROP_HEIGHT;
+    const p = toStage(f.x, f.z), x = Math.round(p.x), y = Math.round(p.y);
+    const s = def.size * p.k * (0.45 + 0.55 * f.bites / f.maxBites);
+    sctx.fillStyle = 'rgba(0,0,0,0.18)'; sctx.beginPath(); sctx.ellipse(x, y, s * 1.1, s * 0.4, 0, 0, Math.PI * 2); sctx.fill();
+    const cy = Math.round(y - s * 0.7 - up * p.k);
+    const disc = (cx, yy, r, col, ry) => { sctx.fillStyle = col; sctx.beginPath(); sctx.ellipse(Math.round(cx), Math.round(yy), Math.max(0.8, r), Math.max(0.8, ry || r), 0, 0, Math.PI * 2); sctx.fill(); };
+    if (f.kind === 'berry') {
+      disc(x - s * 0.35, cy, s * 0.6, '#b8284a'); disc(x + s * 0.35, cy + s * 0.1, s * 0.6, '#d23a5c'); disc(x, cy - s * 0.35, s * 0.55, '#c9304f');
+      disc(x - s * 0.1, cy - s * 0.5, s * 0.18, '#ffd0dc'); disc(x + s * 0.2, cy - s * 0.95, s * 0.3, '#5aa845', s * 0.18);
+    } else if (f.kind === 'seed') {
+      disc(x, cy, s * 0.75, '#d9b27a', s * 0.5); disc(x - s * 0.2, cy - s * 0.15, s * 0.25, '#f2d9a8', s * 0.15);
+      sctx.fillStyle = '#9a7444'; sctx.fillRect(Math.round(x - s * 0.5), Math.round(cy), Math.max(1, Math.round(s)), 1);
+    } else if (f.kind === 'leaf') {
+      disc(x, cy + s * 0.2, s, '#6cbf4a', s * 0.45); sctx.fillStyle = '#3f8f2c'; sctx.fillRect(Math.round(x - s * 0.9), Math.round(cy + s * 0.2), Math.max(1, Math.round(s * 1.8)), 1);
+      disc(x - s * 0.3, cy, s * 0.3, '#9ad874', s * 0.12);
+    } else if (f.kind === 'apple') {
+      disc(x, cy, s * 0.85, '#d83b30'); disc(x - s * 0.3, cy - s * 0.3, s * 0.25, '#ff9a8a');
+      sctx.fillStyle = '#5a3a20'; sctx.fillRect(Math.round(x), Math.round(cy - s * 1.15), 1, Math.max(1, Math.round(s * 0.4)));
+      disc(x + s * 0.3, cy - s * 0.95, s * 0.3, '#5aa845', s * 0.15);
+    } else { // fish
+      disc(x - s * 0.1, cy, s * 0.8, '#8fb3c9', s * 0.38); disc(x - s * 0.1, cy + s * 0.12, s * 0.6, '#d8e6ee', s * 0.18);
+      sctx.fillStyle = '#6f93aa'; sctx.beginPath(); sctx.moveTo(x + s * 0.6, cy); sctx.lineTo(x + s * 1.1, cy - s * 0.4); sctx.lineTo(x + s * 1.1, cy + s * 0.4); sctx.fill();
+      sctx.fillStyle = '#1c1c24'; sctx.fillRect(Math.round(x - s * 0.6), Math.round(cy - s * 0.1), 1, 1);
+    }
+  }
+  // A small, cute poop: a brown swirl with a shine and two dots for eyes. It fades away.
+  function drawPoop(p) {
+    const q = toStage(p.x, p.z), x = Math.round(q.x), y = Math.round(q.y), k = q.k * 1.2;
+    sctx.save(); sctx.globalAlpha = Math.min(1, (POOP_LIFE - p.age) / 2);
+    const tier = (yy, w, col) => { sctx.fillStyle = col; sctx.beginPath(); sctx.ellipse(x, Math.round(yy), Math.max(1, w), Math.max(1, w * 0.55), 0, 0, Math.PI * 2); sctx.fill(); };
+    tier(y - 1.5 * k, 4 * k, '#8a5a3c'); tier(y - 4 * k, 3 * k, '#9a6848'); tier(y - 6 * k, 1.8 * k, '#a87452');
+    sctx.fillStyle = '#ffffff'; sctx.fillRect(Math.round(x - 2 * k), Math.round(y - 5 * k), 1, 1);
+    sctx.fillStyle = '#2a1d16'; sctx.fillRect(Math.round(x - 1.4 * k), Math.round(y - 3 * k), 1, 1); sctx.fillRect(Math.round(x + 1.2 * k), Math.round(y - 3 * k), 1, 1);
+    sctx.restore();
+  }
+  function onEvents(st, top) {
+    for (const e of st.events) {
+      if (e.type === 'bite') {
+        const f = S.walker.eat && S.walker.eat.food; if (!f) continue;
+        const p = toStage(f.x, f.z);
+        for (let i = 0; i < 5; i++) S.fx.push({ kind: 'crumb', x: p.x, y: p.y - 3, vx: (Math.random() - 0.5) * 30, vy: -20 - Math.random() * 20, age: 0, life: CRUMB_LIFE, col: f.kind === 'leaf' ? '#6cbf4a' : f.kind === 'fish' ? '#d8e6ee' : f.kind === 'seed' ? '#d9b27a' : '#e05a6a' });
+      } else if (e.type === 'happy') {
+        const p = toStage(st.x, st.z);
+        for (let i = 0; i < 7; i++) S.fx.push({ kind: 'spark', x: p.x + (Math.random() - 0.5) * S.sw * 0.6 * p.k, y: top + 6 + Math.random() * 18, vx: 0, vy: -10 - Math.random() * 10, age: -i * 0.08, life: SPARKLE_LIFE, col: i % 2 ? '#ffe36a' : '#ffffff' });
+      } else if (e.type === 'poop') S.poops.push({ x: e.x, z: e.z, age: 0 });
+    }
+  }
+  function drawFx(dt) {
+    for (const f of S.fx) {
+      f.age += dt;
+      if (f.age < 0) continue;
+      f.x += f.vx * dt; f.y += f.vy * dt; if (f.kind === 'crumb') f.vy += 120 * dt;
+      const a = Math.max(0, 1 - f.age / f.life), x = Math.round(f.x), y = Math.round(f.y);
+      sctx.globalAlpha = a; sctx.fillStyle = f.col;
+      if (f.kind === 'spark') { const r = f.age < f.life * 0.5 ? 2 : 1; sctx.fillRect(x - r, y, 2 * r + 1, 1); sctx.fillRect(x, y - r, 1, 2 * r + 1); }
+      else sctx.fillRect(x, y, 1, 1);
+    }
+    sctx.globalAlpha = 1;
+    S.fx = S.fx.filter((f) => f.age < f.life);
+    for (const p of S.poops) p.age += dt;
+    S.poops = S.poops.filter((p) => p.age < POOP_LIFE);
+    S.foods = S.foods.filter((f) => !f.gone);
+    for (const f of S.foods) f.age += dt;
+  }
+  // The highest row the body reaches in this frame's sprite (for the thought bubble and sparkles).
+  function spriteTop(res) {
+    for (let y = 0; y < res.h; y++) for (let x = 0; x < res.w; x++) if (res.mask[y * res.w + x] === 1) return y;
+    return S.sg;
+  }
+  // Hungry and nothing to eat: a thought bubble with a little berry in it.
+  function drawBubble(cx, top) {
+    const x = Math.round(cx + 10), y = Math.round(top - 16);
+    sctx.fillStyle = 'rgba(255,255,255,0.92)';
+    sctx.beginPath(); sctx.ellipse(x, y, 9, 7, 0, 0, Math.PI * 2); sctx.fill();
+    sctx.fillRect(x - 7, y + 8, 2, 2); sctx.fillRect(x - 10, y + 12, 1, 1);
+    sctx.fillStyle = '#c9304f'; sctx.beginPath(); sctx.arc(x - 1, y + 1, 2.5, 0, Math.PI * 2); sctx.arc(x + 2, y + 1, 2.5, 0, Math.PI * 2); sctx.fill();
+    sctx.fillStyle = '#5aa845'; sctx.fillRect(x, y - 3, 3, 1);
+  }
+
+  // Walk debug. On the floor: its edges, the heading (yellow arrow), where the head faces (cyan), the turn rate (an arc),
+  // the turn's pivot (cross) and the goal (circle; red for food). On the body: each leg hip-knee-foot, planted feet
+  // (green), feet in swing (orange) and where they will land (cross). Text: state, heading, turn rate, hunger, gait.
+  function drawDebug(res, st, at0) {
+    const light = !S.hab.dark;
+    const line = (a, b, colour) => { sctx.strokeStyle = colour; sctx.beginPath(); sctx.moveTo(a[0], a[1]); sctx.lineTo(b[0], b[1]); sctx.stroke(); };
+    const dotAt = (p, colour, r) => { sctx.fillStyle = colour; sctx.fillRect(Math.round(p[0] - r), Math.round(p[1] - r), r * 2, r * 2); };
+    const floor = (x, z) => { const p = toStage(x, z); return [p.x, p.y]; };
+    sctx.save();
+    sctx.lineWidth = 0.6;
+    const a = S.area;
+    sctx.strokeStyle = light ? 'rgba(40,80,140,0.55)' : 'rgba(120,200,255,0.6)';
+    sctx.beginPath(); [[a.minX, a.minZ], [a.maxX, a.minZ], [a.maxX, a.maxZ], [a.minX, a.maxZ]].forEach((c, i) => { const p = floor(c[0], c[1]); if (i) sctx.lineTo(p[0], p[1]); else sctx.moveTo(p[0], p[1]); }); sctx.closePath(); sctx.stroke();
+    if (st) {
+      const o = floor(st.x, st.z), L = 0.9 * S.ph.scale;
+      const arrow = (ang, colour) => {
+        const tip = floor(st.x + Math.cos(ang) * L, st.z - Math.sin(ang) * L);
+        line(o, tip, colour);
+        const back = floor(st.x + Math.cos(ang) * L * 0.8, st.z - Math.sin(ang) * L * 0.8), dx = tip[0] - back[0], dy = tip[1] - back[1];
+        line(tip, [back[0] - dy * 0.6, back[1] + dx * 0.6], colour); line(tip, [back[0] + dy * 0.6, back[1] - dx * 0.6], colour);
+      };
+      arrow(st.heading, '#ffd23a');
+      arrow(st.heading + ((st.pose && st.pose.lookYaw) || 0), '#3fd8ff');
+      if (Math.abs(st.yawRate) > 0.02) { // the turn rate: an arc round the body, longer for faster
+        sctx.strokeStyle = '#ff7ad9'; sctx.beginPath();
+        for (let i = 0; i <= 12; i++) { const ang = st.heading + Math.sign(st.yawRate) * Math.min(Math.PI, Math.abs(st.yawRate) * 0.6) * i / 12, p = floor(st.x + Math.cos(ang) * L * 0.55, st.z - Math.sin(ang) * L * 0.55); if (i) sctx.lineTo(p[0], p[1]); else sctx.moveTo(p[0], p[1]); }
+        sctx.stroke();
+      }
+      if (st.pivot) { const p = floor(st.pivot[0], st.pivot[1]); line([p[0] - 3, p[1] - 3], [p[0] + 3, p[1] + 3], '#ff7ad9'); line([p[0] - 3, p[1] + 3], [p[0] + 3, p[1] - 3], '#ff7ad9'); }
+      if (st.goal) { const p = floor(st.goal.x, st.goal.z); sctx.strokeStyle = st.goal.food ? '#ff4a4a' : '#5fe08a'; sctx.beginPath(); sctx.ellipse(p[0], p[1], 5, 2.5, 0, 0, Math.PI * 2); sctx.stroke(); }
+      if (res && at0) {
+        const cam = R.camera(res.cam);
+        const at = (p, onGround) => { const q = R.project(cam, [p[0], onGround ? 0 : p[1] + (st.lift || 0), p[2]]); return [at0.sx + q.x, at0.sy + q.y]; };
+        const legs = (S.lastScene && S.lastScene.legs) || [];
+        legs.forEach((lg, k) => {
+          const c = 'rgba(255,255,255,0.85)';
+          line(at(lg.hip), at(lg.knee), c); line(at(lg.knee), at(lg.foot), c);
+          dotAt(at(lg.foot), st.feetState[k] ? '#5fe08a' : '#ffa53a', 1.5);
+          const t = st.targets && st.targets[k];
+          if (t) { const p = at(t); line([p[0] - 2, p[1] - 2], [p[0] + 2, p[1] + 2], '#ffa53a'); line([p[0] - 2, p[1] + 2], [p[0] + 2, p[1] - 2], '#ffa53a'); }
+        });
+      }
+      if (!PROOF) { // proof sheets crop the stage and label each frame themselves
+        sctx.fillStyle = light ? 'rgba(30,24,40,0.85)' : 'rgba(255,255,255,0.85)'; sctx.font = '7px monospace';
+        const deg = Math.round(((st.heading * 180 / Math.PI) % 360 + 540) % 360 - 180);
+        sctx.fillText(st.state + ' · heading ' + deg + '° · turn ' + st.yawRate.toFixed(2) + ' rad/s · hunger ' + st.hunger.toFixed(2), 3, STAGE_H - 12);
+        sctx.fillText(st.gait.name + ' ' + st.gait.phase.toFixed(2) + ' duty ' + st.gait.duty.toFixed(2) + ' v ' + (st.gait.speed / S.ph.scale).toFixed(2), 3, STAGE_H - 4);
+      }
+    }
     sctx.restore();
   }
 
+  // Draw everything on the floor back to front: food, poop and the creature (or its egg).
+  function drawFloor(things) {
+    things.concat(S.foods.filter((f) => f.bites > 0).map((f) => ({ z: f.z, draw: () => drawFood(f) })))
+      .concat(S.poops.map((p) => ({ z: p.z, draw: () => drawPoop(p) })))
+      .sort((a, b) => a.z - b.z).forEach((t) => t.draw());
+  }
+  function showMood(st) {
+    if (!st) { $('mood').textContent = S.phase === 'egg' ? 'egg' : 'hatching'; $('hungerBar').style.width = '0%'; return; }
+    $('hungerBar').style.width = Math.round(st.hunger * 100) + '%';
+    $('hungerBar').classList.toggle('low', st.hungry);
+    $('mood').textContent = st.state === 'go' && st.goal && st.goal.food ? 'going to food' : STATE_WORDS[st.state] || st.state;
+  }
+
+  // The creature on its floor for one step result: habitat, food, poop, the creature, crumbs and sparkles, the hungry
+  // bubble, the debug overlay and the hunger meter.
+  function paint(st, pose, dt, t) {
+    S.hab.draw(sctx, t, S.pan);
+    let res, at0;
+    drawFloor([{ z: st.z, draw: () => { res = renderCreature(pose, camAt(st.x, st.z, st.heading)); at0 = putSprite(res, st.x, st.z); } }]);
+    const top = at0.sy + spriteTop(res);
+    onEvents(st, top);
+    drawFx(dt);
+    if (st.hungry && st.state !== 'eat' && !foodFor(S.walker)) drawBubble(at0.sx + S.sw / 2, top);
+    if (S.debug) drawDebug(res, st, at0);
+    showMood(st);
+  }
+
   function frame(dt) {
-    drawBackdrop();
-    const half = (STAGE_W / 2 - 34) * S.cam.px;
+    const t = reducedMotion || PAUSE ? 0 : performance.now() / 1000;
+    if (S.phase !== 'creature') S.hab.draw(sctx, t, S.pan);
     if (S.phase === 'egg') {
-      const t = performance.now() / 1000;
       const wob = PAUSE ? 0 : Math.sin(t * 2.2) * 0.05 * (Math.sin(t * 0.7) > 0.6 ? 1 : 0.25);
-      putSprite(renderEgg({ wobble: wob }), 0, 1);
+      drawFloor([{ z: 0, draw: () => putSprite(renderEgg({ wobble: wob }, camAt(0, 0, START_HEADING)), 0, 0) }]);
+      if (S.debug) drawDebug(null, null);
+      showMood(null);
       return;
     }
     if (S.phase === 'hatching') {
@@ -2424,30 +3263,34 @@
       const wob = Math.sin(T * 18) * 0.12 * Math.min(1, T / HATCH.wobble) * (1 - ramp(HATCH.open[0], HATCH.open[1]));
       const eggPose = { wobble: wob, crack: ramp(HATCH.crack[0], HATCH.crack[1]), open: ramp(HATCH.open[0], HATCH.open[1]) };
       const fade = 1 - ramp(HATCH.fade[0], HATCH.fade[1]);
-      if (T < HATCH.baby) putSprite(renderEgg(eggPose), 0, 1);
+      const egg = () => putSprite(renderEgg(eggPose, camAt(0, 0, START_HEADING)), 0, -0.12 * S.ph.scale, T < HATCH.baby ? 1 : fade);
+      if (T < HATCH.baby) drawFloor([{ z: 0, draw: egg }]);
       else {
-        putSprite(renderEgg(eggPose), -0.12, 1, fade);
-        const st = M.step(S.walker, dt, -half, half, { walk: false, hop: T - dt < HATCH.baby });
-        const res = renderCreature(st.pose);
-        putSprite(res, st.x, st.dir);
-        if (S.debug) drawDebug(res, st);
+        const st = M.step(S.walker, dt, S.area, null, { walk: false, hop: T - dt < HATCH.baby });
+        let res, at0;
+        drawFloor([{ z: -0.12 * S.ph.scale, draw: egg }, { z: st.z, draw: () => { res = renderCreature(st.pose, camAt(st.x, st.z, st.heading)); at0 = putSprite(res, st.x, st.z); } }]);
+        if (S.debug) drawDebug(res, st, at0);
       }
+      showMood(null);
       if (T >= HATCH.fade[1]) finishHatch();
       return;
     }
-    const st = M.step(S.walker, PAUSE ? 0 : dt, -half, half, { walk: S.walk && !PAUSE, reduced: reducedMotion || PAUSE, force: S.walk && !PAUSE ? GAIT : null });
+    const w = S.walker, moving = S.walk && !PAUSE;
+    const st = M.step(w, PAUSE ? 0 : dt, S.area, null, { walk: moving, reduced: reducedMotion || PAUSE, force: moving ? GAIT : null, food: foodFor(w) });
     const pose = PAUSE ? Object.assign({}, st.pose, { breathe: 0, blink: 0, tailSway: 0, lookYaw: 0, wingFlap: 0 }) : st.pose;
-    const res = renderCreature(pose);
-    putSprite(res, st.x, st.dir);
-    if (S.debug) drawDebug(res, st);
+    if (!reducedMotion && !PAUSE) { // parallax: the far layers slide a little against where it walks
+      const want = -(toStage(st.x, st.z).x - STAGE_W / 2) / (STAGE_W / 2) * PAN_MAX;
+      S.pan += (want - S.pan) * Math.min(1, dt * 2);
+    }
+    paint(st, pose, PAUSE ? 0 : dt, t);
   }
 
   let last = 0, acc = 0;
   function loop(now) {
     const dt = last ? (now - last) / 1000 : 0;
     last = now; acc += dt;
-    if (S.reveal != null) { S.reveal += dt * SPRITE_H / 1.6; if (S.reveal >= SPRITE_H) S.reveal = null; }
-    const animating = !PAUSE && (S.phase !== 'creature' || S.walk || reducedMotion === false) || S.reveal != null;
+    if (S.reveal != null) { S.reveal += dt * S.sh / 1.6; if (S.reveal >= S.sh) S.reveal = null; }
+    const animating = !PAUSE || S.reveal != null;
     if ((animating && acc >= 1 / SPRITE_FPS) || S.dirty) {
       frame(Math.min(0.25, acc));
       acc = 0; S.dirty = false;
@@ -2488,7 +3331,8 @@
     $('paletteRow').style.display = R.styles[S.style].pixel ? '' : 'none';
     $('shineVal').textContent = S.shine.toFixed(2);
     $('debug').classList.toggle('on', S.debug);
-    for (const b of $('backs').children) b.classList.toggle('on', b.dataset.v === S.back);
+    for (const b of $('habitats').children) b.classList.toggle('on', b.dataset.v === S.habitat);
+    for (const b of $('foods').children) b.classList.toggle('on', b.dataset.v === S.food);
     $('walk').classList.toggle('on', S.walk); $('repair').classList.toggle('on', S.repair);
   }
   function fmt(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n); }
@@ -2599,7 +3443,15 @@
   $('shine').value = S.shine;
   $('shine').addEventListener('input', () => { S.shine = Number($('shine').value); relook(); });
   $('debug').addEventListener('click', () => { S.debug = !S.debug; S.dirty = true; updatePanels(); });
-  chips('backs', Object.keys(BACKS).map((k) => [k, k]), (v) => { S.back = v; S.dirty = true; updatePanels(); });
+  chips('habitats', HAB.LIST.map((h) => [h[0], h[1]]), (v) => { setHabitat(v); updatePanels(); });
+  for (const b of $('habitats').children) b.title = HAB.LIST.find((h) => h[0] === b.dataset.v)[2];
+  // Prototype only: pick a food, then click the floor to drop it there. The game has no such button.
+  chips('foods', Object.keys(FOODS).map((k) => [k, k]), (v) => { S.food = v; updatePanels(); });
+  stage.addEventListener('click', (e) => {
+    if (S.phase !== 'creature') return;
+    const r = stage.getBoundingClientRect(), p = fromStage((e.clientX - r.left) / r.width * STAGE_W, (e.clientY - r.top) / r.height * STAGE_H);
+    dropFood(p.x, p.z, S.food);
+  });
   chips('tabs', [['genes', 'Genes'], ['numbers', 'Numbers'], ['about', 'About']], (v) => {
     for (const t of ['genes', 'numbers', 'about']) $('tab-' + t).hidden = t !== v;
     for (const b of $('tabs').children) b.classList.toggle('on', b.dataset.v === v);
@@ -2620,20 +3472,82 @@
 
   // ---------- start ----------
   S.gallery = loadGallery().filter((e) => e && e.creature && e.creature.copies);
+  if (params.get('hunger') != null) S.startHunger = Math.max(0, Math.min(1, Number(params.get('hunger')) || 0));
+  setHabitat(S.habitat);
   newEgg(params.get('seed') || undefined);
   if (params.get('temperament') != null) { S.temperament = Number(params.get('temperament')); $('temper').value = S.temperament; }
   if (params.get('level') || params.get('hatched') === '1') {
     S.phase = 'creature'; S.level = Math.max(1, Math.min(100, Number(params.get('level')) || 1)); $('level').value = S.level;
   }
   if (params.get('face')) S.expression = params.get('face');
+  if (params.get('heading') != null && S.walker) S.walker.th = Number(params.get('heading')) || 0;
   refresh();
+  if (FOODS[params.get('food')] && S.phase === 'creature') { // one snack in front of it, already landed
+    const w = S.walker, d = 1.1 * S.ph.scale;
+    dropFood(w.x + Math.cos(w.th) * d, w.z - Math.sin(w.th) * d, params.get('food'), true);
+  }
   renderGallery();
   requestAnimationFrame(loop);
 
   // ---------- self-checks (?test=1), read by test/e2e.js ----------
-  const api = { S, newEgg, hatch, finishHatch, breedPicks, refresh, renderCreature, frame };
+  const api = { S, newEgg, hatch, finishHatch, breedPicks, refresh, renderCreature, frame, dropFood, setHabitat, toStage, fromStage };
   window.CreatureHatchery = api;
   if (TEST) setTimeout(runChecks, 50);
+  if (PROOF) setTimeout(() => { try { runProof(PROOF); } catch (e) { $('result').textContent = 'error ' + (e && e.stack || e); } }, 50);
+
+  // ---------- proof sheets (?proof=...), read by tools/proof.js ----------
+  // turn: a 180° turn from walking side-on; spin: a 360° spin; eat: walk to a dropped snack, bite, swallow, be happy;
+  // habitats: the creature standing in every habitat. Frames are the real stage, stepped at the sprite clock, with the
+  // seconds and state under each. The sheet goes into #result as a PNG data URL.
+  function runProof(kind) {
+    const DT = 1 / SPRITE_FPS, shots = [];
+    const label = (st, time) => time.toFixed(2) + 's ' + st.state + ' ' + Math.round(((st.heading * 180 / Math.PI) % 360 + 540) % 360 - 180) + '°';
+    if (kind === 'habitats') {
+      for (const [key, name] of HAB.LIST) {
+        setHabitat(key);
+        const st = M.step(S.walker, 0, S.area, null, { walk: false });
+        paint(st, st.pose, 0, 2.6);
+        shots.push({ img: sctx.getImageData(0, 0, STAGE_W, STAGE_H), text: name });
+      }
+      return sheet(shots, 3, STAGE_W, STAGE_H, 2);
+    }
+    const seed = G.hashSeed(String(S.creature.seed));
+    const start = kind === 'eat' ? fromStage(STAGE_W * 0.36, Y_FAR + (Y_NEAR - Y_FAR) * 0.45) : { x: 0, z: (S.area.minZ + S.area.maxZ) / 2 };
+    const w = S.walker = M.createWalker(S.ph, seed, { x: start.x, z: start.z, heading: 0, hunger: kind === 'eat' ? 0.85 : 0.2 });
+    S.foods = []; S.poops = []; S.fx = [];
+    if (kind === 'eat') { const f = fromStage(STAGE_W * 0.66, Y_FAR + (Y_NEAR - Y_FAR) * 0.62); dropFood(f.x, f.z, params.get('food') || 'apple', true); }
+    if (kind === 'turn') M.turn(w, Math.PI);
+    if (kind === 'spin') M.spin(w, 1);
+    const p0 = toStage(start.x, start.z);
+    const cw = kind === 'eat' ? STAGE_W : Math.min(STAGE_W, Math.round(S.sw * 1.3)), ch = kind === 'eat' ? STAGE_H : Math.min(STAGE_H, S.sh + 6);
+    const cx = Math.max(0, Math.min(STAGE_W - cw, Math.round(p0.x - cw / 2))), cy = kind === 'eat' ? 0 : Math.max(0, Math.min(STAGE_H - ch, Math.round(p0.y - S.sg - 3)));
+    let time = 0, end = null;
+    for (let i = 0; i < SPRITE_FPS * 40 && (end == null || time < end); i++) {
+      const st = M.step(w, i ? DT : 0, S.area, null, { walk: true, food: foodFor(w) });
+      if (kind !== 'eat' && i > 0 && w.mode !== 'turn') w.pause = 1; // hold still once the turn is done
+      paint(st, st.pose, DT, time);
+      shots.push({ img: sctx.getImageData(cx, cy, cw, ch), text: label(st, time), st });
+      if (end == null && (kind === 'eat' ? st.events.some((e) => e.type === 'happy') : i > 0 && w.mode !== 'turn')) end = time + (kind === 'eat' ? 1 : 0.4);
+      time += DT;
+    }
+    const n = kind === 'eat' ? 16 : 18, pick = [];
+    for (let i = 0; i < n; i++) pick.push(shots[Math.round(i * (shots.length - 1) / (n - 1))]);
+    return sheet(pick, kind === 'eat' ? 4 : 6, cw, ch, kind === 'eat' ? 1 : 2);
+  }
+  function sheet(shots, cols, cw, ch, scale) {
+    const LABEL = 12, rows = Math.ceil(shots.length / cols);
+    const out = document.createElement('canvas'); out.width = cols * cw * scale; out.height = rows * (ch * scale + LABEL);
+    const o = out.getContext('2d'); o.imageSmoothingEnabled = false;
+    o.fillStyle = '#1a1826'; o.fillRect(0, 0, out.width, out.height);
+    const tmp = document.createElement('canvas'); tmp.width = cw; tmp.height = ch;
+    shots.forEach((s, i) => {
+      const x = (i % cols) * cw * scale, y = Math.floor(i / cols) * (ch * scale + LABEL);
+      tmp.getContext('2d').putImageData(s.img, 0, 0);
+      o.drawImage(tmp, x, y, cw * scale, ch * scale);
+      o.fillStyle = '#ece6f2'; o.font = '10px monospace'; o.fillText(s.text, x + 3, y + ch * scale + 9);
+    });
+    $('result').textContent = out.toDataURL('image/png');
+  }
 
   function runChecks() {
     const checks = [];
@@ -2694,6 +3608,36 @@
       check('every look draws creature and egg', blank.length === 0 && seen.size === R.looks.length, { blank, looks: R.looks.length, distinct: seen.size });
       check('looks leave the genome alone', G.fingerprint(S.creature) === fpBefore);
       $('looks').children[0].click();
+      check('three looks: Original, Cel, Pixel', R.looks.join() === 'gochi,cel,pixel', R.looks);
+      // The habitat is the bigger floor, and every habitat draws something different.
+      check('stage is 384 x 216', stage.width === STAGE_W && stage.height === STAGE_H && STAGE_W === 384 && STAGE_H === 216);
+      const stageHash = () => hash(sctx.getImageData(0, 0, STAGE_W, STAGE_H).data);
+      const habs = new Set();
+      for (const b of $('habitats').children) { b.click(); frame(0.1); habs.add(stageHash()); }
+      check('every habitat draws differently', habs.size === HAB.LIST.length && HAB.LIST.length >= 4, { habitats: HAB.LIST.length, distinct: habs.size });
+      $('habitats').children[0].click();
+      // Turning shows other sides: the creature seen from its heading looks different side-on and from the front.
+      const side = hash(renderCreature({}, spriteCam(0, 1)).rgba), front = hash(renderCreature({}, spriteCam(Math.PI / 2, 1)).rgba);
+      check('heading turns the view', side !== front);
+      // The floor maps both ways, and the back of the floor draws smaller.
+      const back = fromStage(STAGE_W / 2 + 40, Y_FAR + 5), q = toStage(back.x, back.z);
+      check('floor maps both ways', Math.abs(q.x - STAGE_W / 2 - 40) < 0.01 && Math.abs(q.y - Y_FAR - 5) < 0.01 && q.k < toStage(0, S.zNear).k);
+      // Food (prototype only): dropped by a click, eaten in bites, then it is gone and the creature is happy.
+      check('food drop is labelled prototype only', /prototype only/i.test($('foodRow').textContent));
+      const w = S.walker;
+      w.hunger = 0.9;
+      const r = stage.getBoundingClientRect();
+      const spot = toStage(w.x + 1.2 * S.ph.scale, w.z);
+      stage.dispatchEvent(new MouseEvent('click', { clientX: r.left + spot.x / STAGE_W * r.width, clientY: r.top + spot.y / STAGE_H * r.height, bubbles: true }));
+      const meal = S.foods[S.foods.length - 1];
+      check('a click drops food on the floor', !!meal && meal.bites > 0, meal && { x: meal.x, z: meal.z });
+      let ate = false, bites = 0, hungerBefore = w.hunger;
+      for (let i = 0; i < 60 * 40 && !ate; i++) {
+        meal.age = DROP_TIME;
+        const st = M.step(w, 1 / 60, S.area, null, { walk: true, food: foodFor(w) });
+        for (const e of st.events) { if (e.type === 'bite') bites++; if (e.type === 'happy') ate = true; }
+      }
+      check('it walks over, bites, swallows and is happy', ate && meal.gone && bites === FOODS[meal.kind].bites && w.hunger < hungerBefore, { ate, bites, gone: meal.gone });
       // The walk debug overlay draws over the stage without errors.
       S.debug = true; frame(0.1); S.debug = false;
       check('walk debug draws', true);

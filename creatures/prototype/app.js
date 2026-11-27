@@ -1,25 +1,45 @@
 /* Creature Hatchery: the page. Eggs, hatching, the temperament slider, a level preview, gene sliders, the genome as a
-   list of numbers, breeding, and a collection. Rendering and motion live in render.js and motion.js.
+   list of numbers, breeding, and a collection, on a habitat floor the creature walks, turns and eats on. Rendering,
+   motion and the habitats live in render.js, motion.js and habitats.js.
    URL: ?seed=<s> starts from that egg; &level=<1-100> &temperament=<-1..1> &hatched=1 show the creature; &pause=1 holds
-   still (for screenshots); &view=inside|flat|pieces; &style=<look> (gochi, matte, cel, pixel, chunky, ink, sticker);
-   &palette=gameboy|pico8|earth (pixel looks); &shine=<0-1>; &debug=1 draws the walk (planted feet, swing targets, legs,
-   ground line, gait); &gait=walk|hurry keeps it walking; &back=night|paper|peach|clear; &test=1 runs the self-checks. */
+   still (for screenshots); &view=inside|flat|pieces; &style=gochi|cel|pixel; &palette=gameboy|pico8|earth (pixel look);
+   &shine=<0-1>; &habitat=grass|flat|meadow|cave|wildwood|studio; &debug=1 draws the walk (heading and facing, turn
+   pivot, goal, floor edges, planted feet, swing targets, legs, gait); &gait=walk|hurry keeps it walking;
+   &heading=<radians> which way it faces; &hunger=<0-1>; &food=berry|seed|leaf|apple|fish puts one down in front of it;
+   &test=1 runs the self-checks.
+   Dropping food by clicking the stage is for this prototype page only. In the game food comes from tokens of real
+   Claude Code use, and levels only from real use; there are no buttons that add either. */
 (function () {
   'use strict';
-  const G = window.CreatureGenome, R = window.CreatureRender, M = window.CreatureMotion;
+  const G = window.CreatureGenome, R = window.CreatureRender, M = window.CreatureMotion, HAB = window.CreatureHabitats;
   const $ = (id) => document.getElementById(id);
   const params = new URLSearchParams(location.search);
   const TEST = params.get('test') === '1';
-  const PAUSE = params.get('pause') === '1' || TEST;
+  const PROOF = params.get('proof');               // turn|spin|eat|habitats: draw a proof sheet for tools/proof.js
+  const PAUSE = params.get('pause') === '1' || TEST || !!PROOF;
   const GAIT = ['walk', 'hurry'].includes(params.get('gait')) ? params.get('gait') : null; // keep walking (or hurrying)
   const reducedMotion = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 
-  const STAGE_W = 240, STAGE_H = 140, GROUND = 118;      // stage grid (logical pixels) and the ground row
-  const SPRITE_W = 150, SPRITE_H = 120, SPRITE_GROUND = 100;
-  const SPRITE_FPS = 12;                                   // the video's creatures animate on a slow pixel-art clock
+  const STAGE_W = 384, STAGE_H = 216;   // stage grid (logical pixels)
+  const Y_FAR = 112, Y_NEAR = 204;      // rows of the floor's far and near edges
+  const K_FAR = 0.72;                   // things at the far edge are drawn this much smaller
+  const PITCH = 0.45;                   // camera tilt; the world camera looks across the floor (screen right is +x)
+  const FIT_W = 104, FIT_H = 84;        // a grown-up fills about this box at the front of the floor
+  const MIN_PX = 0.016;                 // world units per pixel, at least, so small adults stay small
+  const EDGE_X = 48;                    // pixels kept clear at each side of the floor
+  const PAN_MAX = 6;                    // parallax: the far layers slide up to this many pixels as it walks
+  const START_HEADING = -0.8;           // facing a little towards us: the 3/4 view
+  const SPRITE_FPS = 12;                // the video's creatures animate on a slow pixel-art clock
   const HATCH = { wobble: 1.2, crack: [0.5, 1.7], open: [1.7, 2.3], baby: 2.1, fade: [2.4, 3.2] };
   const GALLERY_KEY = 'creature-hatchery-v1', GALLERY_MAX = 40;
-  const BACKS = { night: [42, 38, 56], paper: [240, 232, 216], peach: [251, 214, 190], clear: null };
+  const HABITAT_ALIAS = { night: 'cave', paper: 'flat', peach: 'studio', clear: 'studio' }; // the old ?back= names
+  // Food for the prototype's drop-a-snack click: bites to finish it, how much hunger it takes away, size in pixels.
+  const FOODS = {
+    berry: { bites: 2, value: 0.2, size: 4 }, seed: { bites: 1, value: 0.1, size: 3 }, leaf: { bites: 3, value: 0.25, size: 6 },
+    apple: { bites: 4, value: 0.4, size: 6 }, fish: { bites: 4, value: 0.45, size: 8 },
+  };
+  const MAX_FOOD = 6, DROP_TIME = 0.45, DROP_HEIGHT = 46, POOP_LIFE = 9, SPARKLE_LIFE = 1.3, CRUMB_LIFE = 0.5;
+  const STATE_WORDS = { idle: 'idle', go: 'walking', turn: 'turning', spin: 'spinning!', eat: 'eating', hungry: 'hungry' };
   const FACES = ['neutral', 'happy', 'angry', 'sleepy', 'surprised'];
   const PALETTE_NAMES = { gameboy: 'Game Boy', pico8: 'PICO-8', earth: 'warm earth' };
   const VIEWS = [['gochi', 'Finished'], ['pieces', 'Melted pieces'], ['flat', 'One colour'], ['inside', 'Inside?']];
@@ -32,13 +52,15 @@
   ];
   const INTEGER_GENES = new Set(['legs.pairs', 'horns.count', 'ears.kind', 'decor.kind', 'pattern.kind', 'wings.fingers']);
 
+  const habitatParam = params.get('habitat') || params.get('back');
   const S = {
     creature: null, overrides: {}, special: { body: 1, head: 1 }, temperament: 0, level: 1, expression: 'neutral',
-    repair: true, view: params.get('view') || 'gochi', walk: !PAUSE, back: params.get('back') || 'night',
+    repair: true, view: params.get('view') || 'gochi', walk: !PAUSE,
+    habitat: HAB.keys.includes(habitatParam) ? habitatParam : HABITAT_ALIAS[habitatParam] || 'grass', hab: null,
     style: R.looks.includes(params.get('style')) ? params.get('style') : 'gochi',
     palette: R.PALETTES[params.get('palette')] ? params.get('palette') : 'own',
     shine: params.get('shine') != null ? Math.max(0, Math.min(1, Number(params.get('shine')) || 0)) : 1,
-    debug: params.get('debug') === '1',
+    debug: params.get('debug') === '1', food: 'berry', foods: [], poops: [], fx: [], pan: 0,
     phase: 'egg', hatchT: 0, gallery: [], picks: [], current: -1, reveal: null, cam: null, ph: null, walker: null,
   };
 
@@ -67,19 +89,57 @@
   function phenotypeAt(level) {
     return G.express(S.creature, { overrides: overridesFor(S.creature), temperament: S.temperament, level, repair: S.repair, expression: S.expression });
   }
-  // Re-derive the body numbers and the camera. The camera is framed on the adult so growing shows as getting bigger.
+  // ---------- the floor ----------
+  // The stage shows a floor from a little above: z runs from the back (S.zFar, row Y_FAR) to the front (S.zNear, row
+  // Y_NEAR), x across, and things further back are drawn smaller (k). The creature is rendered with a camera turned by
+  // its heading, so turning shows it side-on, from the front, from behind and in between.
+  const depthOf = (z) => (z - S.zFar) / (S.zNear - S.zFar);
+  function toStage(x, z, y) {
+    const t = depthOf(z), k = K_FAR + (1 - K_FAR) * t;
+    return { x: STAGE_W / 2 + x * k / S.px, y: Y_FAR + (Y_NEAR - Y_FAR) * t - (y || 0) * Math.cos(PITCH) * k / S.px, k };
+  }
+  function fromStage(sx, sy) {
+    const t = Math.max(0, Math.min(1, (sy - Y_FAR) / (Y_NEAR - Y_FAR))), k = K_FAR + (1 - K_FAR) * t;
+    return { x: (sx - STAGE_W / 2) * S.px / k, z: S.zFar + t * (S.zNear - S.zFar) };
+  }
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  // The sprite grid fits the grown-up from every side, with room above for hops and flying.
+  function spriteBox(scene, px) {
+    let half = 0, top = 0, bottom = 0;
+    const pts = scene.prims.map((p) => p.bs);
+    if (scene.shadow) pts.push([scene.shadow.cx, 0, 0, Math.max(scene.shadow.rx, scene.shadow.rz)]);
+    for (let i = 0; i < 8; i++) {
+      const c = R.camera({ w: 1, h: 1, px, yaw: i * Math.PI / 4, pitch: PITCH, center: [0, 0, 0] });
+      for (const b of pts) {
+        const rx = dot(b, c.r), uy = dot(b, c.u);
+        half = Math.max(half, Math.abs(rx) + b[3]); top = Math.max(top, uy + b[3]); bottom = Math.max(bottom, b[3] - uy);
+      }
+    }
+    const w = Math.ceil(2 * half * 1.06 / px) + 4, ground = Math.ceil((top * 1.06 + 0.4 * (top + bottom)) / px) + 2;
+    return { w: w + (w % 2), h: ground + Math.ceil(bottom * 1.06 / px) + 3, ground };
+  }
+  // A sprite camera seeing the body from `yaw` (body frame) at depth scale k, with the body's origin on the sprite's
+  // ground row, in the middle.
+  function spriteCam(yaw, k) {
+    const px = S.px / k, c = R.camera({ w: S.sw, h: S.sh, px, yaw, pitch: PITCH, center: [0, 0, 0] }), off = (S.sg - S.sh / 2) * px;
+    return { w: S.sw, h: S.sh, px, yaw, pitch: PITCH, center: [c.u[0] * off, c.u[1] * off, c.u[2] * off] };
+  }
+  // Re-derive the body numbers, the scale and the floor. The scale is set by the adult so growing shows as getting bigger.
   function refresh() {
     S.ph = phenotypeAt(S.level);
     const adult = R.creatureScene(phenotypeAt(G.LEVEL_MAX), {});
-    const fit = R.frameCamera(adult, SPRITE_W, SPRITE_H, { fit: true });
-    const egg = R.eggScene(G.eggLook(S.creature), {});
-    const px = Math.max(fit.px, 0.0125);
-    S.cam = R.frameCamera(adult, SPRITE_W, SPRITE_H, { px, groundRow: SPRITE_GROUND });
-    // Keep the camera's horizontal centre on the body origin so walking doesn't jitter.
-    S.eggCam = R.frameCamera(egg, SPRITE_W, SPRITE_H, { px, groundRow: SPRITE_GROUND });
-    const x0 = S.walker ? S.walker.x : 0, dir = S.walker ? S.walker.dir : 1;
-    S.walker = M.createWalker(S.ph, G.hashSeed(String(S.creature.seed)), { x: x0 });
-    S.walker.dir = dir;
+    S.px = Math.max(R.frameCamera(adult, FIT_W, FIT_H, { fit: true }).px, MIN_PX);
+    const bx = spriteBox(adult, S.px);
+    S.sw = bx.w; S.sh = bx.h; S.sg = bx.ground;
+    sprite.width = S.sw; sprite.height = S.sh;
+    const depth = (Y_NEAR - Y_FAR) * S.px / Math.sin(PITCH) / ((1 + K_FAR) / 2);
+    S.zFar = -depth / 2; S.zNear = depth / 2;
+    S.area = { minX: -(STAGE_W / 2 - EDGE_X) * S.px, maxX: (STAGE_W / 2 - EDGE_X) * S.px, minZ: S.zFar + 0.06 * depth, maxZ: S.zNear - 0.14 * depth };
+    const w0 = S.walker;
+    S.cam = spriteCam(-(w0 ? w0.th : START_HEADING), 1); // the still view (self-checks, the first frame)
+    S.walker = M.createWalker(S.ph, G.hashSeed(String(S.creature.seed)), {
+      x: w0 ? w0.x : 0, z: w0 ? w0.z : 0, heading: w0 ? w0.th : START_HEADING, hunger: w0 ? w0.hunger : S.startHunger,
+    });
     S.lastFrame = 0;
     S.dirty = true;
     updatePanels();
@@ -94,7 +154,7 @@
     S.level = opts.level || 1;
     S.phase = opts.phase || 'egg';
     S.hatchT = 0;
-    S.walker = null;
+    S.walker = null; S.foods = []; S.poops = []; S.fx = [];
     $('seed').value = c.parents ? '' : String(c.seed);
     $('temper').value = S.temperament;
     $('level').value = S.level;
@@ -142,89 +202,237 @@
   // ---------- drawing ----------
   const stage = $('stage'), sctx = stage.getContext('2d');
   sctx.imageSmoothingEnabled = false;
-  const sprite = document.createElement('canvas'); sprite.width = SPRITE_W; sprite.height = SPRITE_H;
+  const sprite = document.createElement('canvas');
   const spctx = sprite.getContext('2d');
 
-  function drawBackdrop() {
-    const b = BACKS[S.back];
-    if (!b) { // a checkerboard shows the sprite really is see-through
-      for (let y = 0; y < STAGE_H; y += 8) for (let x = 0; x < STAGE_W; x += 8) {
-        sctx.fillStyle = ((x + y) / 8) % 2 ? '#d9d4de' : '#f2eef5'; sctx.fillRect(x, y, 8, 8);
-      }
-      return;
-    }
-    sctx.fillStyle = 'rgb(' + b.join(',') + ')'; sctx.fillRect(0, 0, STAGE_W, STAGE_H);
-    // A faint floor band, like the video's flat colour cards
-    sctx.fillStyle = 'rgba(0,0,0,0.06)'; sctx.fillRect(0, GROUND - 4, STAGE_W, STAGE_H - GROUND + 4);
+  function setHabitat(key) {
+    S.habitat = key;
+    S.hab = HAB.create(key, { W: STAGE_W, H: STAGE_H, yFar: Y_FAR, yNear: Y_NEAR });
+    $('stageBox').classList.toggle('dark', S.hab.dark);
+    S.dirty = true;
   }
-  function putSprite(res, worldX, dir, alpha) {
+  // Paint a render onto the stage with the body's origin standing on the floor at (x, z). Returns the sprite's corner.
+  function putSprite(res, x, z, alpha) {
     const img = spctx.createImageData(res.w, res.h);
     const rows = S.reveal != null ? Math.floor(S.reveal) : res.h;
     if (rows >= res.h) img.data.set(res.rgba);
     else img.data.set(res.rgba.subarray(0, rows * res.w * 4));
-    spctx.clearRect(0, 0, SPRITE_W, SPRITE_H);
+    spctx.clearRect(0, 0, sprite.width, sprite.height);
     spctx.putImageData(img, 0, 0);
     if (S.reveal != null && rows < res.h) { spctx.fillStyle = '#f6d34a'; spctx.fillRect(0, rows, res.w, 1); }
-    const cam = R.camera(res.cam), o = R.project(cam, [0, 0, 0]);
-    const sx = Math.round(STAGE_W / 2 + worldX / res.cam.px), sy = GROUND - Math.round(o.y);
+    const p = toStage(x, z), sx = Math.round(p.x) - S.sw / 2, sy = Math.round(p.y) - S.sg;
     sctx.save();
     sctx.globalAlpha = alpha == null ? 1 : alpha;
-    if (dir < 0) { sctx.translate(sx + Math.round(o.x), sy); sctx.scale(-1, 1); sctx.drawImage(sprite, 0, 0); }
-    else sctx.drawImage(sprite, sx - Math.round(o.x), sy);
+    sctx.drawImage(sprite, sx, sy);
     sctx.restore();
+    return { sx, sy };
   }
   // The finished view draws in the chosen look; the other views are the debug looks. The look never touches the genome.
   function lookOpts() {
     return { style: S.view === 'gochi' ? S.style : S.view, shine: S.shine, palette: S.palette === 'own' ? null : S.palette };
   }
-  function renderCreature(pose) {
+  function renderCreature(pose, cam) {
     const sc = R.creatureScene(S.ph, pose);
     S.lastScene = sc;
-    return R.render(sc, S.cam, lookOpts());
+    return R.render(sc, cam || S.cam, lookOpts());
   }
-  function renderEgg(pose) {
-    return R.render(R.eggScene(G.eggLook(S.creature), pose), S.eggCam, lookOpts());
+  function renderEgg(pose, cam) {
+    return R.render(R.eggScene(G.eggLook(S.creature), pose), cam || S.cam, lookOpts());
   }
-  // Walk debug: the ground contact lines (one per row of feet), each leg hip-knee-foot, planted feet (green), feet in swing (orange) and where
-  // they will land (cross), and the gait's name and phase. Points are in the body's frame, placed like putSprite.
-  function drawDebug(res, st) {
-    const cam = R.camera(res.cam), o = R.project(cam, [0, 0, 0]);
-    const sx = Math.round(STAGE_W / 2 + st.x / res.cam.px), sy = GROUND - Math.round(o.y);
-    const at = (p, onGround) => {
-      const q = R.project(cam, [p[0], onGround ? 0 : p[1] + (st.lift || 0), p[2]]);
-      return [st.dir < 0 ? sx + Math.round(o.x) - q.x : sx - Math.round(o.x) + q.x, sy + q.y];
-    };
-    const line = (a, b, colour) => { sctx.strokeStyle = colour; sctx.beginPath(); sctx.moveTo(a[0], a[1]); sctx.lineTo(b[0], b[1]); sctx.stroke(); };
-    const dot = (p, colour, r) => { sctx.fillStyle = colour; sctx.fillRect(Math.round(p[0] - r), Math.round(p[1] - r), r * 2, r * 2); };
-    sctx.save();
-    sctx.lineWidth = 0.5;
-    const legs = (S.lastScene && S.lastScene.legs) || [];
-    for (const side of [-1, 1]) {
-      const row = legs.filter((lg) => Math.sign(lg.foot[2]) === side);
-      if (!row.length) continue;
-      const xs = row.map((lg) => lg.foot[0]), z = row[0].foot[2], reach = row[0].hip[1];
-      line(at([Math.min(...xs) - reach, 0, z], true), at([Math.max(...xs) + reach, 0, z], true), 'rgba(120,200,255,0.75)');
+  // The camera for the creature where it stands: turned by its heading (the world camera looks along -z, so the body
+  // is seen from yaw = -heading) and scaled by how far back it is.
+  const camAt = (x, z, heading) => spriteCam(-heading, toStage(x, z).k);
+
+  // ---------- food, poop and sparkles (food drops are for this prototype page only) ----------
+  function dropFood(x, z, kind, landed) {
+    const f = FOODS[kind] || FOODS.berry;
+    if (S.foods.filter((o) => !o.gone).length >= MAX_FOOD) S.foods.shift();
+    const a = S.area;
+    const food = { kind: FOODS[kind] ? kind : 'berry', x: Math.max(a.minX, Math.min(a.maxX, x)), z: Math.max(a.minZ, Math.min(a.maxZ, z)),
+      bites: f.bites, maxBites: f.bites, value: f.value, age: landed ? DROP_TIME : 0 };
+    S.foods.push(food);
+    S.dirty = true;
+    return food;
+  }
+  // The meal it is on, else the nearest food that has landed.
+  function foodFor(w) {
+    if (w.eat && w.eat.food && !w.eat.food.gone) return w.eat.food;
+    if (w.goal && w.goal.food && !w.goal.food.gone && w.goal.food.bites > 0) return w.goal.food;
+    let best = null, bd = Infinity;
+    for (const f of S.foods) {
+      if (f.gone || f.bites <= 0 || f.age < DROP_TIME) continue;
+      const d = Math.hypot(f.x - w.x, f.z - w.z);
+      if (d < bd) { bd = d; best = f; }
     }
-    if (!legs.length) line([0, GROUND + 0.5], [STAGE_W, GROUND + 0.5], 'rgba(120,200,255,0.75)');
-    legs.forEach((lg, k) => {
-      const c = lg.hip[2] < 0 ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.9)';
-      line(at(lg.hip), at(lg.knee), c); line(at(lg.knee), at(lg.foot), c);
-      dot(at(lg.foot), st.feetState[k] ? '#5fe08a' : '#ffa53a', 1.5);
-      const t = st.targets && st.targets[k];
-      if (t) { const p = at(t); line([p[0] - 2, p[1] - 2], [p[0] + 2, p[1] + 2], '#ffa53a'); line([p[0] - 2, p[1] + 2], [p[0] + 2, p[1] - 2], '#ffa53a'); }
-    });
-    sctx.fillStyle = 'rgba(255,255,255,0.85)'; sctx.font = '7px monospace';
-    sctx.fillText(st.gait.name + ' ' + st.gait.phase.toFixed(2) + ' duty ' + st.gait.duty.toFixed(2) + ' v ' + (st.gait.speed / S.ph.scale).toFixed(2), 3, STAGE_H - 4);
+    return best;
+  }
+  function drawFood(f) {
+    const def = FOODS[f.kind], u = Math.min(1, f.age / DROP_TIME), up = (1 - u * u) * DROP_HEIGHT;
+    const p = toStage(f.x, f.z), x = Math.round(p.x), y = Math.round(p.y);
+    const s = def.size * p.k * (0.45 + 0.55 * f.bites / f.maxBites);
+    sctx.fillStyle = 'rgba(0,0,0,0.18)'; sctx.beginPath(); sctx.ellipse(x, y, s * 1.1, s * 0.4, 0, 0, Math.PI * 2); sctx.fill();
+    const cy = Math.round(y - s * 0.7 - up * p.k);
+    const disc = (cx, yy, r, col, ry) => { sctx.fillStyle = col; sctx.beginPath(); sctx.ellipse(Math.round(cx), Math.round(yy), Math.max(0.8, r), Math.max(0.8, ry || r), 0, 0, Math.PI * 2); sctx.fill(); };
+    if (f.kind === 'berry') {
+      disc(x - s * 0.35, cy, s * 0.6, '#b8284a'); disc(x + s * 0.35, cy + s * 0.1, s * 0.6, '#d23a5c'); disc(x, cy - s * 0.35, s * 0.55, '#c9304f');
+      disc(x - s * 0.1, cy - s * 0.5, s * 0.18, '#ffd0dc'); disc(x + s * 0.2, cy - s * 0.95, s * 0.3, '#5aa845', s * 0.18);
+    } else if (f.kind === 'seed') {
+      disc(x, cy, s * 0.75, '#d9b27a', s * 0.5); disc(x - s * 0.2, cy - s * 0.15, s * 0.25, '#f2d9a8', s * 0.15);
+      sctx.fillStyle = '#9a7444'; sctx.fillRect(Math.round(x - s * 0.5), Math.round(cy), Math.max(1, Math.round(s)), 1);
+    } else if (f.kind === 'leaf') {
+      disc(x, cy + s * 0.2, s, '#6cbf4a', s * 0.45); sctx.fillStyle = '#3f8f2c'; sctx.fillRect(Math.round(x - s * 0.9), Math.round(cy + s * 0.2), Math.max(1, Math.round(s * 1.8)), 1);
+      disc(x - s * 0.3, cy, s * 0.3, '#9ad874', s * 0.12);
+    } else if (f.kind === 'apple') {
+      disc(x, cy, s * 0.85, '#d83b30'); disc(x - s * 0.3, cy - s * 0.3, s * 0.25, '#ff9a8a');
+      sctx.fillStyle = '#5a3a20'; sctx.fillRect(Math.round(x), Math.round(cy - s * 1.15), 1, Math.max(1, Math.round(s * 0.4)));
+      disc(x + s * 0.3, cy - s * 0.95, s * 0.3, '#5aa845', s * 0.15);
+    } else { // fish
+      disc(x - s * 0.1, cy, s * 0.8, '#8fb3c9', s * 0.38); disc(x - s * 0.1, cy + s * 0.12, s * 0.6, '#d8e6ee', s * 0.18);
+      sctx.fillStyle = '#6f93aa'; sctx.beginPath(); sctx.moveTo(x + s * 0.6, cy); sctx.lineTo(x + s * 1.1, cy - s * 0.4); sctx.lineTo(x + s * 1.1, cy + s * 0.4); sctx.fill();
+      sctx.fillStyle = '#1c1c24'; sctx.fillRect(Math.round(x - s * 0.6), Math.round(cy - s * 0.1), 1, 1);
+    }
+  }
+  // A small, cute poop: a brown swirl with a shine and two dots for eyes. It fades away.
+  function drawPoop(p) {
+    const q = toStage(p.x, p.z), x = Math.round(q.x), y = Math.round(q.y), k = q.k * 1.2;
+    sctx.save(); sctx.globalAlpha = Math.min(1, (POOP_LIFE - p.age) / 2);
+    const tier = (yy, w, col) => { sctx.fillStyle = col; sctx.beginPath(); sctx.ellipse(x, Math.round(yy), Math.max(1, w), Math.max(1, w * 0.55), 0, 0, Math.PI * 2); sctx.fill(); };
+    tier(y - 1.5 * k, 4 * k, '#8a5a3c'); tier(y - 4 * k, 3 * k, '#9a6848'); tier(y - 6 * k, 1.8 * k, '#a87452');
+    sctx.fillStyle = '#ffffff'; sctx.fillRect(Math.round(x - 2 * k), Math.round(y - 5 * k), 1, 1);
+    sctx.fillStyle = '#2a1d16'; sctx.fillRect(Math.round(x - 1.4 * k), Math.round(y - 3 * k), 1, 1); sctx.fillRect(Math.round(x + 1.2 * k), Math.round(y - 3 * k), 1, 1);
+    sctx.restore();
+  }
+  function onEvents(st, top) {
+    for (const e of st.events) {
+      if (e.type === 'bite') {
+        const f = S.walker.eat && S.walker.eat.food; if (!f) continue;
+        const p = toStage(f.x, f.z);
+        for (let i = 0; i < 5; i++) S.fx.push({ kind: 'crumb', x: p.x, y: p.y - 3, vx: (Math.random() - 0.5) * 30, vy: -20 - Math.random() * 20, age: 0, life: CRUMB_LIFE, col: f.kind === 'leaf' ? '#6cbf4a' : f.kind === 'fish' ? '#d8e6ee' : f.kind === 'seed' ? '#d9b27a' : '#e05a6a' });
+      } else if (e.type === 'happy') {
+        const p = toStage(st.x, st.z);
+        for (let i = 0; i < 7; i++) S.fx.push({ kind: 'spark', x: p.x + (Math.random() - 0.5) * S.sw * 0.6 * p.k, y: top + 6 + Math.random() * 18, vx: 0, vy: -10 - Math.random() * 10, age: -i * 0.08, life: SPARKLE_LIFE, col: i % 2 ? '#ffe36a' : '#ffffff' });
+      } else if (e.type === 'poop') S.poops.push({ x: e.x, z: e.z, age: 0 });
+    }
+  }
+  function drawFx(dt) {
+    for (const f of S.fx) {
+      f.age += dt;
+      if (f.age < 0) continue;
+      f.x += f.vx * dt; f.y += f.vy * dt; if (f.kind === 'crumb') f.vy += 120 * dt;
+      const a = Math.max(0, 1 - f.age / f.life), x = Math.round(f.x), y = Math.round(f.y);
+      sctx.globalAlpha = a; sctx.fillStyle = f.col;
+      if (f.kind === 'spark') { const r = f.age < f.life * 0.5 ? 2 : 1; sctx.fillRect(x - r, y, 2 * r + 1, 1); sctx.fillRect(x, y - r, 1, 2 * r + 1); }
+      else sctx.fillRect(x, y, 1, 1);
+    }
+    sctx.globalAlpha = 1;
+    S.fx = S.fx.filter((f) => f.age < f.life);
+    for (const p of S.poops) p.age += dt;
+    S.poops = S.poops.filter((p) => p.age < POOP_LIFE);
+    S.foods = S.foods.filter((f) => !f.gone);
+    for (const f of S.foods) f.age += dt;
+  }
+  // The highest row the body reaches in this frame's sprite (for the thought bubble and sparkles).
+  function spriteTop(res) {
+    for (let y = 0; y < res.h; y++) for (let x = 0; x < res.w; x++) if (res.mask[y * res.w + x] === 1) return y;
+    return S.sg;
+  }
+  // Hungry and nothing to eat: a thought bubble with a little berry in it.
+  function drawBubble(cx, top) {
+    const x = Math.round(cx + 10), y = Math.round(top - 16);
+    sctx.fillStyle = 'rgba(255,255,255,0.92)';
+    sctx.beginPath(); sctx.ellipse(x, y, 9, 7, 0, 0, Math.PI * 2); sctx.fill();
+    sctx.fillRect(x - 7, y + 8, 2, 2); sctx.fillRect(x - 10, y + 12, 1, 1);
+    sctx.fillStyle = '#c9304f'; sctx.beginPath(); sctx.arc(x - 1, y + 1, 2.5, 0, Math.PI * 2); sctx.arc(x + 2, y + 1, 2.5, 0, Math.PI * 2); sctx.fill();
+    sctx.fillStyle = '#5aa845'; sctx.fillRect(x, y - 3, 3, 1);
+  }
+
+  // Walk debug. On the floor: its edges, the heading (yellow arrow), where the head faces (cyan), the turn rate (an arc),
+  // the turn's pivot (cross) and the goal (circle; red for food). On the body: each leg hip-knee-foot, planted feet
+  // (green), feet in swing (orange) and where they will land (cross). Text: state, heading, turn rate, hunger, gait.
+  function drawDebug(res, st, at0) {
+    const light = !S.hab.dark;
+    const line = (a, b, colour) => { sctx.strokeStyle = colour; sctx.beginPath(); sctx.moveTo(a[0], a[1]); sctx.lineTo(b[0], b[1]); sctx.stroke(); };
+    const dotAt = (p, colour, r) => { sctx.fillStyle = colour; sctx.fillRect(Math.round(p[0] - r), Math.round(p[1] - r), r * 2, r * 2); };
+    const floor = (x, z) => { const p = toStage(x, z); return [p.x, p.y]; };
+    sctx.save();
+    sctx.lineWidth = 0.6;
+    const a = S.area;
+    sctx.strokeStyle = light ? 'rgba(40,80,140,0.55)' : 'rgba(120,200,255,0.6)';
+    sctx.beginPath(); [[a.minX, a.minZ], [a.maxX, a.minZ], [a.maxX, a.maxZ], [a.minX, a.maxZ]].forEach((c, i) => { const p = floor(c[0], c[1]); if (i) sctx.lineTo(p[0], p[1]); else sctx.moveTo(p[0], p[1]); }); sctx.closePath(); sctx.stroke();
+    if (st) {
+      const o = floor(st.x, st.z), L = 0.9 * S.ph.scale;
+      const arrow = (ang, colour) => {
+        const tip = floor(st.x + Math.cos(ang) * L, st.z - Math.sin(ang) * L);
+        line(o, tip, colour);
+        const back = floor(st.x + Math.cos(ang) * L * 0.8, st.z - Math.sin(ang) * L * 0.8), dx = tip[0] - back[0], dy = tip[1] - back[1];
+        line(tip, [back[0] - dy * 0.6, back[1] + dx * 0.6], colour); line(tip, [back[0] + dy * 0.6, back[1] - dx * 0.6], colour);
+      };
+      arrow(st.heading, '#ffd23a');
+      arrow(st.heading + ((st.pose && st.pose.lookYaw) || 0), '#3fd8ff');
+      if (Math.abs(st.yawRate) > 0.02) { // the turn rate: an arc round the body, longer for faster
+        sctx.strokeStyle = '#ff7ad9'; sctx.beginPath();
+        for (let i = 0; i <= 12; i++) { const ang = st.heading + Math.sign(st.yawRate) * Math.min(Math.PI, Math.abs(st.yawRate) * 0.6) * i / 12, p = floor(st.x + Math.cos(ang) * L * 0.55, st.z - Math.sin(ang) * L * 0.55); if (i) sctx.lineTo(p[0], p[1]); else sctx.moveTo(p[0], p[1]); }
+        sctx.stroke();
+      }
+      if (st.pivot) { const p = floor(st.pivot[0], st.pivot[1]); line([p[0] - 3, p[1] - 3], [p[0] + 3, p[1] + 3], '#ff7ad9'); line([p[0] - 3, p[1] + 3], [p[0] + 3, p[1] - 3], '#ff7ad9'); }
+      if (st.goal) { const p = floor(st.goal.x, st.goal.z); sctx.strokeStyle = st.goal.food ? '#ff4a4a' : '#5fe08a'; sctx.beginPath(); sctx.ellipse(p[0], p[1], 5, 2.5, 0, 0, Math.PI * 2); sctx.stroke(); }
+      if (res && at0) {
+        const cam = R.camera(res.cam);
+        const at = (p, onGround) => { const q = R.project(cam, [p[0], onGround ? 0 : p[1] + (st.lift || 0), p[2]]); return [at0.sx + q.x, at0.sy + q.y]; };
+        const legs = (S.lastScene && S.lastScene.legs) || [];
+        legs.forEach((lg, k) => {
+          const c = 'rgba(255,255,255,0.85)';
+          line(at(lg.hip), at(lg.knee), c); line(at(lg.knee), at(lg.foot), c);
+          dotAt(at(lg.foot), st.feetState[k] ? '#5fe08a' : '#ffa53a', 1.5);
+          const t = st.targets && st.targets[k];
+          if (t) { const p = at(t); line([p[0] - 2, p[1] - 2], [p[0] + 2, p[1] + 2], '#ffa53a'); line([p[0] - 2, p[1] + 2], [p[0] + 2, p[1] - 2], '#ffa53a'); }
+        });
+      }
+      if (!PROOF) { // proof sheets crop the stage and label each frame themselves
+        sctx.fillStyle = light ? 'rgba(30,24,40,0.85)' : 'rgba(255,255,255,0.85)'; sctx.font = '7px monospace';
+        const deg = Math.round(((st.heading * 180 / Math.PI) % 360 + 540) % 360 - 180);
+        sctx.fillText(st.state + ' · heading ' + deg + '° · turn ' + st.yawRate.toFixed(2) + ' rad/s · hunger ' + st.hunger.toFixed(2), 3, STAGE_H - 12);
+        sctx.fillText(st.gait.name + ' ' + st.gait.phase.toFixed(2) + ' duty ' + st.gait.duty.toFixed(2) + ' v ' + (st.gait.speed / S.ph.scale).toFixed(2), 3, STAGE_H - 4);
+      }
+    }
     sctx.restore();
   }
 
+  // Draw everything on the floor back to front: food, poop and the creature (or its egg).
+  function drawFloor(things) {
+    things.concat(S.foods.filter((f) => f.bites > 0).map((f) => ({ z: f.z, draw: () => drawFood(f) })))
+      .concat(S.poops.map((p) => ({ z: p.z, draw: () => drawPoop(p) })))
+      .sort((a, b) => a.z - b.z).forEach((t) => t.draw());
+  }
+  function showMood(st) {
+    if (!st) { $('mood').textContent = S.phase === 'egg' ? 'egg' : 'hatching'; $('hungerBar').style.width = '0%'; return; }
+    $('hungerBar').style.width = Math.round(st.hunger * 100) + '%';
+    $('hungerBar').classList.toggle('low', st.hungry);
+    $('mood').textContent = st.state === 'go' && st.goal && st.goal.food ? 'going to food' : STATE_WORDS[st.state] || st.state;
+  }
+
+  // The creature on its floor for one step result: habitat, food, poop, the creature, crumbs and sparkles, the hungry
+  // bubble, the debug overlay and the hunger meter.
+  function paint(st, pose, dt, t) {
+    S.hab.draw(sctx, t, S.pan);
+    let res, at0;
+    drawFloor([{ z: st.z, draw: () => { res = renderCreature(pose, camAt(st.x, st.z, st.heading)); at0 = putSprite(res, st.x, st.z); } }]);
+    const top = at0.sy + spriteTop(res);
+    onEvents(st, top);
+    drawFx(dt);
+    if (st.hungry && st.state !== 'eat' && !foodFor(S.walker)) drawBubble(at0.sx + S.sw / 2, top);
+    if (S.debug) drawDebug(res, st, at0);
+    showMood(st);
+  }
+
   function frame(dt) {
-    drawBackdrop();
-    const half = (STAGE_W / 2 - 34) * S.cam.px;
+    const t = reducedMotion || PAUSE ? 0 : performance.now() / 1000;
+    if (S.phase !== 'creature') S.hab.draw(sctx, t, S.pan);
     if (S.phase === 'egg') {
-      const t = performance.now() / 1000;
       const wob = PAUSE ? 0 : Math.sin(t * 2.2) * 0.05 * (Math.sin(t * 0.7) > 0.6 ? 1 : 0.25);
-      putSprite(renderEgg({ wobble: wob }), 0, 1);
+      drawFloor([{ z: 0, draw: () => putSprite(renderEgg({ wobble: wob }, camAt(0, 0, START_HEADING)), 0, 0) }]);
+      if (S.debug) drawDebug(null, null);
+      showMood(null);
       return;
     }
     if (S.phase === 'hatching') {
@@ -233,30 +441,34 @@
       const wob = Math.sin(T * 18) * 0.12 * Math.min(1, T / HATCH.wobble) * (1 - ramp(HATCH.open[0], HATCH.open[1]));
       const eggPose = { wobble: wob, crack: ramp(HATCH.crack[0], HATCH.crack[1]), open: ramp(HATCH.open[0], HATCH.open[1]) };
       const fade = 1 - ramp(HATCH.fade[0], HATCH.fade[1]);
-      if (T < HATCH.baby) putSprite(renderEgg(eggPose), 0, 1);
+      const egg = () => putSprite(renderEgg(eggPose, camAt(0, 0, START_HEADING)), 0, -0.12 * S.ph.scale, T < HATCH.baby ? 1 : fade);
+      if (T < HATCH.baby) drawFloor([{ z: 0, draw: egg }]);
       else {
-        putSprite(renderEgg(eggPose), -0.12, 1, fade);
-        const st = M.step(S.walker, dt, -half, half, { walk: false, hop: T - dt < HATCH.baby });
-        const res = renderCreature(st.pose);
-        putSprite(res, st.x, st.dir);
-        if (S.debug) drawDebug(res, st);
+        const st = M.step(S.walker, dt, S.area, null, { walk: false, hop: T - dt < HATCH.baby });
+        let res, at0;
+        drawFloor([{ z: -0.12 * S.ph.scale, draw: egg }, { z: st.z, draw: () => { res = renderCreature(st.pose, camAt(st.x, st.z, st.heading)); at0 = putSprite(res, st.x, st.z); } }]);
+        if (S.debug) drawDebug(res, st, at0);
       }
+      showMood(null);
       if (T >= HATCH.fade[1]) finishHatch();
       return;
     }
-    const st = M.step(S.walker, PAUSE ? 0 : dt, -half, half, { walk: S.walk && !PAUSE, reduced: reducedMotion || PAUSE, force: S.walk && !PAUSE ? GAIT : null });
+    const w = S.walker, moving = S.walk && !PAUSE;
+    const st = M.step(w, PAUSE ? 0 : dt, S.area, null, { walk: moving, reduced: reducedMotion || PAUSE, force: moving ? GAIT : null, food: foodFor(w) });
     const pose = PAUSE ? Object.assign({}, st.pose, { breathe: 0, blink: 0, tailSway: 0, lookYaw: 0, wingFlap: 0 }) : st.pose;
-    const res = renderCreature(pose);
-    putSprite(res, st.x, st.dir);
-    if (S.debug) drawDebug(res, st);
+    if (!reducedMotion && !PAUSE) { // parallax: the far layers slide a little against where it walks
+      const want = -(toStage(st.x, st.z).x - STAGE_W / 2) / (STAGE_W / 2) * PAN_MAX;
+      S.pan += (want - S.pan) * Math.min(1, dt * 2);
+    }
+    paint(st, pose, PAUSE ? 0 : dt, t);
   }
 
   let last = 0, acc = 0;
   function loop(now) {
     const dt = last ? (now - last) / 1000 : 0;
     last = now; acc += dt;
-    if (S.reveal != null) { S.reveal += dt * SPRITE_H / 1.6; if (S.reveal >= SPRITE_H) S.reveal = null; }
-    const animating = !PAUSE && (S.phase !== 'creature' || S.walk || reducedMotion === false) || S.reveal != null;
+    if (S.reveal != null) { S.reveal += dt * S.sh / 1.6; if (S.reveal >= S.sh) S.reveal = null; }
+    const animating = !PAUSE || S.reveal != null;
     if ((animating && acc >= 1 / SPRITE_FPS) || S.dirty) {
       frame(Math.min(0.25, acc));
       acc = 0; S.dirty = false;
@@ -297,7 +509,8 @@
     $('paletteRow').style.display = R.styles[S.style].pixel ? '' : 'none';
     $('shineVal').textContent = S.shine.toFixed(2);
     $('debug').classList.toggle('on', S.debug);
-    for (const b of $('backs').children) b.classList.toggle('on', b.dataset.v === S.back);
+    for (const b of $('habitats').children) b.classList.toggle('on', b.dataset.v === S.habitat);
+    for (const b of $('foods').children) b.classList.toggle('on', b.dataset.v === S.food);
     $('walk').classList.toggle('on', S.walk); $('repair').classList.toggle('on', S.repair);
   }
   function fmt(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n); }
@@ -408,7 +621,15 @@
   $('shine').value = S.shine;
   $('shine').addEventListener('input', () => { S.shine = Number($('shine').value); relook(); });
   $('debug').addEventListener('click', () => { S.debug = !S.debug; S.dirty = true; updatePanels(); });
-  chips('backs', Object.keys(BACKS).map((k) => [k, k]), (v) => { S.back = v; S.dirty = true; updatePanels(); });
+  chips('habitats', HAB.LIST.map((h) => [h[0], h[1]]), (v) => { setHabitat(v); updatePanels(); });
+  for (const b of $('habitats').children) b.title = HAB.LIST.find((h) => h[0] === b.dataset.v)[2];
+  // Prototype only: pick a food, then click the floor to drop it there. The game has no such button.
+  chips('foods', Object.keys(FOODS).map((k) => [k, k]), (v) => { S.food = v; updatePanels(); });
+  stage.addEventListener('click', (e) => {
+    if (S.phase !== 'creature') return;
+    const r = stage.getBoundingClientRect(), p = fromStage((e.clientX - r.left) / r.width * STAGE_W, (e.clientY - r.top) / r.height * STAGE_H);
+    dropFood(p.x, p.z, S.food);
+  });
   chips('tabs', [['genes', 'Genes'], ['numbers', 'Numbers'], ['about', 'About']], (v) => {
     for (const t of ['genes', 'numbers', 'about']) $('tab-' + t).hidden = t !== v;
     for (const b of $('tabs').children) b.classList.toggle('on', b.dataset.v === v);
@@ -429,20 +650,82 @@
 
   // ---------- start ----------
   S.gallery = loadGallery().filter((e) => e && e.creature && e.creature.copies);
+  if (params.get('hunger') != null) S.startHunger = Math.max(0, Math.min(1, Number(params.get('hunger')) || 0));
+  setHabitat(S.habitat);
   newEgg(params.get('seed') || undefined);
   if (params.get('temperament') != null) { S.temperament = Number(params.get('temperament')); $('temper').value = S.temperament; }
   if (params.get('level') || params.get('hatched') === '1') {
     S.phase = 'creature'; S.level = Math.max(1, Math.min(100, Number(params.get('level')) || 1)); $('level').value = S.level;
   }
   if (params.get('face')) S.expression = params.get('face');
+  if (params.get('heading') != null && S.walker) S.walker.th = Number(params.get('heading')) || 0;
   refresh();
+  if (FOODS[params.get('food')] && S.phase === 'creature') { // one snack in front of it, already landed
+    const w = S.walker, d = 1.1 * S.ph.scale;
+    dropFood(w.x + Math.cos(w.th) * d, w.z - Math.sin(w.th) * d, params.get('food'), true);
+  }
   renderGallery();
   requestAnimationFrame(loop);
 
   // ---------- self-checks (?test=1), read by test/e2e.js ----------
-  const api = { S, newEgg, hatch, finishHatch, breedPicks, refresh, renderCreature, frame };
+  const api = { S, newEgg, hatch, finishHatch, breedPicks, refresh, renderCreature, frame, dropFood, setHabitat, toStage, fromStage };
   window.CreatureHatchery = api;
   if (TEST) setTimeout(runChecks, 50);
+  if (PROOF) setTimeout(() => { try { runProof(PROOF); } catch (e) { $('result').textContent = 'error ' + (e && e.stack || e); } }, 50);
+
+  // ---------- proof sheets (?proof=...), read by tools/proof.js ----------
+  // turn: a 180° turn from walking side-on; spin: a 360° spin; eat: walk to a dropped snack, bite, swallow, be happy;
+  // habitats: the creature standing in every habitat. Frames are the real stage, stepped at the sprite clock, with the
+  // seconds and state under each. The sheet goes into #result as a PNG data URL.
+  function runProof(kind) {
+    const DT = 1 / SPRITE_FPS, shots = [];
+    const label = (st, time) => time.toFixed(2) + 's ' + st.state + ' ' + Math.round(((st.heading * 180 / Math.PI) % 360 + 540) % 360 - 180) + '°';
+    if (kind === 'habitats') {
+      for (const [key, name] of HAB.LIST) {
+        setHabitat(key);
+        const st = M.step(S.walker, 0, S.area, null, { walk: false });
+        paint(st, st.pose, 0, 2.6);
+        shots.push({ img: sctx.getImageData(0, 0, STAGE_W, STAGE_H), text: name });
+      }
+      return sheet(shots, 3, STAGE_W, STAGE_H, 2);
+    }
+    const seed = G.hashSeed(String(S.creature.seed));
+    const start = kind === 'eat' ? fromStage(STAGE_W * 0.36, Y_FAR + (Y_NEAR - Y_FAR) * 0.45) : { x: 0, z: (S.area.minZ + S.area.maxZ) / 2 };
+    const w = S.walker = M.createWalker(S.ph, seed, { x: start.x, z: start.z, heading: 0, hunger: kind === 'eat' ? 0.85 : 0.2 });
+    S.foods = []; S.poops = []; S.fx = [];
+    if (kind === 'eat') { const f = fromStage(STAGE_W * 0.66, Y_FAR + (Y_NEAR - Y_FAR) * 0.62); dropFood(f.x, f.z, params.get('food') || 'apple', true); }
+    if (kind === 'turn') M.turn(w, Math.PI);
+    if (kind === 'spin') M.spin(w, 1);
+    const p0 = toStage(start.x, start.z);
+    const cw = kind === 'eat' ? STAGE_W : Math.min(STAGE_W, Math.round(S.sw * 1.3)), ch = kind === 'eat' ? STAGE_H : Math.min(STAGE_H, S.sh + 6);
+    const cx = Math.max(0, Math.min(STAGE_W - cw, Math.round(p0.x - cw / 2))), cy = kind === 'eat' ? 0 : Math.max(0, Math.min(STAGE_H - ch, Math.round(p0.y - S.sg - 3)));
+    let time = 0, end = null;
+    for (let i = 0; i < SPRITE_FPS * 40 && (end == null || time < end); i++) {
+      const st = M.step(w, i ? DT : 0, S.area, null, { walk: true, food: foodFor(w) });
+      if (kind !== 'eat' && i > 0 && w.mode !== 'turn') w.pause = 1; // hold still once the turn is done
+      paint(st, st.pose, DT, time);
+      shots.push({ img: sctx.getImageData(cx, cy, cw, ch), text: label(st, time), st });
+      if (end == null && (kind === 'eat' ? st.events.some((e) => e.type === 'happy') : i > 0 && w.mode !== 'turn')) end = time + (kind === 'eat' ? 1 : 0.4);
+      time += DT;
+    }
+    const n = kind === 'eat' ? 16 : 18, pick = [];
+    for (let i = 0; i < n; i++) pick.push(shots[Math.round(i * (shots.length - 1) / (n - 1))]);
+    return sheet(pick, kind === 'eat' ? 4 : 6, cw, ch, kind === 'eat' ? 1 : 2);
+  }
+  function sheet(shots, cols, cw, ch, scale) {
+    const LABEL = 12, rows = Math.ceil(shots.length / cols);
+    const out = document.createElement('canvas'); out.width = cols * cw * scale; out.height = rows * (ch * scale + LABEL);
+    const o = out.getContext('2d'); o.imageSmoothingEnabled = false;
+    o.fillStyle = '#1a1826'; o.fillRect(0, 0, out.width, out.height);
+    const tmp = document.createElement('canvas'); tmp.width = cw; tmp.height = ch;
+    shots.forEach((s, i) => {
+      const x = (i % cols) * cw * scale, y = Math.floor(i / cols) * (ch * scale + LABEL);
+      tmp.getContext('2d').putImageData(s.img, 0, 0);
+      o.drawImage(tmp, x, y, cw * scale, ch * scale);
+      o.fillStyle = '#ece6f2'; o.font = '10px monospace'; o.fillText(s.text, x + 3, y + ch * scale + 9);
+    });
+    $('result').textContent = out.toDataURL('image/png');
+  }
 
   function runChecks() {
     const checks = [];
@@ -503,6 +786,36 @@
       check('every look draws creature and egg', blank.length === 0 && seen.size === R.looks.length, { blank, looks: R.looks.length, distinct: seen.size });
       check('looks leave the genome alone', G.fingerprint(S.creature) === fpBefore);
       $('looks').children[0].click();
+      check('three looks: Original, Cel, Pixel', R.looks.join() === 'gochi,cel,pixel', R.looks);
+      // The habitat is the bigger floor, and every habitat draws something different.
+      check('stage is 384 x 216', stage.width === STAGE_W && stage.height === STAGE_H && STAGE_W === 384 && STAGE_H === 216);
+      const stageHash = () => hash(sctx.getImageData(0, 0, STAGE_W, STAGE_H).data);
+      const habs = new Set();
+      for (const b of $('habitats').children) { b.click(); frame(0.1); habs.add(stageHash()); }
+      check('every habitat draws differently', habs.size === HAB.LIST.length && HAB.LIST.length >= 4, { habitats: HAB.LIST.length, distinct: habs.size });
+      $('habitats').children[0].click();
+      // Turning shows other sides: the creature seen from its heading looks different side-on and from the front.
+      const side = hash(renderCreature({}, spriteCam(0, 1)).rgba), front = hash(renderCreature({}, spriteCam(Math.PI / 2, 1)).rgba);
+      check('heading turns the view', side !== front);
+      // The floor maps both ways, and the back of the floor draws smaller.
+      const back = fromStage(STAGE_W / 2 + 40, Y_FAR + 5), q = toStage(back.x, back.z);
+      check('floor maps both ways', Math.abs(q.x - STAGE_W / 2 - 40) < 0.01 && Math.abs(q.y - Y_FAR - 5) < 0.01 && q.k < toStage(0, S.zNear).k);
+      // Food (prototype only): dropped by a click, eaten in bites, then it is gone and the creature is happy.
+      check('food drop is labelled prototype only', /prototype only/i.test($('foodRow').textContent));
+      const w = S.walker;
+      w.hunger = 0.9;
+      const r = stage.getBoundingClientRect();
+      const spot = toStage(w.x + 1.2 * S.ph.scale, w.z);
+      stage.dispatchEvent(new MouseEvent('click', { clientX: r.left + spot.x / STAGE_W * r.width, clientY: r.top + spot.y / STAGE_H * r.height, bubbles: true }));
+      const meal = S.foods[S.foods.length - 1];
+      check('a click drops food on the floor', !!meal && meal.bites > 0, meal && { x: meal.x, z: meal.z });
+      let ate = false, bites = 0, hungerBefore = w.hunger;
+      for (let i = 0; i < 60 * 40 && !ate; i++) {
+        meal.age = DROP_TIME;
+        const st = M.step(w, 1 / 60, S.area, null, { walk: true, food: foodFor(w) });
+        for (const e of st.events) { if (e.type === 'bite') bites++; if (e.type === 'happy') ate = true; }
+      }
+      check('it walks over, bites, swallows and is happy', ate && meal.gone && bites === FOODS[meal.kind].bites && w.hunger < hungerBefore, { ate, bites, gone: meal.gone });
       // The walk debug overlay draws over the stage without errors.
       S.debug = true; frame(0.1); S.debug = false;
       check('walk debug draws', true);

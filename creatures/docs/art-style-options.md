@@ -1,12 +1,14 @@
 # Art style options
 
-Jake finds the finished look too shiny. This note lists the looks the web model can now draw, what each costs to ship in the Hatchery overlay, what stays procedural and what would need hand-made or AI art, and ends with a recommendation.
+> **Update (pass 3): three looks kept.** Jake picked **Original** (`gochi`), **Cel** and **Pixel**, plus the **Shine** slider. Matte, Chunky, Ink and Sticker were removed from the code; their rows below are kept as the record of what was tried and why. The pixel palettes stay.
+
+Jake finds the finished look too shiny. This note lists the looks the web model drew in pass 2, what each costs to ship in the Hatchery overlay, what stays procedural and what would need hand-made or AI art, and ends with a recommendation.
 
 Every look below is **the same creature**: the same genome, body, pose and light. Only the last step, how a hit pixel becomes a colour, changes. Switching looks never touches the genome (tested). Each look also draws the egg, the hatching and the collection thumbnails.
 
-Try them in the web model (`prototype/index.html`): **Style** chips, a **Palette** row for the pixel looks, and a **Shine** slider. URL: `?seed=moss&level=100&style=pixel&palette=gameboy&shine=0.3`.
+Try them in the web model (`prototype/index.html`): **Style** chips (Original, Cel, Pixel), a **Palette** row for the pixel look, and a **Shine** slider. URL: `?seed=moss&level=100&style=pixel&palette=gameboy&shine=0.3`.
 
-![Every look, same creatures](shots/styles.png)
+![The three kept looks, same creatures](shots/styles.png)
 
 ## The looks
 
@@ -15,14 +17,14 @@ Times are one 150 × 120 creature render in Node on one core (the page's sprite)
 | Look | What it looks like | Time | Notes |
 |---|---|---|---|
 | **Original** (`gochi`) | The video: four banded tones from cool shadow to warm light, a glint on glossy bodies, a 1-pixel tinted ink outline. | 56 ms | The default. At Shine 1 it is the old picture, pixel for pixel (the level and seed sheets did not change). |
-| **Matte** | Flat paint: one body tone and one soft shadow, no glint, a softer outline from the shadow colour. Shine adds only a faint top light. | 57 ms | The direct answer to "too shiny". |
+| ~~**Matte**~~ (removed) | Flat paint: one body tone and one soft shadow, no glint, a softer outline from the shadow colour. Shine adds only a faint top light. | 57 ms | The direct answer to "too shiny". |
 | **Cel** | Two hard tones split at the terminator, a thick dark outline (2 px), a small white highlight only on glossy bodies. | 54 ms | Cartoon or anime look; reads well at small size. |
 | **Pixel** | Rendered at half resolution and blown up with nearest-neighbour, with 4 × 4 ordered (Bayer) dither between bands and a 1-pixel outline. | 16 ms | The cheapest real look: a quarter of the rays. |
-| **Chunky** | Quarter resolution, three tones, no dither: big readable blocks like a 16 × 16 sprite. | 5 ms | Loses the face at baby size; best for large windows. |
-| **Ink** | Paper-white body, hatching in the mid tones, cross-hatching in shadow, stippled markings, a black pen outline. | 52 ms | Wants the paper backdrop; on a dark desktop it reads as grey. |
-| **Sticker** | Two flat tones with a little grain, a white die-cut border and a soft drop shadow: a paper cut-out or vinyl sticker. | 55 ms | Needs a few pixels of margin in the window for the border. |
+| ~~**Chunky**~~ (removed) | Quarter resolution, three tones, no dither: big readable blocks like a 16 × 16 sprite. | 5 ms | Loses the face at baby size; best for large windows. |
+| ~~**Ink**~~ (removed) | Paper-white body, hatching in the mid tones, cross-hatching in shadow, stippled markings, a black pen outline. | 52 ms | Wants the paper backdrop; on a dark desktop it reads as grey. |
+| ~~**Sticker**~~ (removed) | Two flat tones with a little grain, a white die-cut border and a soft drop shadow: a paper cut-out or vinyl sticker. | 55 ms | Needs a few pixels of margin in the window for the border. |
 
-**Palettes** for Pixel and Chunky: the creature's own colours (default), **Game Boy** (four greens, stretched over each sprite's own dark-to-light range), **PICO-8** (16 colours) and **warm earth** (8 browns and greens). Every pixel lands exactly on a palette colour (tested).
+**Palettes** for Pixel: the creature's own colours (default), **Game Boy** (four greens, stretched over each sprite's own dark-to-light range), **PICO-8** (16 colours) and **warm earth** (8 browns and greens). Every pixel lands exactly on a palette colour (tested).
 
 ![Pixel look in each palette](shots/palettes.png)
 
@@ -44,14 +46,14 @@ Times are one 150 × 120 creature render in Node on one core (the page's sprite)
 | Creature body, every level, every pose | **Always.** It is what makes every egg unique, lets it grow through 100 levels and lets it walk with real legs. | Not possible without losing that (below). |
 | Faces (eyes, mouth, blush) | Yes (decals). | Could be a small set of hand-drawn eye and mouth sprites per look, if the procedural ones read badly in Pixel or Chunky at baby size. |
 | Eggs | Yes, from the genome: tint, marks, shape, crack. | Optional: a few nest or shell textures to sample from. |
-| Backgrounds, ground strip, nest | No; today it is a flat backdrop or the desktop. | **Good fit**: tiles and props that sit under the creature. |
+| Backgrounds, ground strip, nest | Yes since pass 3: six code-drawn habitats (`habitats.js`). | Still a **good fit** for nicer tiles and props later. |
 | UI (level badge, tray icon, collection frames) | No. | **Good fit.** |
 
 ### PixelLab
 
 PixelLab makes good pixel art from a prompt and can make consistent sets: body-part sets, eggs, backgrounds, tiles and UI pieces. What it **cannot** do is give every egg its own body. Its output is a fixed picture. A creature built from PixelLab parts would be a kit-bash of a few hundred stock parts: it would not melt into one body, could not grow smoothly through 100 levels, and could not walk with IK legs. Each new body would also cost a generation and would not be the same twice from a seed. So PixelLab fits around the creature (ground tiles, nest, egg-shell textures, UI), never for the creature itself.
 
-The key check passed (free generations left). PixelLab was **not used in this pass**: none of the looks needed it, and the overlay has no background or nest yet to put tiles in. It belongs to the overlay build step that adds a ground strip.
+The key check passed (free generations left). PixelLab was **not used in pass 2 or pass 3**: none of the looks needed it, and the pass 3 habitats are drawn in code (cheap, any size, parallax layers and wind for free, no art to check). A PixelLab tile set remains an option for the overlay's ground strip.
 
 ### The hybrid: procedural silhouette, pixel shading
 
@@ -59,22 +61,20 @@ The **Pixel** look is the hybrid. The genome makes a unique body, the SDF gives 
 
 ## Cost to ship each look in the overlay
 
-All seven looks are entries in `render.js`, which the overlay ports as-is (build step 1 in [overlay-game-design.md](overlay-game-design.md)). So the extra work per look is small:
+The three looks are entries in `render.js`, which the overlay ports as-is (build step 1 in [overlay-game-design.md](overlay-game-design.md)). So the extra work per look is small:
 
 | Work | Size |
 |---|---|
 | A look in Settings (a menu like the ant farm's palettes) and saved with the pet | Half a day for all of them |
-| Original, Matte, Cel, Pixel, Chunky | Nothing extra |
+| Original, Cel, Pixel | Nothing extra |
 | Palettes (own, Game Boy, PICO-8, warm earth) | A Settings submenu; nothing else |
-| Ink | Wants a paper backdrop behind the creature: the backdrop palettes already exist |
-| Sticker | Keep a 3 px margin round the sprite in the window layout |
 | Shine | A Settings slider |
 | PixelLab ground strip, nest and egg-shell textures | About a day, plus checking the art (free generations) |
-| Hand-drawn faces for Pixel and Chunky at baby size (only if needed) | A day of drawing or a PixelLab set |
+| Hand-drawn faces for Pixel at baby size (only if needed) | A day of drawing or a PixelLab set |
 
 ## Recommendation
 
 1. **Keep Original as the default in the web model**, as the faithful copy of the video.
-2. **Ship the overlay with Pixel as its default look, in the creature's own colours, at Shine 0.3.** It fixes "too shiny" and matches the overlay, which already shows one game pixel as 2 or 4 screen pixels. It is the cheapest look to render, so it suits a pet that runs all day, and it keeps every egg unique. Offer Original, Matte and Cel in Settings, with the fixed palettes as fun themes.
+2. **Ship the overlay with Pixel as its default look, in the creature's own colours, at Shine 0.3.** It fixes "too shiny" and matches the overlay, which already shows one game pixel as 2 or 4 screen pixels. It is the cheapest look to render, so it suits a pet that runs all day, and it keeps every egg unique. Offer Original and Cel in Settings, with the fixed palettes as fun themes.
 3. **Use PixelLab only around the creature**: a ground strip, a nest, egg-shell textures and UI. The creatures stay procedural.
-4. Revisit Ink and Sticker once the overlay has backdrops; they are pretty but depend on what is behind them.
+4. Ink and Sticker were dropped in pass 3 (Jake kept Original, Cel and Pixel); the git history has them if wanted.

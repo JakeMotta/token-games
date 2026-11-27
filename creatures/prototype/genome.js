@@ -81,6 +81,7 @@
   gene('eyes', 'eyes.dom', 0, 1);
   gene('face', 'mouth.width', 0, 1);
   gene('face', 'mouth.smile', -1, 1);
+  gene('face', 'mouth.kind', 0, 4.49);     // rounded: jaw, beak, mandibles, slit, tongue (drawn last, see randomCopy)
   gene('face', 'fangs', 0, 1);
   gene('face', 'blush', 0, 1);
   gene('face', 'face.dom', 0, 1);
@@ -109,6 +110,7 @@
 
   const LEG_KINDS = 4, EAR_KINDS = ['none', 'pointed', 'round', 'long'];
   const DECOR_KINDS = ['none', 'sprout', 'flower', 'antennae', 'spikes'];
+  const MOUTH_KINDS = ['jaw', 'beak', 'mandibles', 'slit', 'tongue'];
   const PATTERN_KINDS = ['none', 'spots', 'stripes', 'patches', 'speckles'];
   const WING_MIN = 0.42;
 
@@ -133,7 +135,7 @@
     const g = {};
     const set = (name, v) => { const [lo, hi] = GENES[name]; g[name] = clamp(v, lo, hi); };
     const any = (name) => set(name, rng.range(GENES[name][0], GENES[name][1]));
-    for (const n of GENE_NAMES) any(n); // start fully random, then shape the pieces
+    for (const n of GENE_NAMES) if (n !== 'mouth.kind') any(n); // start fully random, then shape the pieces
     const torsoR = rng.range(0.13, 0.33);
     const rings = (p, base, shape) => ringProfile(rng, RINGS[p], base, shape).forEach(([w, h], i) => {
       set(`${p}.rings[${i}].width`, w); set(`${p}.rings[${i}].height`, h);
@@ -155,6 +157,13 @@
     set('legs.width', torsoR * rng.range(0.22, 0.42));
     set('colour.light', rng.range(0.28, 0.68));
     set('temperament', rng.range(-0.6, 0.6));
+    // The mouth kind is picked from a hash of everything else, not from the generator, so every seed made before
+    // mouths existed still grows the same body. Six legs or antennae lean toward mandibles (bug-like).
+    const h = hashSeed(GENE_NAMES.map((n) => (g[n] ?? 0).toFixed(4)).join(',')) / 4294967296;
+    const buggy = Math.round(g['legs.pairs']) === 3 || Math.round(g['decor.kind']) === 3;
+    const cut = buggy ? [0.2, 0.3, 0.75, 0.88] : [0.35, 0.53, 0.68, 0.85]; // jaw, beak, mandibles, slit, then tongue
+    const pick = cut.findIndex((c) => h < c);
+    set('mouth.kind', (pick < 0 ? 4 : pick) + 0.2 + 0.1 * (h * 7 % 1));
     return g;
   }
 
@@ -345,7 +354,7 @@
       horns: { count: Math.round(g['horns.count']), length: g['horns.length'], curve: g['horns.curve'], spread: g['horns.spread'], width: g['horns.width'] },
       ears: { kind: EAR_KINDS[Math.round(g['ears.kind'])], size: g['ears.size'], angle: g['ears.angle'] },
       eyes: { size: g['eyes.size'], spacing: g['eyes.spacing'], height: g['eyes.height'], round: 0, slant: 0, glow: 0 },
-      mouth: { width: g['mouth.width'], smile: g['mouth.smile'] },
+      mouth: { width: g['mouth.width'], smile: g['mouth.smile'], kind: MOUTH_KINDS[Math.round(g['mouth.kind'])] || 'jaw' },
       fangs: g.fangs, blush: g.blush,
       decor: { kind: DECOR_KINDS[Math.round(g['decor.kind'])], size: g['decor.size'], hue: g['decor.hue'] },
       colour: { hue: g['colour.hue'], sat: g['colour.sat'], light: g['colour.light'], belly: g['colour.belly'],
@@ -425,10 +434,10 @@
   // A stable short fingerprint of a creature's shown numbers (for tests and the gallery).
   function fingerprint(creature) {
     const g = genotype(creature);
-    return hashSeed(GENE_NAMES.map((n) => g[n].toFixed(4)).join(',')).toString(36);
+    return hashSeed(GENE_NAMES.map((n) => (g[n] ?? 0).toFixed(4)).join(',')).toString(36);
   }
 
-  const api = { hashSeed, makeRng, GENES, GENE_NAMES, PIECES, PIECE, RINGS, WING_MIN, EAR_KINDS, DECOR_KINDS, PATTERN_KINDS,
+  const api = { hashSeed, makeRng, GENES, GENE_NAMES, PIECES, PIECE, RINGS, WING_MIN, EAR_KINDS, DECOR_KINDS, PATTERN_KINDS, MOUTH_KINDS,
     randomCreature, randomCopy, genotype, expressedCopyIndex, breed, breedName, randomName, phenotype, express, repair,
     applyTemperament, applyGrowth, traits, eggLook, fingerprint, STAGES, stageOf, growthOf, LEVEL_MAX, HEAD_MAX_RATIO,
     HATCH_TOKENS, LEVEL_BASE_TOKENS, LEVEL_EXP, tokensForLevelUp, tokensToReach, levelFromTokens, NUDGE, SURPRISE_CHANCE,
