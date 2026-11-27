@@ -28,7 +28,17 @@ export interface Frame { drawn: number; mapper: Mapper; stats: ViewStats; box: {
 
 interface Tile { canvas: OffscreenCanvas | HTMLCanvasElement; ctx: Ctx2D; ver: number; key: string; used: number }
 
-const css = (c: number) => 'rgb(' + (c & 255) + ',' + ((c >>> 8) & 255) + ',' + ((c >>> 16) & 255) + ')';
+// A colour as a fill style. Ants are a handful of colours, so each string is made once, not once per cell per frame.
+const cssMemo = new Map<number, string>();
+const css = (c: number): string => {
+  let v = cssMemo.get(c);
+  if (v === undefined) {
+    v = 'rgb(' + (c & 255) + ',' + ((c >>> 8) & 255) + ',' + ((c >>> 16) & 255) + ')';
+    if (cssMemo.size > 4096) cssMemo.clear();
+    cssMemo.set(c, v);
+  }
+  return v;
+};
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 // The visible world box for a camera on a vw × vh device-pixel canvas (s already includes the device pixel ratio).
@@ -62,6 +72,7 @@ export class View {
   private kind = new Uint8Array(CHUNK * CHUNK);
   private out: Uint32Array;
   private img: ImageData;
+  private edges: { key: string; fills: CanvasGradient[] } = { key: '', fills: [] }; // the soft edges, made once per size
 
   constructor() {
     this.img = new ImageData(CHUNK, CHUNK);
@@ -130,24 +141,31 @@ export class View {
     for (const a of sim.ants) if (a.x >= box.x0 && a.x <= box.x1 && a.y >= box.y0 && a.y <= box.y1) drawn++;
 
     if (o.dim && o.dim > 0) { ctx.globalAlpha = Math.min(1, o.dim); ctx.fillStyle = back; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
-    if (o.soft) feather(ctx, back, Math.max(4, Math.round(Math.min(W, H) * 0.07)));
+    if (o.soft) this.feather(ctx, back, Math.max(4, Math.round(Math.min(W, H) * 0.07)));
     const stats: ViewStats = { visible, painted, waiting, tiles: this.tiles.size, tileMB: (this.tiles.size * CHUNK * CHUNK * 4) / 1048576, ms: now() - t0 };
     return { drawn, mapper: m, stats, box };
   }
 
   clear(): void { this.tiles.clear(); }
-}
 
-// Edges that fade into the window's backdrop instead of ending in a hard line.
-function feather(ctx: CanvasRenderingContext2D, col: string, d: number): void {
-  const W = ctx.canvas.width, H = ctx.canvas.height;
-  const edge = (x0: number, y0: number, x1: number, y1: number, rx: number, ry: number, rw: number, rh: number) => {
-    const g = ctx.createLinearGradient(x0, y0, x1, y1);
-    g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = g; ctx.fillRect(rx, ry, rw, rh);
-  };
-  ctx.globalAlpha = 0.8;
-  edge(0, 0, d, 0, 0, 0, d, H); edge(W, 0, W - d, 0, W - d, 0, d, H);
-  edge(0, H, 0, H - d, 0, H - d, W, d); edge(0, 0, 0, d, 0, 0, W, d);
-  ctx.globalAlpha = 1;
+  // Edges that fade into the window's backdrop instead of ending in a hard line. The four gradients only change with
+  // the canvas size and the backdrop colour.
+  private feather(ctx: CanvasRenderingContext2D, col: string, d: number): void {
+    const W = ctx.canvas.width, H = ctx.canvas.height, key = W + 'x' + H + '|' + d + '|' + col;
+    if (this.edges.key !== key) {
+      const g = (x0: number, y0: number, x1: number, y1: number) => {
+        const v = ctx.createLinearGradient(x0, y0, x1, y1);
+        v.addColorStop(0, col); v.addColorStop(1, 'rgba(0,0,0,0)');
+        return v;
+      };
+      this.edges = { key, fills: [g(0, 0, d, 0), g(W, 0, W - d, 0), g(0, H, 0, H - d), g(0, 0, 0, d)] };
+    }
+    const f = this.edges.fills;
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = f[0]; ctx.fillRect(0, 0, d, H);
+    ctx.fillStyle = f[1]; ctx.fillRect(W - d, 0, d, H);
+    ctx.fillStyle = f[2]; ctx.fillRect(0, H - d, W, d);
+    ctx.fillStyle = f[3]; ctx.fillRect(0, 0, W, d);
+    ctx.globalAlpha = 1;
+  }
 }

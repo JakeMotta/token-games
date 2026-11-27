@@ -13,6 +13,7 @@ test('defaults: in the corner orb, Desktop Blend, the Ridiculous map', () => {
   assert.equal(s.presentation, 'orb');
   assert.equal(s.palette, 'blend');
   assert.equal(s.mapSize, 'ridiculous'); assert.equal(s.calm, 0); assert.equal(s.fadeIdle, false); assert.equal(s.reducedMotion, false);
+  assert.equal(s.perfReadout, false, 'the performance readout starts hidden');
   assert.equal(s.seed, 5);
   assert.equal(s.size, 'small'); assert.equal(s.dock, 'br'); assert.equal(s.alwaysOnTop, true);
 });
@@ -26,11 +27,13 @@ test('sanitize keeps good farm values and replaces bad ones', () => {
   assert.equal(s.seed, 1);
   assert.equal(sanitize({ mapSize: 'huge' }, base).mapSize, 'huge');
   assert.equal(sanitize({ palette: 'neon' }, base).palette, 'blend');
+  assert.equal(sanitize({ perfReadout: true }, base).perfReadout, true);
+  assert.equal(sanitize({ perfReadout: 'yes' }, base).perfReadout, false);
   assert.ok(!('claudeFeed' in sanitize({ claudeFeed: false }, base)), 'the feed is not a setting: it always watches');
 });
 
 test('reset brings back every default, the corner orb included, but keeps the farm', () => {
-  const s = applyPatch(defaultSettings(42), { palette: 'terminal', calm: 0.7, fadeIdle: true, mapSize: 'huge', clickThrough: true, presentation: 'floating' });
+  const s = applyPatch(defaultSettings(42), { palette: 'terminal', calm: 0.7, fadeIdle: true, perfReadout: true, mapSize: 'huge', clickThrough: true, presentation: 'floating' });
   assert.deepEqual(resetSettings(s), defaultSettings(42));
   assert.equal(resetSettings(s).presentation, shellDefaults().presentation);
 });

@@ -10,10 +10,12 @@ import { MAP_SIZE_IDS, PALETTE_IDS, type Settings } from '../shared/settings';
 import { createSim, readSave, type Sim } from '../sim/sim';
 import { compare, readRuns, recordRun, score, scoreInput, type Run, type Runs } from '../sim/score';
 import { MAP_SIZES, TICK_HZ } from '../sim/world';
-import { fit, lerp, near, clamp, type Cam } from './camera';
+import { fit, lerp, near, clamp, limits as zoomLimits, type Area, type Cam } from './camera';
 import { classifyWheel, wheelPixels, panBy, pinchFactor, wheelFactor, easeZoom, zoomDone, Inertia, FOLLOW_PAUSE_MS, type ZoomGoal } from './input';
 import { ORDER, PALETTES, resolve } from './palettes';
 import { View, minScale, type ViewStats } from './render';
+import { FrameMeter } from './meter';
+import { Governor } from './quality';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const farm = $('farm'), view = $<HTMLCanvasElement>('view'), g2d = view.getContext('2d')!;
@@ -36,6 +38,12 @@ const inertia = new Inertia();
 const thumbs = new Map<string, { canvas: HTMLCanvasElement; view: View }>();
 const counts = { events: 0, tokens: 0, tasks: 0, frames: 0 };
 const perf = { tickMs: 0, drawMs: 0, view: null as ViewStats | null };
+// every frame's cost, and its parts since the last reset (the perf run reads them)
+const meter = new FrameMeter();
+const parts = { since: performance.now(), tick: 0, ticks: 0, draw: 0, status: 0, thumbs: 0 };
+let realBudget = false; // the perf run measures with the real frame budget, not the smoke test's generous one
+const governor = new Governor();
+let raf = 0, asleep = false, lastDraw = 0, lastStatus = 0;
 
 const fmt = (n: number): string => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(Math.round(n)));
 const age = (ms: number): string => (ms >= 48 * 3_600_000 ? Math.round(ms / 86_400_000) + ' d' : ms >= 3_600_000 ? Math.round(ms / 3_600_000) + ' h' : Math.round(ms / 60_000) + ' min');
@@ -45,13 +53,22 @@ const mini = () => scale === 'mini';
 
 // ---------- the camera ----------
 
-const limits = () => ({ min: minScale(vw(), vh()), max: 24 });
-const keepIn = (c: Cam): Cam => clamp(c, sim.W, sim.H, vw(), vh());
+// The world the camera may show: all of it across, and from the thin strip of sky down.
+const world = (): Area => ({ x0: 0, y0: sim.top, x1: sim.W, y1: sim.H });
+const limits = (w = vw(), h = vh()) => zoomLimits(w, h, world(), minScale(w, h));
+const keepIn = (c: Cam, w = vw(), h = vh()): Cam => clamp(c, world(), w, h, C ? C.topInset : 0);
+
+// Within the zoom limits (about the view's centre) and inside the world.
+function inBounds(c: Cam, w: number, h: number): Cam {
+  const l = limits(w, h), s = Math.max(l.min, Math.min(l.max, c.s));
+  if (s !== c.s) c = { x: c.x + w / c.s / 2 - w / s / 2, y: c.y + h / c.s / 2 - h / s / 2, s };
+  return keepIn(c, w, h);
+}
 
 function target(w: number, h: number): Cam {
-  const top = C ? C.topInset : 0;
-  const t = fit(sim.interestBox(), w, h - top, { pad: mini() ? 1 : 8, min: Math.max(mini() ? 0.1 : 0.5, minScale(w, h)), max: 10 });
-  return { x: t.x, y: t.y - top / t.s, s: t.s };
+  const top = C ? C.topInset : 0, l = limits(w, h);
+  const t = fit(sim.interestBox(), w, h - top, { pad: mini() ? 1 : 8, min: Math.max(mini() ? 0.1 : 0.5, l.min), max: Math.min(10, l.max) });
+  return keepIn({ x: t.x, y: t.y - top / t.s, s: t.s }, w, h);
 }
 
 // You moved the camera: the auto camera steps back for a while (double-click or A brings it back at once).
@@ -71,7 +88,7 @@ function follow(): void {
 // ---------- drawing ----------
 
 function draw(dt: number): void {
-  const dpr = window.devicePixelRatio || 1, w0 = vw(), h0 = vh();
+  const q = governor.quality, dpr = Math.min(window.devicePixelRatio || 1, q.dprCap), w0 = vw(), h0 = vh();
   const w = Math.max(1, Math.round(w0 * dpr)), h = Math.max(1, Math.round(h0 * dpr));
   if (view.width !== w || view.height !== h) { view.width = w; view.height = h; snap = true; }
   if (!auto && !drag && !inertia.moving && !zoomGoal && performance.now() > pausedUntil) follow();
@@ -85,14 +102,32 @@ function draw(dt: number): void {
     const t = target(w0, h0);
     cam = !cam || snap || S.reducedMotion || mini() || near(cam, t) ? t : lerp(cam, t, 0.12, w0, h0);
   }
+  if (cam && !mini()) cam = inBounds(cam, w0, h0); // a resize can leave a camera you moved past the limits
   snap = false;
-  const r = main.draw(g2d, sim, cam!, dpr, { ...opts(), budgetMs: smoke ? 1000 : mini() ? 4 : 8 });
+  const o = opts();
+  const r = main.draw(g2d, sim, cam!, dpr, { ...o, soft: o.soft && q.soft, budgetMs: smoke && !realBudget ? 1000 : mini() ? 4 : q.tileBudgetMs });
   sim.setView(r.box);
   perf.drawMs = perf.drawMs * 0.9 + r.stats.ms * 0.1; perf.view = r.stats;
   C.setTheme(r.mapper.palette.ui);
   counts.frames++;
-  status();
-  if (showStats) statsText();
+  // the status line and the readouts change a few times a second at most
+  const ts = performance.now();
+  if (mini() || ts - lastStatus >= 250) {
+    lastStatus = ts;
+    status();
+    if (showStats) statsText();
+    perfText(ts);
+  }
+  parts.status += performance.now() - ts;
+}
+
+// Settings → Show performance: frames a second and what each costs, in a corner of the farm.
+function perfText(t: number): void {
+  const el = $('perf'), on = S.perfReadout && !mini();
+  if (el.hidden !== !on) el.hidden = !on;
+  if (!on) return;
+  const r = meter.recent(t), lvl = governor.quality.level;
+  el.textContent = `${Math.round(r.fps)} fps · ${r.ms.toFixed(1)} ms` + (lvl ? ` · lighter ${lvl}` : '');
 }
 
 const MOOD = { fed: '', hungry: ' · hungry', starving: ' · starving', empty: ' · empty' } as const;
@@ -137,13 +172,14 @@ function drawThumbs(): void {
   }
 }
 
-// ---------- the loop: the simulation at 20 steps a second; the picture at 60, 30 or 8 frames a second in the window
-// and the open card, 4 or 2 in the orb, fewer with reduced motion ----------
+// ---------- the loop: the simulation at 20 steps a second. The picture: every screen frame while you move the camera;
+// one frame a step while the colony is busy (10 a second with reduced motion), 8 when calm (2), and in the orb 4, 2 or
+// 1. The orb still steps the farm 4 times a second, so a frame never has to catch up on a whole second at once ----------
 
-function running(): boolean { return ready && (smoke || !document.hidden); }
+function running(): boolean { return ready && !asleep && (smoke || !document.hidden); }
 
 function frame(): void {
-  timer = 0;
+  timer = 0; raf = 0;
   if (!running()) return;
   const t = performance.now(), dt = Math.min(1100, t - lastT); // the slowest frame is a second apart: the farm keeps time
   lastT = t; lastFrame = t;
@@ -151,7 +187,9 @@ function frame(): void {
   let n = 0;
   const t0 = performance.now();
   while (acc >= 1 && n < 80) { sim.step(); acc -= 1; n++; }
-  if (n) perf.tickMs = perf.tickMs * 0.8 + ((performance.now() - t0) / n) * 0.2;
+  const t1 = performance.now();
+  if (n) perf.tickMs = perf.tickMs * 0.8 + ((t1 - t0) / n) * 0.2;
+  parts.tick += t1 - t0; parts.ticks += n;
   if (n >= 80) acc = 0;
   lifeNews();
   const moving = !!drag || inertia.moving || !!zoomGoal;
@@ -160,25 +198,43 @@ function frame(): void {
   const want = S.fadeIdle && t - lastEvt > FADE.after && !C.panelOpen ? FADE.depth : 0;
   const rate = (dt / (want > dim ? FADE.down : FADE.up)) * FADE.depth;
   dim = want > dim ? Math.min(want, dim + rate) : Math.max(want, dim - rate);
-  draw(dt);
-  if (C.panelOpen && t - lastThumbs > 1000) { lastThumbs = t; drawThumbs(); renderHealth(); }
-  if (t - lastSave > SAVE_EVERY) save();
-  // reduced motion: few frames, so less flicker at the edge of your eye; moving the camera gets every frame.
+  // reduced motion: few frames, so less flicker at the edge of your eye. Moving the camera is your own hand, so it
+  // gets every frame either way (easing and glide stay off with reduced motion).
   // Resting in the orb the farm is a few pixels across: a handful of frames is plenty and costs next to nothing.
   const fps = mini() ? (S.reducedMotion ? 1 : busy ? 4 : 2)
-    : moving && !S.reducedMotion ? 60 : S.reducedMotion ? (moving ? 15 : busy ? 5 : 2) : busy || dim !== want ? 30 : 8;
-  timer = window.setTimeout(frame, 1000 / fps);
+    : moving ? 60 : S.reducedMotion ? (busy ? 10 : 2) : busy || dim !== want ? TICK_HZ : 8;
+  if (moving || t - lastDraw >= 1000 / fps - 5) {
+    lastDraw = t;
+    const t2 = performance.now();
+    draw(dt);
+    const t3 = performance.now();
+    parts.draw += t3 - t2;
+    if (C.panelOpen && t - lastThumbs > 1000) { lastThumbs = t; drawThumbs(); renderHealth(); }
+    parts.thumbs += performance.now() - t3;
+    const ms = performance.now() - t;
+    meter.add(t, ms);
+    if (!mini() && (!smoke || realBudget)) governor.add(ms, t);
+  }
+  if (t - lastSave > SAVE_EVERY) save();
+  // the next frame: with the screen while moving; otherwise just as the next step is due, so each picture shows a
+  // fresh step and the steps come evenly
+  if (moving && !smoke) { raf = requestAnimationFrame(frame); return; }
+  const steps = mini() ? TICK_HZ / 4 : Math.max(1, Math.round(TICK_HZ / fps));
+  timer = window.setTimeout(frame, moving ? 1000 / fps : Math.max(4, ((steps - acc) * 1000) / TICK_HZ));
 }
+
+function stop(): void { clearTimeout(timer); timer = 0; cancelAnimationFrame(raf); raf = 0; }
 
 // Draw soon: `now` for input, which shouldn't wait for an idle frame (but never faster than the screen).
 function wake(now = false): void {
   if (!running()) return;
-  if (timer && !now) return;
-  clearTimeout(timer);
+  if (raf || (timer && !now)) return;
   if (!timer) lastT = performance.now();
+  clearTimeout(timer);
+  lastDraw = 0;
   timer = window.setTimeout(frame, Math.max(0, 8 - (performance.now() - lastFrame)));
 }
-document.addEventListener('visibilitychange', () => { if (document.hidden) { clearTimeout(timer); timer = 0; save(); } else wake(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { stop(); save(); } else wake(); });
 
 // ---------- the colony, kept across restarts ----------
 
@@ -312,6 +368,8 @@ function buildPanel(): void {
   calm.oninput = () => C.set({ calm: +calm.value / 100 });
   const fade = $<HTMLInputElement>('fadeIdle');
   fade.onchange = () => C.set({ fadeIdle: fade.checked });
+  const pr = $<HTMLInputElement>('perfReadout');
+  pr.onchange = () => C.set({ perfReadout: pr.checked });
   for (const b of $('maps').querySelectorAll<HTMLButtonElement>('[data-map]')) b.onclick = () => C.set({ mapSize: b.dataset.map as Settings['mapSize'] });
 }
 
@@ -322,6 +380,7 @@ function renderPanel(): void {
   if (document.activeElement !== calm) calm.value = String(Math.round(S.calm * 100));
   $('calmV').textContent = Math.round(S.calm * 100) + '%';
   $<HTMLInputElement>('fadeIdle').checked = S.fadeIdle;
+  $<HTMLInputElement>('perfReadout').checked = S.perfReadout;
   for (const b of $('maps').querySelectorAll<HTMLButtonElement>('[data-map]')) b.classList.toggle('on', b.dataset.map === S.mapSize);
   const m = MAP_SIZES[S.mapSize];
   $('mapNote').textContent = `${m.W.toLocaleString()} × ${m.H.toLocaleString()} cells. Only what's on screen is drawn. Another size starts a new farm.`;
@@ -455,6 +514,7 @@ mountShell<Settings>({
   onFullscreen() { snap = true; wake(); },
   onKey,
   onHide() { if (ready) { lastSave = performance.now(); C.saveNow(saveData()); } },
+  onSleep(a) { asleep = a; if (a) { stop(); save(); } else wake(true); }, // the screen locked or the Mac slept
   testHooks,
 });
 
@@ -485,5 +545,22 @@ function testHooks(): Record<string, unknown> {
     // in the hidden smoke run (the shell sets window.gameTest there and nowhere else) and takes nothing from the feed.
     endColony: () => { for (const a of sim.ants) a.dies = sim.now() - 1; sim.brood.length = 0; sim.life.last = Math.min(sim.life.last, sim.now() - 1000); wake(true); },
     restart: () => $('overRestart').click(),
+    // the perf run: what frames cost since the last reset, and the canvas they draw into
+    perfReset: () => { realBudget = true; meter.reset(); governor.reset(); Object.assign(parts, { since: performance.now(), tick: 0, ticks: 0, draw: 0, status: 0, thumbs: 0 }); },
+    perf: () => {
+      const since = performance.now() - parts.since, f = meter.summary(since), r = (v: number) => Math.round(v * 100) / 100, per = (v: number) => r(f.frames ? v / f.frames : 0);
+      return {
+        fps: r(f.fps), frameMs: r(f.ms), p95: r(f.p95), maxMs: r(f.max), frames: f.frames, slow: f.slow,
+        tickMs: per(parts.tick), ticksPerFrame: per(parts.ticks), drawMs: per(parts.draw), statusMs: per(parts.status), thumbsMs: per(parts.thumbs),
+        canvas: [view.width, view.height], css: [vw(), vh()], dpr: window.devicePixelRatio, quality: governor.quality.level, scale: cam ? r(cam.s) : 0, view: perf.view,
+        heapMB: Math.round(((performance as unknown as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize || 0) / 1048576),
+      };
+    },
+    // the camera moving as a player moves it: the pan a drag makes, every frame
+    pan: (dx: number, dy: number) => panScreen(dx, dy),
+    zoomOut: () => { for (let i = 0; i < 40; i++) zoomBy(1 / 1.25); },
+    zoomIn: () => { for (let i = 0; i < 40; i++) zoomBy(1.25); },
+    // the zoom range and the world the camera may show, to check it stays inside them
+    bounds: () => ({ ...limits(), world: world(), topInset: C ? C.topInset : 0, perf: !$('perf').hidden && $('perf').textContent }),
   };
 }

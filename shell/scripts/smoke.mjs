@@ -4,6 +4,9 @@
 // Run it from the game's folder, after building it:
 //   node ../shell/scripts/smoke.mjs                 (screenshots go to the temp folder)
 //   node ../shell/scripts/smoke.mjs --shots <dir>   (and are copied to <dir>)
+//   node ../shell/scripts/smoke.mjs --perf [--profile <dir>]
+//     only the game's perf run, which measures its frames; --profile starts it from COPIES of the files in <dir> (a
+//     settings.json and a save), so a real farm can be measured without ever touching it
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -14,6 +17,8 @@ const root = process.cwd();
 const electron = createRequire(path.join(root, 'package.json'))('electron');
 const shotsAt = process.argv.includes('--shots') ? path.resolve(process.argv[process.argv.indexOf('--shots') + 1]) : null;
 const name = path.basename(root);
+const perf = process.argv.includes('--perf');
+const profile = process.argv.includes('--profile') ? path.resolve(process.argv[process.argv.indexOf('--profile') + 1]) : null;
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `${name}-smoke-`));
 const out = path.join(tmp, 'out'), userData = path.join(tmp, 'user-data'), claude = path.join(tmp, 'claude-projects');
@@ -23,6 +28,10 @@ fs.writeFileSync(path.join(claude, 'demo-project', 'session-1.jsonl'), JSON.stri
   type: 'assistant', sessionId: 'session-1', timestamp: new Date(Date.now() - 60000).toISOString(),
   message: { id: 'msg_old', stop_reason: 'end_turn', usage: { input_tokens: 99999, output_tokens: 99999 } },
 }) + '\n');
+if (profile) {
+  fs.mkdirSync(userData, { recursive: true });
+  for (const f of fs.readdirSync(profile)) if (f.endsWith('.json')) fs.copyFileSync(path.join(profile, f), path.join(userData, f));
+}
 
 function run(mode) {
   return new Promise((resolve) => {
@@ -43,10 +52,15 @@ function run(mode) {
 }
 
 let ok = true;
-for (const mode of ['full', 'reopen', 'catalog']) {
+for (const mode of perf ? ['perf'] : ['full', 'reopen', 'catalog']) {
   const { result } = await run(mode);
   console.log(`\n${mode} run`);
   for (const c of result.checks) console.log(`  ${c.ok ? 'ok  ' : 'FAIL'} ${c.name}${c.ok || !c.detail ? '' : '  ' + c.detail}`);
+  for (const [k, v] of Object.entries(result.notes || {})) console.log(`  ${k}: ${JSON.stringify(v)}`);
+  if (perf) {
+    fs.mkdirSync(shotsAt || out, { recursive: true });
+    fs.writeFileSync(path.join(shotsAt || out, 'perf.json'), JSON.stringify(result.notes || {}, null, 2));
+  }
   ok = ok && result.ok;
 }
 const shots = fs.existsSync(out) ? fs.readdirSync(out).filter((f) => f.endsWith('.png')) : [];

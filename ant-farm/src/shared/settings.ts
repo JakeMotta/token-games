@@ -13,6 +13,7 @@ export interface FarmSettings {
   palette: PaletteId;
   calm: number; // 0..1: less saturation and contrast
   fadeIdle: boolean; // sink toward the backdrop after a few quiet seconds
+  perfReadout: boolean; // frames a second and their cost, in a corner of the farm
   mapSize: MapSizeId;
   seed: number; // the farm's map
 }
@@ -20,11 +21,12 @@ export interface FarmSettings {
 export type Settings = ShellSettings & FarmSettings;
 
 export const farmSettings: GameSettingsSchema<FarmSettings> = {
-  defaults: (seed) => ({ palette: 'blend', calm: 0, fadeIdle: false, mapSize: 'ridiculous', seed: seed >>> 0 }),
+  defaults: (seed) => ({ palette: 'blend', calm: 0, fadeIdle: false, perfReadout: false, mapSize: 'ridiculous', seed: seed >>> 0 }),
   sanitize: (r, base) => ({
     palette: oneOf(PALETTE_IDS, r.palette, base.palette),
     calm: num(r.calm, 0, 1, base.calm),
     fadeIdle: bool(r.fadeIdle, base.fadeIdle),
+    perfReadout: bool(r.perfReadout, base.perfReadout),
     mapSize: oneOf(MAP_SIZE_IDS, r.mapSize, base.mapSize),
     seed: typeof r.seed === 'number' && Number.isFinite(r.seed) ? r.seed >>> 0 : base.seed,
   }),

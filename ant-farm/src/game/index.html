@@ -13,6 +13,7 @@
 <div class="af" id="farm">
   <canvas id="view"></canvas>
   <pre class="stats" id="stats" hidden></pre>
+  <div class="perf" id="perf" hidden></div>
   <!-- Game over: the last ant has died. The run's score, how it compares, the last few runs, and a fresh farm. -->
   <div class="over" id="over" hidden>
     <div class="over-card">
@@ -38,6 +39,7 @@
     <p class="tg-note" id="palNote"></p>
     <label class="tg-row">Calm <input type="range" id="calm" min="0" max="100" step="5"><output id="calmV"></output></label>
     <label class="tg-row"><input type="checkbox" id="fadeIdle"> Fade when idle</label>
+    <label class="tg-row"><input type="checkbox" id="perfReadout"> Show performance (frames a second and ms)</label>
   </section>
   <section>
     <h4>Colony</h4>

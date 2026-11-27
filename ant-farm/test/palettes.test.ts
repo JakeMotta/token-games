@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createSim } from '../src/sim/sim';
 import { K } from '../src/sim/world';
 import { mapper, ORDER, resolve } from '../src/game/palettes';
-import { clamp, fit, lerp, near, zoomAt } from '../src/game/camera';
+import { fit, lerp, near, zoomAt } from '../src/game/camera';
 import { PALETTE_IDS } from '../src/shared/settings';
 
 // a grown farm, painted once with its material kinds
@@ -90,11 +90,9 @@ test('camera fit centres the box and snaps big scales to whole numbers', () => {
   assert.ok(Math.abs(cam.x + 640 / cam.s / 2 - 60) < 1e-9 && Math.abs(cam.y + 400 / cam.s / 2 - 45) < 1e-9);
 });
 
-test('camera zoom keeps the point under the cursor; clamp and ease', () => {
+test('camera zoom keeps the point under the cursor; ease', () => {
   const cam = { x: 5, y: 7, s: 2 }, z = zoomAt(cam, 100, 60, 1.5);
   assert.ok(Math.abs(cam.x + 100 / cam.s - (z.x + 100 / z.s)) < 1e-9);
-  const c = clamp({ x: -1000, y: 5000, s: 2 }, 400, 260, 600, 400, 40);
-  assert.ok(c.x + 600 / 2 >= 20 && c.y <= 260 - 20);
   let m = { x: 0, y: 0, s: 1 }; const b = { x: 100, y: 50, s: 4 };
   for (let i = 0; i < 200; i++) m = lerp(m, b, 0.1, 400, 300);
   assert.ok(near(m, b));

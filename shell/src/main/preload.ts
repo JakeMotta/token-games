@@ -21,6 +21,7 @@ const api: ShellApi = {
   loadGame: () => ipcRenderer.invoke(CH.load),
   onSettings: on(CH.settings),
   onDark: on(CH.dark),
+  onSleep: on(CH.sleep),
   onEvent: on(CH.event),
   onFeed: on(CH.feed),
   onCommand: on(CH.command),

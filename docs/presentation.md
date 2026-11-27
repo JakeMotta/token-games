@@ -46,6 +46,9 @@ setting reads as `orb`), and Settings → Display sets it.
   corner, Reduced motion, **Reset to defaults**, Quit.
 - **Alt+Cmd+T** (Alt+Ctrl+T): shows a hidden game; in the corner, opens or closes the card; popped out, switches
   click-through (so a click-through window can always be grabbed again).
+- Settings is a sheet over the game: its **×** (top right), **Close**, Esc or a click outside closes it. A press that
+  starts inside it (dragging a slider past its edge) never closes it, and the click outside only closes it, it
+  doesn't reach the game. Nothing traps the keyboard focus.
 - Keys while focused: Esc closes, `,` Settings, `O` pop out / back to the corner, `H` hide; popped out: `1` small,
   `2` large, `F` full screen, `T` click-through, `D` next corner. Games get every other key.
 

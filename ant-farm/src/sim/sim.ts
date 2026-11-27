@@ -9,7 +9,7 @@
 import {
   AIR, DIRT, ROCK, LOOSE, FOOD, CRUMB, GLASS, SOLID, DIGGABLE, FALLS, CEILING, K, LAYERS, LAYER_OF_SRC, PAL, SRC,
   DIG_TICKS, DROP_TICKS, BROOD_STAGES, MAX_ENERGY, MAP_SIZES, type MapSize, mulberry32, rgb, hexRgb, scaleCol, hash01, noiseAt,
-  jitterShade, COLOURS, LOOSE_COLOURS, WALL_COLOURS, type Rng, LOOSE_CRUMB_CAP, MAX_CRUMB_QUEUE, STORE_CAP,
+  jitterShade, COLOURS, LOOSE_COLOURS, WALL_COLOURS, type Rng, LOOSE_CRUMB_CAP, SKY_ROWS, SKY_MARGIN, MAX_CRUMB_QUEUE, STORE_CAP,
   ANT_LIFESPAN_MS, LIFESPAN_JITTER, QUEEN_LIFESPAN_MS, ANT_MEAL_MS, STARVE_DEATH_MS, STARVE_GRACE_MS, MIN_SURVIVORS, DYING_TICKS,
 } from './world';
 import { CS, CM, CELLS, ChunkStore, applyDiff, type Chunk, type ChunkStats } from './chunks';
@@ -75,6 +75,7 @@ export interface Sim {
   ants: Ant[]; brood: Brood[]; projects: Project[]; strains: Strain[]; events: SimEvent[];
   energy: number; crumbQueue: number; galleryQueue: { w: number; x?: number; y?: number }[]; scent: number;
   royal: Project | null; broodRoom: Project | null; box: Box; view: Box | null;
+  top: number; // the first row of the world anyone sees: the sky above it is cut (rows keep their numbers, so saves do too)
   sandAwake: boolean; moves: number; falling: number; crumbsOut: number;
   stats: Stats; fields: Map<string, Field>; nextId: number; meter: TokenMeter; life: Life; chunks: ChunkStore; now: () => number;
   typeAt(k: number): number;
@@ -250,6 +251,12 @@ export function createSim(opts: SimOptions = {}): Sim {
   const occ = new Map<number, number>(); // ants standing in a cell: grains rest on them instead of filling it
   const occAdd = (k: number, d: number) => { const n = (occ.get(k) || 0) + d; if (n > 0) occ.set(k, n); else occ.delete(k); };
 
+  // The sky is a thin strip: SKY_ROWS above the highest ground, and never less than SKY_MARGIN above the highest mound
+  // or ant. Rows above `top` are never shown and crumbs drop in just below it.
+  let lowest = H;
+  for (let x = 0; x < W; x++) if (surf[x] < lowest) lowest = surf[x];
+  const skyTop = Math.max(1, lowest - SKY_ROWS);
+
   // ---------- simulation state ----------
   const sim = {
     seed, W, H, XB, R, surf, pockets: new Map<number, Pocket>(), ex, nest: { x: ex + 5, y: 0 },
@@ -257,7 +264,7 @@ export function createSim(opts: SimOptions = {}): Sim {
     ants: [], brood: [], projects: [], strains: [], events: [],
     energy: opts.energy == null ? 320 : opts.energy,
     crumbQueue: 0, galleryQueue: [], scent: 40,
-    royal: null, broodRoom: null, view: null,
+    royal: null, broodRoom: null, view: null, top: skyTop,
     box: { x0: ex - 1, y0: surf[ex] - 1, x1: ex + 1, y1: surf[ex] + 1 }, // everything the colony has touched
     sandAwake: false, moves: 0, falling: 0, crumbsOut: 0,
     stats: { dug: 0, stored: 0, eaten: 0, laid: 0, born: 0, collapses: 0, crumbsSpawned: 0, tokens: 0, tasks: 0, died: 0, starved: 0, collected: 0, deepest: 0, oldestMs: 0 },
@@ -297,7 +304,10 @@ export function createSim(opts: SimOptions = {}): Sim {
     write(k, t, c);
     sim.version++;
     touch(k & XM, k >> XB);
+    // a mound grows toward the cut: the sky above it opens up (a falling crumb is only passing through)
+    if (t !== AIR && t !== CRUMB) raiseSky(k >> XB);
   }
+  function raiseSky(y: number) { if (y < sim.top + SKY_MARGIN) sim.top = Math.max(1, y - SKY_MARGIN); }
   function swap(a: number, b: number) {
     const ta = T(a), ca = C(a), tb = T(b), cb = C(b);
     write(a, tb, cb); write(b, ta, ca);
@@ -888,6 +898,7 @@ export function createSim(opts: SimOptions = {}): Sim {
 
   // ---------- planner: what the colony digs next ----------
   function plan() {
+    for (const a of sim.ants) raiseSky(a.y); // an ant climbing a mound stays in sight
     const open = sim.projects.filter((p) => !p.done);
     // Housekeeping: grains that slid or fell into a finished room get carried back out.
     if (sim.tick % 100 === 1) for (const r of sim.projects) {
@@ -1120,7 +1131,7 @@ export function createSim(opts: SimOptions = {}): Sim {
     live();
     if (sim.crumbQueue >= 1 && sim.tick % 5 === 0 && sim.crumbsOut < LOOSE_CRUMB_CAP) {
       const x = Math.max(2, Math.min(W - 3, ex + (rnd() < 0.5 ? -1 : 1) * ri(8, 50)));
-      const k = idx(x, 2);
+      const k = idx(x, sim.top + 1);
       if (T(k) === AIR) { setCell(k, CRUMB, SRC.CRUMB << 8 | ri(0, 255)); sim.crumbQueue--; sim.stats.crumbsSpawned++; sim.crumbsOut++; }
     }
     if (sim.tick % 20 === 1) { plan(); sim.crumbsOut = looseCrumbs(); }
@@ -1161,7 +1172,7 @@ export function createSim(opts: SimOptions = {}): Sim {
     x0 = Math.min(x0, ex - 40); x1 = Math.max(x1, ex + 40);
     y0 = Math.min(y0, surf[ex] - 14); y1 = Math.max(y1, surf[ex] + 34);
     for (const a of sim.ants) { if (a.x < x0) x0 = a.x; if (a.x > x1) x1 = a.x; if (a.y < y0) y0 = a.y; if (a.y > y1) y1 = a.y; }
-    x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(W - 1, x1); y1 = Math.min(H - 1, y1);
+    x0 = Math.max(0, x0); y0 = Math.max(sim.top, y0); x1 = Math.min(W - 1, x1); y1 = Math.min(H - 1, y1);
     return { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
   };
 
@@ -1351,7 +1362,7 @@ export function createSim(opts: SimOptions = {}): Sim {
     }
     Object.assign(sim, {
       tick: R0.tick, energy: R0.energy, crumbQueue: R0.crumbQueue, galleryQueue: R0.galleryQueue, scent: R0.scent,
-      box: R0.box, nest: R0.nest, nextId: R0.nextId, stats: { ...sim.stats, ...R0.stats }, life: { ...sim.life, ...R0.life },
+      box: { ...R0.box }, nest: R0.nest, nextId: R0.nextId, stats: { ...sim.stats, ...R0.stats }, life: { ...sim.life, ...R0.life },
     });
     store.tick = sim.tick;
     sim.meter.load(R0.meter);
@@ -1377,7 +1388,29 @@ export function createSim(opts: SimOptions = {}): Sim {
     sim.brood = R0.brood.map((e) => ({ ...e }));
     // saves from before runs had a start: the run began when the first queen did (or now, for a farm without one)
     if (!R0.life.started) sim.life.started = Math.min(now(), ...sim.ants.filter((a) => a.role === 'queen').map((a) => a.born));
+    cutSky();
     sim.version = 1;
+  }
+
+  // A saved farm may hold mounds, ants and crumbs anywhere in the old tall sky (crumbs used to drop in at row 2). Keep
+  // every mound and ant in sight, and move a crumb still falling high above the cut down to just below it, so nothing
+  // is lost.
+  function cutSky() {
+    const b = sim.box, x0 = Math.max(1, b.x0 - 64), x1 = Math.min(W - 2, b.x1 + 64);
+    for (let x = x0; x <= x1; x++) for (let y = 1; y < surf[x]; y++) {
+      const t = T(idx(x, y));
+      if (t !== AIR && (t !== CRUMB || T(idx(x, y + 1)) !== AIR)) { raiseSky(y); break; }
+    }
+    for (const a of sim.ants) raiseSky(a.y);
+    for (const e of sim.brood) raiseSky(e.y);
+    for (let x = x0; x <= x1; x++) for (let y = 1; y <= sim.top; y++) {
+      const k = idx(x, y);
+      if (T(k) !== CRUMB) continue;
+      const to = idx(x, sim.top + 1), c = C(k);
+      write(k, AIR, 0);
+      if (T(to) === AIR) write(to, CRUMB, c); else sim.crumbQueue++; // no room just below the cut: it drops in again later
+    }
+    b.y0 = Math.max(b.y0, sim.top);
   }
 
   return sim;

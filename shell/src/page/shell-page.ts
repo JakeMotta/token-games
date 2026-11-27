@@ -107,6 +107,10 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   const games = gamesPanel(api, (r) => pulse(`${r.action === 'remove' ? 'Remove' : 'Install'} ${r.name}? An agent asked: see Settings → Games`, 'task'));
   const display = el('section', 'tg-display', DISPLAY_HTML);
   const foot = el('section', '', '<div class="tg-chips"><button id="tg-reset">Reset to defaults</button><button id="tg-close">Close</button></div><p class="tg-note tg-keys" id="tg-keys"></p>');
+  // the sheet's header stays in view as it scrolls: its name, and × to close it
+  const phead = el('div', 'tg-phead', '<h3>Settings</h3><button class="tg-x" id="tg-x" title="Close (Esc)" aria-label="Close settings">'
+    + '<svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 2l6 6M8 2 2 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>');
+  panel.prepend(phead);
   panel.append(games.el, display, foot);
   body.append(shape, win);
   body.classList.add('tg');
@@ -315,6 +319,7 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
     $('tg-pFull').onclick = () => toggleFull();
     $('tg-reset').onclick = () => { void ctx.reset(); };
     $('tg-close').onclick = () => togglePanel(false);
+    $('tg-x').onclick = () => togglePanel(false);
   }
 
   function renderPanel(): void {
@@ -397,6 +402,20 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   gearBtn.onclick = () => togglePanel();
   hideBtn.onclick = () => hideWindow();
 
+  // Settings closes like any sheet: ×, Close, Esc, or a click anywhere outside it. Only a press that started outside
+  // counts (dragging a slider and letting go past the sheet's edge is not a click outside), and that click only closes
+  // the sheet: it doesn't also reach the game or the button under it. Nothing traps the keyboard focus.
+  let downOutside = false;
+  const outsidePanel = (e: Event) => !panel.hidden && e.target instanceof Node && !panel.contains(e.target);
+  window.addEventListener('pointerdown', (e) => { downOutside = outsidePanel(e); if (downOutside) e.stopPropagation(); }, true);
+  window.addEventListener('click', (e) => {
+    const close = downOutside && outsidePanel(e);
+    downOutside = false;
+    if (!close) return;
+    e.stopPropagation(); e.preventDefault();
+    togglePanel(false);
+  }, true);
+
   const cycle = <T,>(list: readonly T[], cur: T): T => list[(list.indexOf(cur) + 1) % list.length];
 
   window.addEventListener('keydown', (e) => {
@@ -459,6 +478,7 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
     setFull(st.fullscreen);
     api.onSettings((s) => { S = s; applySettings(); });
     api.onDark((d) => { dark = d; body.classList.toggle('tg-dark', d); game.onDark?.(d); });
+    api.onSleep((a) => game.onSleep?.(a));
     api.onEvent((ev) => game.onEvent(ev));
     api.onFeed((f) => { feed = f; game.onFeed?.(f); });
     api.onCommand((c: ShellCommand) => {
@@ -494,6 +514,8 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
         ptr('pointerup', x + dx, y + dy);
       },
       text: () => panel.innerText + '\n' + bar.innerText,
+      // where an element is in the window (CSS pixels), for real mouse input from the main process
+      rect: (sel: string) => { const r = document.querySelector(sel)?.getBoundingClientRect(); return r ? { x: r.x, y: r.y, w: r.width, h: r.height } : null; },
       // Settings → Games: what it shows, and its buttons by their data-games name ("refresh", "approve:<request>", …)
       games: () => ({ view: games.view(), text: games.el.innerText, hosted: hosted?.id || null, icon: !!game.root.querySelector('.tg-hicon') }),
       gamesClick: (name: string) => {

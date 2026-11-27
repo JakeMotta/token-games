@@ -23,7 +23,8 @@ the **shell** (`shell/`); a game only draws itself and reacts to usage.
    ([docs/catalog.md](docs/catalog.md)); keep the sandbox, the CSP and `window.tokenGame` that narrow.
 4. **One instance, cheap when collapsed.** One app per game (the shell holds the single-instance lock), one game
    view moved between the orb, its card and the window. In the orb (`scale === 'mini'`) draw at 1–4 fps and
-   skip work nobody sees; the simulation keeps real time.
+   skip work nobody sees; stop drawing while the page is hidden or the shell says the screen is asleep
+   (`onSleep(true)`); the simulation keeps real time.
 5. **Calm.** Quiet colours, no flashing, respect Reduced motion (`settings.reducedMotion`: no flights, no floating
    labels, fewer frames). Fade or dim when idle where it fits.
 6. **Counts only.** The feed reads token counts and timestamps from `~/.claude/projects/**/*.jsonl`; a game never
@@ -38,7 +39,7 @@ the **shell** (`shell/`); a game only draws itself and reacts to usage.
 |---|---|
 | `shell/` | The wrapper every game runs in ([shell/README.md](shell/README.md)). Version in `shell/package.json` and `SHELL_VERSION` (`shell/src/manifest.ts`); keep them equal |
 | `shell/src/main/shell.ts` | Electron main: windows, orb placement and dragging, modes, tray, hotkey, settings file, save file, feed |
-| `shell/src/page/shell-page.ts` | The page side: `mountShell(game)`, the orb, its pill and card, the window's title bar, Settings |
+| `shell/src/page/shell-page.ts` | The page side: `mountShell(game)`, the orb, its pill and card, the window's title bar, Settings (closes on ×, Close, Esc or a click outside) |
 | `shell/src/game.ts` | The game interface: `Game`, `GameContext`, `GameStatusLine`, `Theme` |
 | `shell/src/orb.ts`, `modes.ts` | Orb corners, display choice and shapes; the mode state machine (pure, unit-tested) |
 | `shell/src/settings.ts` | Shared settings and `settingsKit` for a game's own settings schema |
@@ -72,6 +73,7 @@ From a game folder (`cd ant-farm`):
 | `npm test` | Build, then the game's and the shell's unit tests (`node --test`) |
 | `npm run test:smoke` | Hidden end-to-end test: real Electron, windows never shown, a temp profile and a fake transcript folder. Three runs: `full`, `reopen`, and `catalog` (installs Token Garden from a local signed test registry, proves its sandbox, switches and removes it) |
 | `npm run shots` | The same, saving screenshots of every mode to `shots/` |
+| `npm run perf [-- --profile <folder>]` | Hidden frame-cost benchmark in every mode (fps, ms, CPU) into `perf.json`; `--profile` measures a copy of a real profile's settings and save |
 
 From the root: `npm run new-game -- <id> ["Name"] [--web] [--into <folder>]`, `npm run docs-check`, `npm run test:scripts`.
 

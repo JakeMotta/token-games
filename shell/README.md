@@ -27,7 +27,7 @@ mountShell<Settings>({ name: 'My Game', root: $('game'), settingsPanel: $('gameP
 ```
 
 The full interface is `src/game.ts`: `Game` (what the game gives: `root`, `start`, `onEvent`, optional `onScale`,
-`onSettings`, `onKey`, `onHide`, `testHooks`, …) and `GameContext` (what it gets back: `settings`, `scale`,
+`onSettings`, `onKey`, `onHide`, `onSleep` (the screen locked or the computer asleep: stop drawing), `testHooks`, …) and `GameContext` (what it gets back: `settings`, `scale`,
 `topInset`, `setStatus`, `pulse`, `setTheme`, `setCalm`, `save`/`load`, `set`, `reset`, …). Scales: `mini` (the
 orb), `expanded` (the card), `window`. `setStatus` takes `warm` to tint the orb's ring.
 
@@ -74,9 +74,13 @@ is active at a time. While the app runs it also listens on a local control socke
 
 `test/*.test.ts` runs with every game's `npm test`. `npm run test:smoke` in a game runs the shell's checks (the orb's
 corner, the pill, the card, dragging, hiding and the hotkey, pop out, docking, sizes, tray, hotkey, display changes, Settings, Reset, restart) and then the
-game's. A third run, `catalog`, installs the sample Token Garden from a signed test registry, proves it has no Node,
+game's. Settings' closing is checked with real mouse input: its ×, Esc, a click outside, and a slider dragged past
+the sheet's edge (which must not close it). A third run, `catalog`, installs the sample Token Garden from a signed test registry, proves it has no Node,
 files or network, feeds it a transcript line, switches back and removes it. Windows are never shown in the smoke test:
-showing and hiding only flip a flag there.
+showing and hiding only flip a flag there. `npm run perf` (`smoke.mjs --perf [--profile <folder>]`) is a single hidden
+run that measures what frames cost in each mode (`GameSmoke.perf`, `k.note`, `k.cpu`) and writes `perf.json`;
+`--profile` copies a profile's `*.json` (settings and save) into the temp profile first, so a real save can be
+measured without touching it.
 
 Changing anything here is a wrapper change: update `CLAUDE.md`, `README.md` and the docs it affects in the same
 change (`npm run docs-check`).

@@ -2,7 +2,8 @@
 // shell like a player would (the orb, its hover pill, the open card, dragging it to another corner, popping out and
 // docking back, the window's sizes, full screen, click-through, the tray and the shortcut), hands over to the game's
 // own checks, saves screenshots, writes result-<mode>.json and quits. shell/scripts/smoke.mjs starts it three times: a
-// full run, a 'reopen' run that checks everything survived the restart, and a 'catalog' run (smoke-catalog.ts).
+// full run, a 'reopen' run that checks everything survived the restart, and a 'catalog' run (smoke-catalog.ts). With
+// --perf it starts a single 'perf' run instead: the game measures what its frames cost (GameSmoke.perf), still hidden.
 import { app, nativeTheme, screen, type BrowserWindow } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -37,7 +38,7 @@ export interface SmokeContext<S extends ShellSettings> {
 
 // What the game's checks get: the same tools the shell's checks use.
 export interface SmokeKit<S extends ShellSettings> extends SmokeContext<S> {
-  mode: 'full' | 'reopen' | 'catalog';
+  mode: SmokeMode;
   check(name: string, ok: unknown, detail?: unknown): void;
   wait(ms: number): Promise<void>;
   until(fn: () => Promise<boolean> | boolean, ms?: number): Promise<boolean>;
@@ -46,23 +47,29 @@ export interface SmokeKit<S extends ShellSettings> extends SmokeContext<S> {
   shots(name: string): Promise<void>; // the same twice: <name>-dark and <name>-light
   docked(dock: 'tl' | 'tr' | 'bl' | 'br', w: number, h: number): boolean;
   transcript(usage: Record<string, number>, id: string): void; // append a real Claude Code transcript line
+  note(key: string, value: unknown): void; // a measurement for the result file (the perf run prints them)
+  cpu(ms: number): Promise<CpuUse>; // the app's CPU use over the next `ms`, per kind of process, in % of one core
 }
+
+export type SmokeMode = 'full' | 'reopen' | 'catalog' | 'perf';
+export interface CpuUse { main: number; renderer: number; gpu: number; other: number; total: number }
 
 // A game's own checks. full() runs popped out, in the small window at the bottom right; reset() after Reset to
 // defaults; leave() before the full run quits (change settings to look for after the restart, save); reopen() in the
-// second run, popped out.
+// second run, popped out. perf() is the whole of a perf run (smoke.mjs --perf), started in the corner as the settings say.
 export interface GameSmoke<S extends ShellSettings> {
   full?(k: SmokeKit<S>): Promise<void>;
   reset?(k: SmokeKit<S>): Promise<void>;
   leave?(k: SmokeKit<S>): Promise<void>;
   reopen?(k: SmokeKit<S>): Promise<void>;
+  perf?(k: SmokeKit<S>): Promise<void>;
 }
 
 interface Check { name: string; ok: boolean; detail?: string }
 
 export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game: GameSmoke<S> = {}): Promise<void> {
-  const m = process.env.TG_SMOKE_MODE, mode = m === 'reopen' || m === 'catalog' ? m : 'full';
-  const checks: Check[] = [];
+  const m = process.env.TG_SMOKE_MODE, mode: SmokeMode = m === 'reopen' || m === 'catalog' || m === 'perf' ? m : 'full';
+  const checks: Check[] = [], notes: Record<string, unknown> = {};
   const check = (name: string, ok: unknown, detail?: unknown) => { checks.push({ name, ok: !!ok, detail: detail === undefined ? undefined : JSON.stringify(detail) }); };
   const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
   const js = <T = any>(code: string): Promise<T> => c.win.webContents.executeJavaScript(code);
@@ -106,7 +113,19 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
       message: { id, model: 'claude-test', stop_reason: 'end_turn', content: [{ type: 'text', text: 'not read' }], usage } };
     fs.appendFileSync(file, JSON.stringify(line) + '\n');
   };
-  const k: SmokeKit<S> = { ...c, mode, check, wait, until, js, shot, shots, docked, transcript };
+  const note = (key: string, value: unknown) => { notes[key] = value; };
+  const cpu = async (ms: number): Promise<CpuUse> => {
+    app.getAppMetrics(); // Electron measures each process's CPU since the previous call
+    await wait(ms);
+    const u: CpuUse = { main: 0, renderer: 0, gpu: 0, other: 0, total: 0 };
+    for (const p of app.getAppMetrics()) {
+      const v = p.cpu.percentCPUUsage, t = p.type === 'Browser' ? 'main' : p.type === 'Tab' ? 'renderer' : p.type === 'GPU' ? 'gpu' : 'other';
+      u[t] += v; u.total += v;
+    }
+    for (const key of Object.keys(u) as (keyof CpuUse)[]) u[key] = Math.round(u[key] * 10) / 10;
+    return u;
+  };
+  const k: SmokeKit<S> = { ...c, mode, check, wait, until, js, shot, shots, docked, transcript, note, cpu };
 
   // the window sits in the orb's corner and the page shows this shape at its size
   const inCorner = () => same(c.win.getBounds(), orbWindowBounds(c.geo()));
@@ -122,6 +141,12 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     nativeTheme.themeSource = 'dark';
     if (c.win.webContents.isLoading()) await new Promise<void>((r) => { c.win.webContents.once('did-finish-load', () => r()); });
     check('the page loads with its test hooks', await until(() => js('!!window.shellTest && !!window.gameTest')));
+
+    if (mode === 'perf') {
+      if (game.perf) await game.perf(k);
+      else check('the game has a perf run', false);
+      return;
+    }
 
     if (mode === 'catalog') {
       if (c.catalog) await catalogSmoke(k, c.catalog);
@@ -173,6 +198,7 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     await shot('orb-expanded-settings');
     await js('shellTest.key("Escape")');
     check('Esc closes Settings first', await until(async () => !(await page()).panelOpen) && c.state() === 'expanded');
+    await settingsCloses(k, 'the card', 'settings-card');
     await js('shellTest.click("tg-shrink")');
     check('– folds the card back into the orb', await shows('orb') && c.ignoresMouse());
 
@@ -229,6 +255,7 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     items = labels(c.trayItems());
     check('the tray offers the way back', items.includes('Back to the corner') && !items.includes('Pop out'), items);
     await shot('window-small');
+    await settingsCloses(k, 'the window', 'settings-window');
 
     await game.full?.(k);
 
@@ -307,10 +334,55 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     check('no errors', false, String((e as Error).stack || e));
   } finally {
     c.store.flush();
-    fs.writeFileSync(path.join(c.outDir, `result-${mode}.json`), JSON.stringify({ ok: checks.every((x) => x.ok), checks }, null, 2));
+    fs.writeFileSync(path.join(c.outDir, `result-${mode}.json`), JSON.stringify({ ok: checks.every((x) => x.ok), checks, notes }, null, 2));
     app.quit();
   }
 }
 
 const same = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) =>
   a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+
+// Settings closes every way a sheet should, with real mouse input (not synthetic DOM events): its × at the top right,
+// a click outside it, and never a slider dragged past its edge and let go outside.
+async function settingsCloses<S extends ShellSettings>(c: SmokeKit<S>, where: string, shotName: string): Promise<void> {
+  const { check, js, until, wait } = c;
+  const open = async () => js<boolean>('shellTest.state().panelOpen');
+  const rect = (sel: string) => js<{ x: number; y: number; w: number; h: number } | null>(`shellTest.rect(${JSON.stringify(sel)})`);
+  const mouse = async (type: 'mouseDown' | 'mouseUp' | 'mouseMove', x: number, y: number) => {
+    c.win.webContents.sendInputEvent({ type, x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1 });
+    await wait(30);
+  };
+  const press = async (x: number, y: number, x2 = x, y2 = y) => {
+    await mouse('mouseMove', x, y); await mouse('mouseDown', x, y);
+    for (let i = 1; i <= 4; i++) await mouse('mouseMove', x + ((x2 - x) * i) / 4, y + ((y2 - y) * i) / 4);
+    await mouse('mouseUp', x2, y2);
+  };
+  const openIt = async () => { if (!(await open())) await js('shellTest.click("tg-set")'); return until(open); };
+
+  check(`${where}: Settings opens again`, await openIt());
+  const x = await rect('#tg-x'), panel = await rect('.tg-panel');
+  check(`${where}: Settings has a × at the top right of its header`, !!x && !!panel && x.y < panel.y + 30 && x.x + x.w > panel.x + panel.w - 30, { x, panel });
+  if (!x || !panel) return;
+  await c.shots(shotName);
+  await press(x.x + x.w / 2, x.y + x.h / 2);
+  check(`${where}: × closes Settings`, await until(async () => !(await open()), 1500));
+
+  await openIt();
+  await js(`document.querySelector('.tg-panel input[type=range]')?.scrollIntoView({ block: 'center' })`);
+  await wait(100);
+  const slider = await rect('.tg-panel input[type=range]');
+  if (slider) {
+    // press on the slider, drag it past the sheet's left edge, let go over the game
+    await press(slider.x + slider.w / 2, slider.y + slider.h / 2, Math.max(2, panel.x - 40), slider.y + slider.h / 2);
+    await wait(150);
+    check(`${where}: a slider let go outside the sheet does not close it`, await open());
+  } else check(`${where}: Settings has a slider to drag`, false);
+
+  // a click on the game beside the sheet: closes it, and only that (the game doesn't get the click)
+  await press(Math.max(4, panel.x / 2), panel.y + panel.h / 2);
+  check(`${where}: a click outside closes Settings`, await until(async () => !(await open()), 1500));
+
+  await openIt();
+  await js('shellTest.key("Escape")');
+  check(`${where}: Esc closes it too`, await until(async () => !(await open()), 1500));
+}

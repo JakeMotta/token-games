@@ -45,6 +45,26 @@ export const farmSmoke: GameSmoke<Settings> = {
     await js('shellTest.key("a")');
     check('A gives the camera back to the colony', await until(async () => (await state(k)).auto));
 
+    // the zoom range: out only as far as a fixed largest view, in to a sensible closest, and always inside the world
+    type Bounds = { min: number; max: number; world: { x0: number; y0: number; x1: number; y1: number }; topInset: number };
+    const inside = (cam: { x: number; y: number; s: number }, b: Bounds, w: number, h: number) =>
+      cam.x >= b.world.x0 - 0.5 && cam.x + w / cam.s <= b.world.x1 + 0.5 && cam.y >= b.world.y0 - b.topInset / cam.s - 0.5 && cam.y + h / cam.s <= b.world.y1 + 0.5;
+    for (const dir of ['zoomOut', 'zoomIn'] as const) {
+      await js(`gameTest.${dir}()`);
+      const b = await js<Bounds>('gameTest.bounds()');
+      await until(async () => Math.abs((await state(k)).cam.s / (dir === 'zoomOut' ? b.min : b.max) - 1) < 0.005, 4000); // the zoom eases in
+      st = await state(k);
+      const s = st.cam.s, w = st.w / s, h = st.h / s;
+      check(dir === 'zoomOut' ? 'zooming out stops at the largest view (a bounded number of chunks)' : 'zooming in stops at a sensible closest view',
+        dir === 'zoomOut' ? Math.abs(s / b.min - 1) < 0.005 && w <= 768 + 1 && h <= 432 + 1 : Math.abs(s / b.max - 1) < 0.005 && Math.min(w, h) >= 11.9, { cam: st.cam, view: [w, h], b });
+      check(`${dir === 'zoomOut' ? 'zoomed out' : 'zoomed in'}, the view stays inside the world and below the strip of sky`, inside(st.cam, b, st.w, st.h), { cam: st.cam, b });
+    }
+    await js('gameTest.look(1e9, -1e9)');
+    st = await state(k);
+    const b0 = await js<Bounds>('gameTest.bounds()');
+    check('panning past the edge stops at the edge of the world', inside(st.cam, b0, st.w, st.h), { cam: st.cam, b: b0 });
+    await js('shellTest.key("a")');
+
     // far across the map: the chunks there are made on demand, then let go; memory stays bounded
     for (const [x, y] of [[40000, 9000], [60000, 15000], [8000, 12000]]) {
       await js(`gameTest.look(${x}, ${y})`);
@@ -70,6 +90,16 @@ export const farmSmoke: GameSmoke<Settings> = {
     await js('gameTest.clickPalette("graphite")');
     check('picking Graphite applies and saves it', await until(async () => k.store.get().palette === 'graphite' && (await state(k)).palette === 'graphite'));
     await js('shellTest.key("Escape")');
+
+    // the performance readout: off by default, a switch in Settings shows frames a second and ms in a corner of the farm
+    check('the performance readout is off by default', !(await js<{ perf: string | false }>('gameTest.bounds()')).perf);
+    await js('shellTest.key(",")');
+    await js('document.getElementById("perfReadout").click()');
+    await js('shellTest.key("Escape")');
+    check('Show performance puts frames a second and ms on the farm', k.store.get().perfReadout && await until(async () => /\d+ fps · [\d.]+ ms/.test(String((await js<{ perf: string | false }>('gameTest.bounds()')).perf)), 3000),
+      await js('gameTest.bounds()'));
+    await shot('window-perf-readout');
+    k.update({ perfReadout: false } as Partial<Settings>);
 
     // light mode and Desktop Blend's light variant
     k.update({ palette: 'blend' } as Partial<Settings>);
@@ -126,5 +156,41 @@ export const farmSmoke: GameSmoke<Settings> = {
     k.check('the farm\'s settings survive a restart', s.palette === 'graphite' && s.calm === 0.4, s);
     k.check('the page gets the saved settings', await k.until(async () => (await state(k)).palette === 'graphite'));
     await k.shot('window-reopened');
+  },
+
+  // npm run perf: what a frame costs, in each place the farm lives, with the save it was started with (a copy of a real
+  // farm with --profile). Numbers only; the checks just make sure each part was measured.
+  async perf(k) {
+    const { check, js, until, wait, note, cpu } = k;
+    check('the farm is ready', await until(async () => (await state(k)).ready, 15000));
+    const st = await state(k);
+    note('farm', { W: st.W, H: st.H, ants: st.ants, tick: st.tick, chunks: st.chunks.loaded, settings: (({ presentation, reducedMotion, size, palette, mapSize }) => ({ presentation, reducedMotion, size, palette, mapSize }))(k.store.get()) });
+    const measure = async (name: string, ms: number) => {
+      await wait(800);
+      await js('gameTest.perfReset()');
+      const use = await cpu(ms);
+      const p = await js('gameTest.perf()');
+      note(name, { ...p, cpu: use });
+      check(`measured: ${name}`, p.frames > 0, p);
+    };
+    const go = async (st2: string, ev: 'toggle' | 'pop' | 'dock' | 'escape') => { if (k.state() !== st2) { k.dispatch(ev); await until(() => k.state() === st2, 3000); } };
+    await go('orb', 'dock');
+    await measure('orb', 8000);
+    await go('expanded', 'toggle');
+    await measure('card', 8000);
+    k.dispatch('escape');
+    await go('popped', 'pop');
+    await measure('window (settings as saved)', 8000);
+    k.update({ reducedMotion: false, size: 'large' } as Partial<Settings>);
+    await measure('window, large, full motion', 8000);
+    await js('window.__pan = setInterval(() => gameTest.pan(3, 1), 16)');
+    await measure('window, large, camera moving', 6000);
+    await js('gameTest.zoomOut()');
+    await wait(1500);
+    await measure('window, large, zoomed out, camera moving', 6000);
+    await js('clearInterval(window.__pan); shellTest.key("a")');
+    await js('shellTest.key(",")');
+    await measure('window, large, Settings open', 6000);
+    await js('shellTest.key("Escape")');
   },
 };

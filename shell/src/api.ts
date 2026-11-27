@@ -73,6 +73,7 @@ export interface ShellApi<S extends ShellSettings = ShellSettings> {
   quit(): void;
   onSettings(fn: (s: S) => void): void;
   onDark(fn: (dark: boolean) => void): void;
+  onSleep(fn: (asleep: boolean) => void): void; // the screen locked or the computer went to sleep, and back
   onEvent(fn: (ev: UsageEvent) => void): void;
   onFeed(fn: (f: FeedStatus) => void): void;
   onCommand(fn: (c: ShellCommand) => void): void;
@@ -89,7 +90,7 @@ export interface ShellApi<S extends ShellSettings = ShellSettings> {
 export const CH = {
   state: 'shell:state', set: 'shell:set', reset: 'shell:reset', fullscreen: 'shell:fullscreen', resize: 'shell:resize',
   grab: 'shell:grab', orbDrag: 'shell:orb-drag', intent: 'shell:intent', status: 'shell:status', hide: 'shell:hide', quit: 'shell:quit',
-  settings: 'shell:settings', dark: 'shell:dark', event: 'shell:event', feed: 'shell:feed', command: 'shell:command', mode: 'shell:mode',
+  settings: 'shell:settings', dark: 'shell:dark', sleep: 'shell:sleep', event: 'shell:event', feed: 'shell:feed', command: 'shell:command', mode: 'shell:mode',
   save: 'shell:save', saveNow: 'shell:save-now', load: 'shell:load',
   games: 'shell:games', gamesDo: 'shell:games-do', gamesChanged: 'shell:games-changed',
   hostedRect: 'shell:hosted-rect', hostedStatus: 'shell:hosted-status', hostedKey: 'shell:hosted-key',

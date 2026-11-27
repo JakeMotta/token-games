@@ -28,6 +28,7 @@ export interface Game<S extends ShellSettings = ShellSettings> {
   onFullscreen?(on: boolean): void;
   onKey?(key: string, e: KeyboardEvent): boolean; // a key the shell doesn't use; return true when handled
   onHide?(): void; // the window is about to hide or close: save now
+  onSleep?(asleep: boolean): void; // the screen locked or the computer slept (true), and woke (false): draw nothing meanwhile
   testHooks?(): Record<string, unknown>; // read-only views for the smoke test (window.gameTest); never a way to feed the game
 }
 

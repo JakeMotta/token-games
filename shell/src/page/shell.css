@@ -133,6 +133,13 @@ body.tg-full .tg-grip, body.tg-thru:not(.tg-grab) .tg-grip { display: none; }
 .tg-win > .tg-panel { top: 20px; }
 body.tg-full .tg-win > .tg-panel { top: 26px; }
 .tg-panel[hidden] { display: none; }
+/* the sheet's header: its name and a clear × at the top right, kept in view while the sheet scrolls */
+.tg-phead { position: sticky; top: -6px; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  margin: -6px -10px 6px; padding: 5px 6px 4px 10px; background: var(--g-panel); border-bottom: 1px solid var(--g-line); }
+.tg-phead h3 { margin: 0; font-size: 11px; font-weight: 600; }
+.tg-x { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; color: var(--g-dim); background: transparent;
+  border: 1px solid transparent; border-radius: 5px; cursor: pointer; }
+.tg-x:hover, .tg-x:focus-visible { color: var(--g-ink); border-color: var(--g-line); outline: none; }
 .tg-panel section + section { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--g-line); }
 .tg-panel h4 { margin: 0 0 5px; font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--g-dim); }
 .tg-note { margin: 4px 0; color: var(--g-dim); font-size: 10px; }

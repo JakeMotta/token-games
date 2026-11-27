@@ -50,7 +50,8 @@ to move it to another corner. The menu-bar icon has everything (show, open, pop 
 Settings, size, docking, click-through, Reduced motion, Reset to defaults, quit), and **Alt+Cmd+T** (Alt+Ctrl+T)
 works anywhere: it shows a hidden game, in the corner it opens and closes the card, popped out it switches
 click-through. Settings are saved as you change them; Settings → Display → Presentation
-chooses where it starts.
+chooses where it starts. Settings closes with its **×** at the top right, **Close** at the bottom, Esc, or a click
+anywhere outside it. Games pause their drawing while the screen is locked or the computer sleeps.
 
 ## Make a game
 

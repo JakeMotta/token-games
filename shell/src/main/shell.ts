@@ -14,7 +14,7 @@
 // window; TG_SMOKE_MODE picks the run; TG_USER_DATA moves the settings and save files; TG_CLAUDE_DIR points the feed
 // somewhere else. For the catalog: TG_CATALOG_DIR moves the catalog folder; TG_REGISTRY_URL and TG_REGISTRY_KEY point
 // it at a developer's own signed registry.
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, Tray, type IpcMainEvent, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, powerMonitor, screen, Tray, type IpcMainEvent, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -616,6 +616,8 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     wireIpc();
     createWindow();
     nativeTheme.on('updated', () => { send(CH.dark, nativeTheme.shouldUseDarkColors); host?.envChanged(); });
+    // nobody can see the game while the screen is locked or the computer sleeps: let it stop drawing
+    for (const [ev, asleep] of [['lock-screen', true], ['suspend', true], ['unlock-screen', false], ['resume', false]] as const) powerMonitor.on(ev as 'suspend', () => send(CH.sleep, asleep));
     for (const ev of ['display-added', 'display-removed', 'display-metrics-changed'] as const) screen.on(ev as 'display-added', onDisplays);
     if (SMOKE) {
       runSmoke<S>({

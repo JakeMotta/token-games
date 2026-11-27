@@ -37,7 +37,7 @@ Popped out, in the floating window:
   - pinch to zoom around the pointer (a mouse wheel zooms too);
   - drag with the mouse to pan; let go while moving and it glides on and slows down;
   - arrow keys pan, + and − zoom.
-  Panning covers more of the map per pixel when zoomed out. Moving the camera yourself pauses the auto camera for 30 seconds; double-click, A, or the target button in the title bar gives it back at once. Reduced motion turns off the zoom easing and the glide.
+  Panning covers more of the map per pixel when zoomed out. Moving the camera yourself pauses the auto camera for 30 seconds; double-click, A, or the target button in the title bar gives it back at once. Reduced motion turns off the zoom easing and the glide. Zoom out stops at a view of about 768 × 432 cells (at most about a hundred chunks on screen, on any map), zoom in at 12 cells on the short side, and the view never leaves the world.
 - **Stats**: I shows what a frame costs: draw time, ticks, chunks on screen, painted and loaded, tile memory and the JS heap.
 - Other keys: H hides it, P cycles palettes, D cycles docking corners (popped out), M cycles map sizes.
 
@@ -49,10 +49,11 @@ Every change shows at once and is saved straight away (on a Mac in `~/Library/Ap
 |---|---|---|
 | Colours | Original, Quiet Earth, Graphite, Slate, Sepia Dusk, Terminal, Desktop Blend (follows the system's light or dark mode) | Desktop Blend |
 | Calm | Less colour and contrast, from 0 to 100% | 0% |
+| Show performance | Frames a second and what a frame costs, in the farm's bottom-right corner (not in the orb) | off |
 | Fade when idle | Sinks toward the desktop after a few quiet seconds, comes back on the next event or when you point at it | off |
 | Presentation | In the corner orb, or a floating window | corner orb |
 | Corner | Where the orb sits: top left, top right, bottom left, bottom right (or drag it) | bottom right |
-| Reduced motion | No floating labels, no pop-out flight, fewer frames | off |
+| Reduced motion | No floating labels, no pop-out flight, fewer frames while the colony is calm (moving the camera stays smooth) | off |
 | Window size | Small, large, full screen; a dragged size is kept as custom | small |
 | Docking | Top left, top right, bottom left, bottom right, or free where you drop it | bottom right |
 | Opacity | 25% to 100% | 100% |
@@ -69,7 +70,11 @@ The farm's map comes from a seed kept with the settings. The colony is saved bes
 
 The map is cut into 64 × 64 chunks. A chunk exists in memory only once something touches it: the colony digs it, or the camera looks at it. Every other cell is worked out from the seed when it's needed, so the Ridiculous map (a billion cells) costs no more than a small one. Unchanged chunks the colony and the camera have left are dropped; changed ones are packed down to their differences from the generated soil after a minute, and that's also how they are saved.
 
-Only the chunks on screen are drawn. Each one is painted once into a small tile, in the palette, and painted again only when it changes; ants, brood and cracks are drawn on top. A frame paints at most 8 ms of tiles, and the widest zoom-out shows at most about 600 chunks. Loose soil away from the ants settles at an eighth of the rate, and ants nobody needs rest where they are.
+Above the ground there is only a thin strip of sky: a dozen rows above the highest ground. It opens further only when something grows into it (a mound, an ant climbing one), and crumbs drop in just below it. Saves from the days of the tall sky load as they were; anything left in the old sky (a crumb still falling) drops in again, so nothing is lost.
+
+Only the chunks on screen are drawn. Each one is painted once into a small tile, in the palette, and painted again only when it changes; ants, brood and cracks are drawn on top. The ants are always drawn; repainting changed soil gets what is left of a frame's budget and the rest waits a frame. A quality governor watches the frame time: when frames keep running long it first draws fewer pixels on a high-density screen (1.5× at most, then 1×), then drops the soft edges and repaints less soil a frame; after a long stretch of easy frames it steps back up. Loose soil away from the ants settles at an eighth of the rate, and ants nobody needs rest where they are.
+
+The farm draws only what anyone can see: about 20 frames a second while the colony is busy, 8 when it is calm, the screen's own rate while you move the camera, 1 to 4 in the orb, and nothing while it is hidden or the screen is locked or asleep.
 
 `npm run bench` measures it headless. On an M-series Mac:
 
@@ -144,7 +149,8 @@ npm test            # unit tests: simulation, chunks and culling, life on a fake
 npm run typecheck
 npm run test:smoke  # launches the app hidden and drives it: the orb, its pill and card, dragging to a corner, pop out and back, the big map, camera, settings, sizes, full screen, feed, saving, game over and a new farm, restart
 npm run shots       # the same, and saves screenshots to shots/
-npm run bench       # frame time and memory at each map size
+npm run bench       # frame time and memory at each map size (-- --save <colony.json> for a saved farm, read only)
+npm run perf        # the real app, hidden: frames a second, ms and CPU in the orb, card, window, moving and zoomed out (-- --profile <folder> for a copy of a real profile)
 ```
 
 The smoke test uses a throwaway settings folder and a fake transcript folder, never your own, and its window is never shown. It feeds the farm the only way the app allows: by writing a transcript line. Hooks for driving the simulation directly live in the tests, never in the app.

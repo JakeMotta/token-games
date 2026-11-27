@@ -20,6 +20,8 @@ export const MAX_ENERGY = 5000;
 // Food never piles up without end: crumbs wait in the sky while this many lie uncollected, the sky holds at most
 // this many, and a full store feeds the forager who brings one more.
 export const LOOSE_CRUMB_CAP = 30;
+export const SKY_ROWS = 12; // sky kept above the highest ground of the map
+export const SKY_MARGIN = 6; // and above the highest mound, ant or egg
 export const MAX_CRUMB_QUEUE = 40;
 export const STORE_CAP = 80;
 

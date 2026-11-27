@@ -22,12 +22,23 @@ export function zoomAt(cam: Cam, sx: number, sy: number, f: number, o: { min?: n
   return { x: wx - sx / s, y: wy - sy / s, s };
 }
 
-// Keep at least `keep` screen pixels of the world in view on each side.
-export function clamp(cam: Cam, W: number, H: number, vw: number, vh: number, keep = 40): Cam {
-  const kx = keep / cam.s, ky = keep / cam.s;
-  const x = Math.min(W - kx, Math.max(kx - vw / cam.s, cam.x));
-  const y = Math.min(H - ky, Math.max(ky - vh / cam.s, cam.y));
-  return { x, y, s: cam.s };
+// How far you may zoom. Out: until the view holds at most MAX_VIEW cells (about 12 × 7 chunks, so the tiles in memory
+// stay bounded on any map) or the whole world, whichever is smaller; in: until the shorter side shows MIN_VIEW cells.
+// `floor` is a smallest scale the caller needs anyway (the renderer's tile cap).
+export const MAX_VIEW = { w: 768, h: 432 }, MIN_VIEW = 12, MAX_SCALE = 24;
+export interface Area { x0: number; y0: number; x1: number; y1: number }
+export function limits(vw: number, vh: number, world: Area, floor = 0): { min: number; max: number } {
+  const min = Math.max(floor, vw / MAX_VIEW.w, vh / MAX_VIEW.h, Math.min(vw / (world.x1 - world.x0), vh / (world.y1 - world.y0)));
+  return { min, max: Math.max(min, Math.min(MAX_SCALE, Math.min(vw, vh) / MIN_VIEW)) };
+}
+
+// Keep the view inside the world: never past its edges, never above its sky. A view wider (or taller) than the world
+// is centred on it. `top` screen pixels at the top of the view are left to the shell's title bar, so the world may
+// start below them.
+export function clamp(cam: Cam, world: Area, vw: number, vh: number, top = 0): Cam {
+  const w = vw / cam.s, h = vh / cam.s, t = top / cam.s;
+  const fitIn = (v: number, lo: number, hi: number, size: number) => (hi - lo <= size ? (lo + hi - size) / 2 : Math.min(hi - size, Math.max(lo, v)));
+  return { x: fitIn(cam.x, world.x0, world.x1, w), y: fitIn(cam.y, world.y0 - t, world.y1, h), s: cam.s };
 }
 
 // Ease from cam toward target by t in 0..1. Scale moves in log space so zooming feels even, and the view centre (not
