@@ -175,10 +175,15 @@ Done:
   Pages from GitHub Actions, `main` protected against force-pushes and deletion.
 - The signing key made in Jake's Keychain, its public key pinned in the app, the index signed locally; no private key
   in GitHub.
-- The Ant Farm packaged as `ant-farm-web` 1.0.0, released as the GitHub Release `ant-farm-web-v1.0.0`, its pointer in
-  `registry/games/`, the index signed and served on Pages.
-- Installed from the public URL in a hidden run of the app (the permission sheet, the sha256 and the signature all
-  checked), played sandboxed, fed tokens, saved in its own slot, removed with its save kept.
+- The Ant Farm packaged as `ant-farm-web` 1.0.0 from commit `eb48d0a`, released as the GitHub Release
+  `ant-farm-web-v1.0.0` (zip sha256 `177ddc6c…3db6789`; packing it locally twice and in CI gave the same bytes, and
+  `verify-pointer` rebuilt it from the commit), its pointer in `registry/games/`, the index signed on Jake's Mac.
+- `registry-publish` checked the signature and the pointers and deployed the index; Pages serves the same bytes at
+  <https://jakemotta.github.io/token-games/registry/index.json>.
+- Installed from that public URL in a hidden run of the app, trusting only the key built into it (`TG_REGISTRY_URL=…
+  node ../shell/scripts/smoke.mjs --only catalog-game`): the signature, the permission sheet and the sha256 all
+  checked, played sandboxed, fed tokens, saved in its own slot (the built-in `colony.json` untouched), loaded that save
+  again, removed with its save kept.
 
 Left for Jake:
 
@@ -203,3 +208,6 @@ Left for Jake:
 6. **A landing page** on Pages that lists the games from the index, with screenshots, instead of the bare link.
 7. **Pin GitHub Actions by commit** and add an entropy scan (gitleaks) in CI before outside pull requests arrive.
 8. **A save export** for catalog games (the save is capped at 1 MB; a very old colony could reach it).
+9. **A sleep signal in the bridge.** The built-in farm stops drawing while the screen is locked or the Mac sleeps
+   (`Game.onSleep`); the bridge has no such event yet, so the catalog farm keeps drawing at its orb rate then. Add it
+   as bridge version 3 (`onSleep`) when it matters.
