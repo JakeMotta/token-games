@@ -35,6 +35,7 @@ From script, `window.antFarmFeed({ type: 'tokens', input, output, cache_read, ca
 - `render.js`: draws a frame: the world one pixel a cell, ants included (the first prototype's ants), through the chosen palette, scaled up crisp. Options: `palette`, `calm`, `dark`, `dim` (idle fade), `soft` (feathered edges). `ants: 'new'` draws round two's side-view sprites instead, kept only for comparing.
 - `sprites.html`: the original ants in every palette at the 320 × 180 window size and zoomed; `?ants=new` shows round two's sprite sheet.
 - `overlay.html`: a mock-up of the farm as an always-on-top window over a Mac desktop where Claude Code is working (each step it takes feeds the farm). Keys: `1` small 320 × 180, `2` large 640 × 360, drag the corner grip for any size (kept 16:9), `F` full screen and `Esc` back, `T` click-through (hold `⌥` to grab it again), `D` cycles the docking corner, `K` feeds 5k tokens, `H` hides it to the menu bar, `P` cycles the palette, `C` toggles the palette comparison (every palette at 320 × 180 next to a work window). The strip also has a Calm slider, Fade when idle (sinks toward the backdrop after 5 quiet seconds, back on the next token) and Reduced motion (no floaters or window animation, 2–5 fps). The real app would be a native transparent, frameless, always-on-top window; this page only fakes the desktop around it. URL options: `size=S|L|F`, `dock=tl|tr|bl|br`, `theme=light|dark`, `palette=`, `calm=0..100`, `fade=1`, `rm=1`, `view=compare`, `opacity=`, `pause=1`, `test=1`.
+- `display-modes.html`: eight ways the farm could sit on a Mac desktop (notch island, menu-bar strip, corner orb, click-to-expand window, ground line, live wallpaper, Dock icon, Claude Code status line) plus a combined design. Each tab is a mock Mac screen, light or dark, with the live colony in its collapsed, peek and expanded states (hover, click and click-away work; the orb drags and snaps to a corner), and a card on behaviour, screen use, attention, Electron effort, Windows and limits. A comparison table and the recommendation close the page. The colony runs on pretend tokens there only to keep it moving; the page has no feed controls. Keys: `1`–`9` and the arrow keys switch tabs, `Esc` collapses. URL options: `mode=notch|menubar|orb|tile|ground|wall|dock|status|combo`, `state=collapsed|peek|expanded|popped`, `theme=light|dark`, `palette=blend|graphite`, `notch=0`, `seed=`, `warp=`, `test=1`.
 - `index.html`: the page, HUD, input and frame loop (30 fps busy, 8 fps calm, stopped when hidden).
 
 ## Test
@@ -43,6 +44,7 @@ From script, `window.antFarmFeed({ type: 'tokens', input, output, cache_read, ca
 node --test prototype/ant-farm/test/             # simulation, camera and sprite unit tests
 node prototype/ant-farm/test/e2e.js [seed]          # loads the page in headless Chrome and runs its checks
 node prototype/ant-farm/test/e2e.js 7 overlay.html  # the same for the desktop overlay mock-up
+node prototype/ant-farm/test/e2e.js 7 display-modes.html  # every display mode: states, hover, click-away, orb snap, themes
 ```
 
 The end-to-end test needs Google Chrome or Chromium installed. It runs headless and opens no window.

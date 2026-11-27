@@ -3,7 +3,7 @@
 Idle games that play themselves from the work your AI agent does: every token spent or task finished moves the game forward. Works with Claude Code first, then Codex and other agents.
 
 Games:
-- Ant farm: seeded maps with food scattered through them, the ants tunnel to find it. A desktop overlay app fed by Claude Code: [ant-farm](ant-farm/) (`npm install && npm start`). Design: [docs/ant-farm-design.md](docs/ant-farm-design.md). Browser prototype: [prototype/ant-farm](prototype/ant-farm/).
+- Ant farm: seeded maps with food scattered through them, the ants tunnel to find it. A desktop overlay app fed by Claude Code: [ant-farm](ant-farm/) (`npm install && npm start`). Design: [docs/ant-farm-design.md](docs/ant-farm-design.md). Browser prototype: [prototype/ant-farm](prototype/ant-farm/). Ways to show it on a Mac: [display-modes.html](prototype/ant-farm/display-modes.html).
 
 Planned:
 - Tower defense: tokens queue enemies, a bucket releases them in waves.

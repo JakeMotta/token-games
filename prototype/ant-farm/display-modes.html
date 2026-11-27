@@ -1,0 +1,1017 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ant Farm display modes</title>
+<style>
+  /* Layout: tabs on top (one per way of showing the farm), the Mac screen right under them, then the notes for that
+     mode, then the comparison and the recommendation. The screen is 1280 × 800 points, scaled to fit. */
+  :root {
+    --page: #eef0f4; --bar: rgba(248, 249, 251, 0.92); --line: #d8dce4; --ink: #1d2330; --dim: #5d6678; --faint: #8a92a3;
+    --accent: #b4542f; --accent-soft: #fbe9df; --chip: #fff; --card: #fff; --good: #2f7a45; --good-soft: #e3f2e7; --meh: #8a6a1f; --meh-soft: #f6eed9;
+    --wall-a: #9fc3e8; --wall-b: #f2c9b0; --wall-c: #e9a58e; --wall-d: #7fa4d6; --wall-e: #c7dbf2;
+    --menubar: rgba(246, 247, 250, 0.66); --menubar-ink: #1b1f27; --menubar-hi: rgba(0, 0, 0, 0.1);
+    --dock: rgba(246, 247, 250, 0.45); --dock-line: rgba(255, 255, 255, 0.6);
+    --win: #fbfbfc; --win-bar: #ececf0; --win-ink: #22262e; --win-dim: #7b8291; --win-line: #d3d6dd;
+    --pop: rgba(246, 246, 248, 0.86); --pop-line: rgba(0, 0, 0, 0.12);
+    --cc: #c96442; --ok: #3b8a4a; --tool: #2e6bd6;
+    --shadow: 0 12px 34px rgba(20, 28, 48, 0.28), 0 1px 3px rgba(20, 28, 48, 0.25);
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --page: #0f1218; --bar: rgba(22, 26, 34, 0.92); --line: #2a303c; --ink: #dfe3ea; --dim: #9aa2b2; --faint: #6f7788;
+    --accent: #e5875f; --accent-soft: #3a261d; --chip: #1d222c; --card: #161a22; --good: #7cc68a; --good-soft: #1d3324; --meh: #d8b65e; --meh-soft: #33291a;
+    --wall-a: #1b2550; --wall-b: #4b2a5e; --wall-c: #7a3a52; --wall-d: #101a3a; --wall-e: #2a3d78;
+    --menubar: rgba(22, 24, 32, 0.58); --menubar-ink: #eef0f5; --menubar-hi: rgba(255, 255, 255, 0.16);
+    --dock: rgba(40, 42, 52, 0.5); --dock-line: rgba(255, 255, 255, 0.14);
+    --win: #1c1d22; --win-bar: #2a2b31; --win-ink: #dcdfe5; --win-dim: #8a90a0; --win-line: #3a3c44;
+    --pop: rgba(38, 39, 44, 0.86); --pop-line: rgba(255, 255, 255, 0.12);
+    --cc: #e5875f; --ok: #7cc68a; --tool: #7aa7ff;
+    --shadow: 0 14px 38px rgba(0, 0, 0, 0.6), 0 1px 3px rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--page); color: var(--ink); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  button { font: inherit; color: inherit; }
+
+  /* ---------- top bar ---------- */
+  .top { position: sticky; top: 0; z-index: 50; background: var(--bar); border-bottom: 1px solid var(--line);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  .top-in { max-width: 980px; margin: 0 auto; padding: 8px 16px; display: flex; flex-direction: column; gap: 6px; }
+  .row1 { display: flex; align-items: center; gap: 10px; }
+  .row1 h1 { font-size: 15px; margin: 0; font-weight: 650; white-space: nowrap; }
+  .row1 h1 small { font-weight: 400; color: var(--dim); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; background: var(--chip); flex: none; }
+  .seg button { border: 0; background: none; padding: 3px 9px; font-size: 12px; cursor: pointer; color: var(--dim); }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .spacer { flex: 1; }
+  .tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin: 0 -2px; padding: 0 2px; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: none; border: 1px solid transparent; background: none; border-radius: 7px; padding: 4px 7px; cursor: pointer; font-size: 13px; color: var(--dim); white-space: nowrap; }
+  .tab:hover { background: var(--chip); border-color: var(--line); }
+  .tab.on { background: var(--chip); border-color: var(--accent); color: var(--ink); font-weight: 600; }
+  .tab .n { color: var(--faint); font-variant-numeric: tabular-nums; margin-right: 4px; font-weight: 500; }
+  .tab .rec { margin-left: 5px; font-size: 10.5px; padding: 0 5px; border-radius: 9px; background: var(--good-soft); color: var(--good); font-weight: 600; }
+
+  main { max-width: 980px; margin: 0 auto; padding: 12px 16px 40px; }
+  .states { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; min-height: 28px; }
+  .states .lbl { font-size: 12px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.04em; }
+  .hint { font-size: 12.5px; color: var(--dim); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stage { position: relative; width: 100%; border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px rgba(0,0,0,0.3), 0 18px 44px rgba(0,0,0,0.22); background: #000; }
+  .foot { font-size: 12px; color: var(--faint); margin: 8px 2px 0; }
+
+  /* ---------- the Mac screen ---------- */
+  .scr { position: absolute; left: 0; top: 0; width: 1280px; height: 800px; transform-origin: 0 0; overflow: hidden; user-select: none; -webkit-user-select: none;
+    font: 13px/1.3 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; color: var(--menubar-ink); --mb: 25px; }
+  .scr.notch { --mb: 34px; }
+  .scr .wall, .scr .wall svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .menubar { position: absolute; left: 0; right: 0; top: 0; height: var(--mb); display: flex; align-items: center; gap: 18px; padding: 0 16px; z-index: 30;
+    background: var(--menubar); backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6); font-size: 13px; }
+  .menubar .apple svg { display: block; }
+  .menubar .right { margin-left: auto; display: flex; gap: 15px; align-items: center; font-variant-numeric: tabular-nums; }
+  .menubar .right svg { display: block; }
+  .notchcut { display: none; position: absolute; top: 0; left: 50%; width: 190px; margin-left: -95px; height: 34px; background: #000; border-radius: 0 0 12px 12px; z-index: 41; }
+  .scr.notch .notchcut { display: block; }
+  .dock { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); display: flex; gap: 8px; padding: 6px 8px; z-index: 32;
+    border-radius: 18px; background: var(--dock); border: 1px solid var(--dock-line); backdrop-filter: blur(24px) saturate(1.5); -webkit-backdrop-filter: blur(24px) saturate(1.5); }
+  .app { width: 52px; height: 52px; border-radius: 12px; position: relative; display: grid; place-items: center; flex: none;
+    box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.25), 0 1px 2px rgba(0,0,0,0.2); font: 600 22px/1 -apple-system, system-ui, sans-serif; color: #fff; }
+  .app.run::after { content: ''; position: absolute; bottom: -5px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--menubar-ink); opacity: 0.7; }
+  .a1 { background: linear-gradient(90deg, #3d8bf2 50%, #e9f1fb 50%); }
+  .a2 { background: radial-gradient(circle at 50% 50%, #fff 0 30%, #2c7bf0 31% 100%); }
+  .a3 { background: #1e1f24; font: 600 15px/1 ui-monospace, Menlo, monospace; }
+  .a4 { background: #d97757; }
+  .a5 { background: linear-gradient(#ffd54a 0 22%, #fffbe8 22%); }
+  .a6 { background: linear-gradient(#9aa0aa, #6d727c); }
+  .a7 { background: linear-gradient(160deg, #d8c6a8, #a88a62); color: #3b2a1a; }
+
+  .win { position: absolute; background: var(--win); color: var(--win-ink); border-radius: 11px; box-shadow: var(--shadow), 0 0 0 0.5px rgba(0,0,0,0.3); overflow: hidden;
+    transition: transform 0.5s cubic-bezier(.2,.8,.2,1), opacity 0.35s; }
+  .win .wbar { height: 28px; background: var(--win-bar); display: flex; align-items: center; padding: 0 10px; gap: 7px; font-size: 12px; color: var(--win-dim); border-bottom: 1px solid var(--win-line); }
+  .lights { display: flex; gap: 7px; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; background: #ff5f57; }
+  .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+  .wbar .t { flex: 1; text-align: center; margin-right: 50px; }
+  .term pre, .ed pre { margin: 0; padding: 10px 14px; font: 12px/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; }
+  .term .c { color: var(--cc); } .term .g { color: var(--ok); } .term .b { color: var(--tool); } .term .d { color: var(--win-dim); }
+  .ed pre .k { color: #a14fd1; } .ed pre .m { color: var(--win-dim); } .ed pre .f { color: var(--tool); }
+  .icons { position: absolute; right: 22px; top: calc(var(--mb) + 18px); display: grid; gap: 18px; z-index: 2; }
+  .icon { width: 74px; text-align: center; font-size: 11px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.6); }
+  .icon i { display: block; width: 52px; height: 42px; margin: 0 auto 4px; border-radius: 5px; background: linear-gradient(#7fb4f0, #4f8fdc); box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+
+  /* every farm view is a canvas filling its box */
+  canvas.farm { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+  .stat { font: 500 11px/1 -apple-system, system-ui, sans-serif; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pill-btn { border: 1px solid rgba(127,127,127,0.35); background: rgba(127,127,127,0.12); border-radius: 6px; padding: 3px 9px; font-size: 11.5px; cursor: default; }
+  .fade-in { transition: opacity 0.25s 0.12s; }
+
+  /* ---------- 1 and 9: notch island ---------- */
+  .island { position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 42; background: #000; color: #d9dadf; overflow: hidden; cursor: pointer;
+    width: 340px; height: 34px; border-radius: 0 0 14px 14px; transition: width 0.42s cubic-bezier(.3,1.3,.5,1), height 0.42s cubic-bezier(.3,1.3,.5,1), border-radius 0.42s; }
+  .island .ear { position: absolute; top: 6px; height: 22px; display: flex; align-items: center; gap: 6px; transition: opacity 0.2s; }
+  .island .ear.l { left: 12px; width: 58px; border-radius: 6px; overflow: hidden; }
+  .island .ear.r { right: 14px; font: 600 12px/1 -apple-system, system-ui, sans-serif; color: #c9cbd1; }
+  .island .dot { width: 6px; height: 6px; border-radius: 50%; background: #8fa67b; box-shadow: 0 0 0 2px rgba(143,166,123,0.18); }
+  .island .peek, .island .panel { position: absolute; left: 0; right: 0; top: 34px; opacity: 0; pointer-events: none; transition: opacity 0.18s; }
+  .island .peek { padding: 6px 14px 10px; }
+  .island .peek .strip { height: 52px; border-radius: 9px; overflow: hidden; }
+  .island .peek .stat { margin-top: 6px; color: #a9acb4; display: flex; justify-content: space-between; }
+  .island .panel { top: 34px; padding: 6px 16px 14px; }
+  .island .panel .big { height: 268px; border-radius: 12px; overflow: hidden; }
+  .island .panel .bar { display: flex; align-items: center; gap: 12px; margin-top: 10px; color: #a9acb4; }
+  .island .panel .bar .pill-btn { border-color: #3a3b40; background: #1b1c20; color: #d9dadf; cursor: pointer; }
+  .island .panel .bar .pill-btn.hide { display: none; }
+  .scr[data-state="peek"] .island { width: 420px; height: 128px; border-radius: 0 0 24px 24px; }
+  .scr[data-state="expanded"] .island { width: 640px; height: 360px; border-radius: 0 0 30px 30px; cursor: default; }
+  .scr[data-state="peek"] .island .peek, .scr[data-state="expanded"] .island .panel { opacity: 1; pointer-events: auto; transition: opacity 0.25s 0.14s; }
+  .scr[data-state="expanded"] .island .ear.l { opacity: 0; }
+  /* no notch: the island hangs from the middle of the menu bar instead */
+  .scr:not(.notch) .island { width: 210px; height: 25px; border-radius: 0 0 11px 11px; }
+  .scr:not(.notch) .island .ear { top: 3px; height: 19px; }
+  .scr:not(.notch) .island .ear.l { width: 120px; left: 8px; border-radius: 5px; }
+  .scr:not(.notch) .island .ear.r { right: 10px; }
+  .scr:not(.notch) .island .peek, .scr:not(.notch) .island .panel { top: 25px; }
+  .scr:not(.notch)[data-state="peek"] .island { width: 420px; height: 118px; border-radius: 0 0 22px 22px; }
+  .scr:not(.notch)[data-state="expanded"] .island { width: 640px; height: 352px; border-radius: 0 0 28px 28px; }
+  .scr:not(.notch)[data-state="peek"] .island .ear.l, .scr:not(.notch)[data-state="expanded"] .island .ear.l { opacity: 0; }
+
+  /* 9: popped out as the corner overlay */
+  .popwin { position: absolute; right: 18px; bottom: 92px; width: 400px; height: 253px; z-index: 34; border-radius: 10px; overflow: hidden; box-shadow: var(--shadow);
+    opacity: 0; transform: translateY(-460px) translateX(-380px) scale(0.2); transform-origin: top center; pointer-events: none;
+    transition: transform 0.55s cubic-bezier(.2,.9,.25,1), opacity 0.3s; }
+  .popwin .fbar { position: absolute; left: 0; right: 0; top: 0; height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 8px; z-index: 2; color: var(--fink, #a2a5ab); background: var(--fbar, rgba(30,31,35,0.7)); }
+  .popwin .fbar b { color: var(--fink); }
+  .popwin .fbar .pill-btn { padding: 1px 7px; font-size: 10.5px; cursor: pointer; margin-left: auto; }
+  .scr[data-state="popped"] .popwin { opacity: 1; transform: none; pointer-events: auto; }
+  .scr[data-state="popped"] .island .dot { background: #c9a86a; }
+
+  /* ---------- 2: menu-bar strip and popover ---------- */
+  .mbitem { display: flex; align-items: center; gap: 5px; padding: 2px 5px; border-radius: 5px; cursor: pointer; }
+  .mbitem .mini { width: 46px; height: 15px; border-radius: 3px; overflow: hidden; box-shadow: inset 0 0 0 0.5px rgba(127,127,127,0.5); }
+  .scr[data-state="expanded"] .mbitem, .scr[data-state="peek"] .mbitem { background: var(--menubar-hi); }
+  .tip { position: absolute; z-index: 45; background: var(--pop); border: 0.5px solid var(--pop-line); border-radius: 7px; padding: 5px 9px; font-size: 12px;
+    color: var(--win-ink); box-shadow: 0 6px 18px rgba(0,0,0,0.2); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    opacity: 0; transform: translateY(-4px); transition: opacity 0.15s, transform 0.15s; pointer-events: none; white-space: nowrap; }
+  .scr[data-state="peek"] .tip { opacity: 1; transform: none; }
+  .popover { position: absolute; z-index: 44; top: calc(var(--mb) + 6px); width: 372px; background: var(--pop); border: 0.5px solid var(--pop-line); border-radius: 12px; color: var(--win-ink);
+    padding: 10px; box-shadow: 0 16px 40px rgba(0,0,0,0.28); backdrop-filter: blur(30px) saturate(1.6); -webkit-backdrop-filter: blur(30px) saturate(1.6);
+    opacity: 0; transform: translateY(-6px) scale(0.98); transform-origin: top right; pointer-events: none; transition: opacity 0.16s, transform 0.2s; }
+  .scr[data-state="expanded"] .popover { opacity: 1; transform: none; pointer-events: auto; }
+  .popover .big { height: 200px; border-radius: 8px; overflow: hidden; }
+  .popover .head { display: flex; align-items: baseline; gap: 8px; padding: 0 2px 8px; }
+  .popover .head b { font-size: 13px; }
+  .popover .head .stat { color: var(--win-dim); margin-left: auto; }
+  .popover .acts { display: flex; gap: 6px; padding-top: 9px; }
+  .popover hr { border: 0; border-top: 1px solid var(--pop-line); margin: 9px 0 0; }
+
+  /* ---------- 3: corner orb ---------- */
+  .orb { position: absolute; z-index: 36; width: 64px; height: 64px; border-radius: 32px; background: #000; cursor: grab; touch-action: none;
+    box-shadow: 0 8px 22px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.08);
+    transition: width 0.4s cubic-bezier(.3,1.25,.5,1), height 0.4s cubic-bezier(.3,1.25,.5,1), border-radius 0.4s, left 0.35s cubic-bezier(.2,.9,.3,1), top 0.35s cubic-bezier(.2,.9,.3,1), right 0.35s cubic-bezier(.2,.9,.3,1), bottom 0.35s cubic-bezier(.2,.9,.3,1); }
+  .orb.dragging { transition: none; cursor: grabbing; }
+  .orb .ball { position: absolute; width: 54px; height: 54px; border-radius: 50%; overflow: hidden; top: 5px; box-shadow: 0 0 0 2px #8fa67b55; }
+  .orb.r .ball { right: 5px; } .orb.l .ball { left: 5px; }
+  .orb.b .ball { bottom: 5px; top: auto; }
+  .orb .info { position: absolute; top: 15px; color: #c9cbd1; opacity: 0; transition: opacity 0.15s; }
+  .orb.r .info { right: 72px; text-align: right; } .orb.l .info { left: 72px; }
+  .orb.b .info { top: auto; bottom: 15px; }
+  .orb .info b { display: block; font-size: 13px; color: #eef0f5; margin-bottom: 3px; }
+  .orb .card { position: absolute; left: 10px; right: 10px; top: 10px; bottom: 74px; border-radius: 16px; overflow: hidden; opacity: 0; pointer-events: none; transition: opacity 0.15s; }
+  .orb.t .card { top: 74px; bottom: 10px; }
+  .orb .shrink { position: absolute; top: 18px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(255,255,255,0.14); color: #fff; font-size: 13px; line-height: 22px; padding: 0; opacity: 0; cursor: pointer; z-index: 2; }
+  .orb.r .shrink { left: 18px; } .orb.l .shrink { right: 18px; }
+  .orb.t .shrink { top: auto; bottom: 22px; }
+  .scr[data-state="peek"] .orb { width: 250px; }
+  .scr[data-state="peek"] .orb .info { opacity: 1; transition: opacity 0.2s 0.15s; }
+  .scr[data-state="expanded"] .orb { width: 440px; height: 330px; border-radius: 26px; cursor: default; }
+  .scr[data-state="expanded"] .orb .card, .scr[data-state="expanded"] .orb .shrink, .scr[data-state="expanded"] .orb .info { opacity: 1; pointer-events: auto; transition: opacity 0.2s 0.18s; }
+  .scr[data-state="expanded"] .orb .info { top: auto; bottom: 22px; }
+  .scr[data-state="expanded"] .orb.t .info { top: 22px; bottom: auto; }
+
+  /* ---------- 4: click-to-expand tile ---------- */
+  .tile { position: absolute; z-index: 36; left: 1036px; top: 50px; width: 226px; height: 150px; border-radius: 10px; overflow: hidden; cursor: pointer;
+    box-shadow: var(--shadow); transition: left 0.5s cubic-bezier(.2,.9,.25,1), top 0.5s cubic-bezier(.2,.9,.25,1), width 0.5s cubic-bezier(.2,.9,.25,1), height 0.5s cubic-bezier(.2,.9,.25,1), transform 0.2s; }
+  .tile .fbar { position: absolute; left: 0; right: 0; top: 0; height: 22px; display: flex; align-items: center; gap: 6px; padding: 0 8px; z-index: 2; color: var(--fink); background: var(--fbar); font-size: 11px; }
+  .tile .fbar .more { opacity: 0; transition: opacity 0.2s; }
+  .tile .hintx { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); z-index: 2; font-size: 11px; padding: 2px 8px; border-radius: 9px; background: rgba(0,0,0,0.55); color: #fff; opacity: 0; transition: opacity 0.2s; }
+  .scr[data-state="peek"] .tile { transform: translateY(-3px) scale(1.03); }
+  .scr[data-state="peek"] .tile .hintx { opacity: 1; }
+  .scr[data-state="expanded"] .tile { left: 200px; top: 110px; width: 880px; height: 520px; cursor: default; border-radius: 12px; }
+  .scr[data-state="expanded"] .tile .fbar { height: 28px; font-size: 12px; }
+  .scr[data-state="expanded"] .tile .fbar .more { opacity: 1; }
+
+  /* ---------- 5: ground line ---------- */
+  .ground { position: absolute; left: 0; right: 0; bottom: 0; height: 22px; z-index: 31; cursor: ns-resize; box-shadow: 0 -1px 0 rgba(0,0,0,0.25);
+    transition: height 0.45s cubic-bezier(.2,.9,.25,1); }
+  .ground .glabel { position: absolute; left: 12px; top: 8px; z-index: 2; color: var(--fink); background: var(--fbar); padding: 3px 8px; border-radius: 6px; opacity: 0; transition: opacity 0.2s; }
+  .scr[data-state="peek"] .ground { height: 120px; }
+  .scr[data-state="expanded"] .ground { height: 330px; cursor: default; }
+  .scr[data-state="expanded"] .ground .glabel { opacity: 1; }
+  .m-ground .dock { bottom: 28px; transition: bottom 0.45s cubic-bezier(.2,.9,.25,1); }
+  .m-ground[data-state="peek"] .dock { bottom: 126px; }
+  .m-ground[data-state="expanded"] .dock { bottom: 336px; }
+
+  /* ---------- 6: live wallpaper ---------- */
+  .wp { position: absolute; inset: 0; z-index: 1; }
+  .m-wall .win { z-index: 10; }
+  .hotc { position: absolute; left: 0; bottom: 0; width: 40px; height: 40px; z-index: 33; }
+  .hotc::after { content: ''; position: absolute; left: 6px; bottom: 6px; width: 10px; height: 10px; border-left: 2px solid rgba(255,255,255,0.7); border-bottom: 2px solid rgba(255,255,255,0.7); border-radius: 0 0 0 4px; }
+  .m-wall[data-state="peek"] .win { opacity: 0.14; }
+  .m-wall[data-state="expanded"] .w-term { transform: translate(-610px, 40px); }
+  .m-wall[data-state="expanded"] .w-ed { transform: translate(640px, 60px); }
+  .wpnote { position: absolute; left: 50%; top: 58px; transform: translateX(-50%); z-index: 33; padding: 4px 12px; border-radius: 12px; background: rgba(0,0,0,0.5); color: #fff; font-size: 12px; opacity: 0; transition: opacity 0.3s; }
+  .m-wall[data-state="expanded"] .wpnote { opacity: 1; }
+
+  /* ---------- 7: dock icon ---------- */
+  .dockfarm { overflow: hidden; cursor: pointer; padding: 0; }
+  .dockfarm canvas { border-radius: 12px; }
+  .dlabel { position: absolute; bottom: 82px; z-index: 40; background: var(--pop); color: var(--win-ink); border: 0.5px solid var(--pop-line); padding: 4px 10px; border-radius: 7px; font-size: 12.5px; white-space: nowrap;
+    transform: translateX(-50%) translateY(4px); opacity: 0; transition: opacity 0.15s, transform 0.15s; pointer-events: none; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+  .scr[data-state="peek"] .dlabel { opacity: 1; transform: translateX(-50%); }
+  .scr[data-state="peek"] .dockfarm, .scr[data-state="expanded"] .dockfarm { transform: translateY(-6px) scale(1.12); }
+  .dockfarm { transition: transform 0.18s; }
+  .dwin { position: absolute; left: 320px; top: 110px; width: 640px; height: 420px; z-index: 35; border-radius: 11px; overflow: hidden; box-shadow: var(--shadow);
+    transform-origin: var(--ox, 760px) 680px; transform: scale(0.06); opacity: 0; pointer-events: none; transition: transform 0.5s cubic-bezier(.2,.9,.25,1), opacity 0.35s; }
+  .dwin .wbar { background: var(--fbar); color: var(--fink); border-bottom-color: var(--fline); }
+  .dwin .body { position: absolute; left: 0; right: 0; top: 28px; bottom: 0; }
+  .scr[data-state="expanded"] .dwin { transform: none; opacity: 1; pointer-events: auto; }
+
+  /* ---------- 8: Claude Code status line ---------- */
+  .bigterm { left: 110px; top: 50px; width: 1060px; height: 640px; z-index: 10; display: flex; flex-direction: column; }
+  .bigterm .panes { flex: 1; display: flex; min-height: 0; }
+  .bigterm .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .bigterm .main pre { flex: 1; overflow: hidden; }
+  .prompt { margin: 0 14px; border: 1px solid var(--win-line); border-radius: 6px; padding: 6px 10px; font: 12px ui-monospace, Menlo, monospace; }
+  .sline { margin: 6px 14px 10px; padding: 3px 4px; border-radius: 5px; font: 12px/1.35 ui-monospace, Menlo, monospace; color: var(--win-dim); cursor: pointer; display: flex; gap: 8px; align-items: center; white-space: nowrap; transition: background 0.15s; }
+  .sline .ascii { font: 12px/1 ui-monospace, Menlo, monospace; letter-spacing: 0; }
+  .sline .peekhint { margin-left: auto; opacity: 0; transition: opacity 0.15s; color: var(--cc); }
+  .scr[data-state="peek"] .sline { background: rgba(127,127,127,0.13); }
+  .scr[data-state="peek"] .sline .peekhint { opacity: 1; }
+  .tui { width: 0; border-left: 0 solid var(--win-line); overflow: hidden; transition: width 0.45s cubic-bezier(.2,.9,.25,1); display: flex; flex-direction: column; background: var(--win); }
+  .scr[data-state="expanded"] .tui { width: 470px; border-left-width: 1px; }
+  .tui .th { padding: 8px 12px 6px; font: 12px ui-monospace, Menlo, monospace; color: var(--win-dim); white-space: nowrap; }
+  .tui .art { padding: 0 12px; font: 9.5px/9.5px ui-monospace, Menlo, monospace; white-space: pre; letter-spacing: 0; }
+  .tui .tf { padding: 8px 12px; font: 11.5px ui-monospace, Menlo, monospace; color: var(--win-dim); white-space: nowrap; }
+
+  /* ---------- notes, table, recommendation ---------- */
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; margin-top: 14px; }
+  .card .ch { display: flex; align-items: center; gap: 10px; padding: 11px 14px 9px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .card .ch h2 { font-size: 16px; margin: 0; }
+  .card .ch p { margin: 0; color: var(--dim); flex-basis: 100%; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+  .bdg { font-size: 11.5px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); color: var(--dim); white-space: nowrap; }
+  .bdg b { color: var(--ink); font-weight: 600; }
+  .facts { display: grid; grid-template-columns: 128px 1fr; margin: 0; }
+  .facts dt, .facts dd { padding: 7px 14px; border-top: 1px solid var(--line); margin: 0; }
+  .facts dt { color: var(--dim); font-size: 13px; }
+  .facts dt:first-of-type, .facts dt:first-of-type + dd { border-top: 0; }
+  .facts code { font: 12px ui-monospace, Menlo, monospace; background: rgba(127,127,127,0.12); padding: 0 4px; border-radius: 4px; }
+  h3.sec { font-size: 16px; margin: 28px 0 8px; }
+  .cmp { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-size: 13px; }
+  .cmp th, .cmp td { text-align: left; padding: 7px 10px; border-top: 1px solid var(--line); vertical-align: top; }
+  .cmp th { color: var(--dim); font-weight: 500; font-size: 12px; border-top: 0; background: rgba(127,127,127,0.06); }
+  .cmp tr.click { cursor: pointer; } .cmp tr.click:hover td { background: rgba(127,127,127,0.06); }
+  .pill { font-size: 11.5px; padding: 1px 8px; border-radius: 10px; white-space: nowrap; font-weight: 600; }
+  .pill.good { background: var(--good-soft); color: var(--good); } .pill.meh { background: var(--meh-soft); color: var(--meh); } .pill.no { background: rgba(127,127,127,0.14); color: var(--dim); }
+  .dots { letter-spacing: 1px; color: var(--accent); white-space: nowrap; } .dots i { font-style: normal; color: var(--line); }
+  .tablewrap { overflow-x: auto; border-radius: 10px; }
+  .rec { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .rec ol { margin: 6px 0 0; padding-left: 20px; } .rec li { margin: 4px 0; }
+  .flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 10px 0 4px; font-size: 12.5px; }
+  .flow span { padding: 3px 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--chip); }
+  .flow em { font-style: normal; color: var(--faint); }
+  #result { display: none; }
+  @media (max-width: 640px) {
+    .hint { white-space: normal; flex-basis: 100%; }
+    .row1 h1 small { display: none; }
+    .facts { grid-template-columns: 1fr; } .facts dt { border-top: 1px solid var(--line); padding-bottom: 0; } .facts dd { border-top: 0; }
+    .badges { margin-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { .scr *, .scr { transition-duration: 0.01s !important; } }
+  /* the in-page checks measure end states, and headless virtual time does not run CSS transitions */
+  .testing .scr *, .testing .scr { transition: none !important; }
+</style>
+</head>
+<body>
+<!-- shared wallpaper gradients (rendered, zero size, so every screen's SVG can use them) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <linearGradient id="gSky" x1="0" y1="0" x2="0.3" y2="1"><stop offset="0" stop-color="var(--wall-d)"/><stop offset="0.55" stop-color="var(--wall-a)"/><stop offset="1" stop-color="var(--wall-b)"/></linearGradient>
+  <linearGradient id="gH1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--wall-e)"/><stop offset="1" stop-color="var(--wall-c)"/></linearGradient>
+  <linearGradient id="gH2" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--wall-c)"/><stop offset="1" stop-color="var(--wall-d)"/></linearGradient>
+  <linearGradient id="gH3" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="var(--wall-b)"/><stop offset="1" stop-color="var(--wall-a)"/></linearGradient>
+</defs></svg>
+
+<header class="top"><div class="top-in">
+  <div class="row1">
+    <h1>Ant Farm <small>· ways to show it on a Mac</small></h1>
+    <span class="spacer"></span>
+    <span class="seg" id="segPal" title="Farm colours"><button data-pal="blend">Desktop Blend</button><button data-pal="graphite">Graphite</button></span>
+    <span class="seg" id="segTheme" title="Desktop appearance"><button data-theme="light">Light</button><button data-theme="dark">Dark</button></span>
+  </div>
+  <nav class="tabs" id="tabs" aria-label="Display modes"></nav>
+</div></header>
+
+<main>
+  <div class="states" id="states"></div>
+  <div class="stage" id="stage"></div>
+  <p class="foot">The colony here is a demo: one live farm, the real prototype's simulation and drawing, fed pretend tokens on a timer so it keeps moving. In the game only real Claude Code use feeds it, and there are no feed buttons.</p>
+  <section class="card" id="card"></section>
+
+  <h3 class="sec">All modes side by side</h3>
+  <div class="tablewrap"><table class="cmp" id="cmp"></table></div>
+
+  <h3 class="sec">Recommendation</h3>
+  <div class="rec" id="rec">
+    <b>Best three, in this order:</b>
+    <ol>
+      <li><b>Notch island</b> (with the menu-bar centre pill on Macs and displays without a notch) as the farm's home. It is always there, takes no desktop space, and a glance at the notch shows the colony is alive. Hover to peek, click for the big view.</li>
+      <li><b>Click-to-expand window</b>, which is the overlay you already have, reachable from the island's <i>Pop out</i>. Keep it for when you want to watch the colony while you work.</li>
+      <li><b>Claude Code status line</b> as a cheap extra: one line in the terminal where the tokens are being spent, no window at all.</li>
+    </ol>
+    <div class="flow"><span>Notch island (or menu-bar pill)</span><em>hover →</em><span>Peek strip</span><em>click →</em><span>Drop-down panel</span><em>Pop out →</em><span>Corner overlay window</span><em>close →</em><span>back to the notch</span></div>
+    <p style="margin:8px 0 0">The combined design (tab ★) puts these together: the farm lives in the notch, the bigger overlay is one click away, and a setting picks the home (Notch · Menu bar · Corner orb) for people who want something else. The menu-bar strip and the orb are the runners-up: the strip is the easiest to build and works everywhere; the orb is the friendliest on Windows. The wallpaper and the Dock icon are charming but you rarely see them, and the ground line is fun but always costs a strip of screen.</p>
+  </div>
+</main>
+<pre id="result"></pre>
+
+<script src="sim.js"></script>
+<script src="palettes.js"></script>
+<script src="render.js"></script>
+<script src="camera.js"></script>
+<script>
+(function () {
+  'use strict';
+  const q = new URLSearchParams(location.search);
+  const $ = (id) => document.getElementById(id);
+  const TEST = q.has('test');
+
+  // ---------- appearance ----------
+  const vis = {
+    palette: q.get('palette') === 'graphite' ? 'graphite' : 'blend',
+    dark: q.get('theme') ? q.get('theme') === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches,
+  };
+
+  // ---------- the farm: one simulation, one painted buffer, drawn into every view ----------
+  const sim = AntSim.createSim({ seed: +(q.get('seed') || 7) });
+  sim.run(+(q.get('warp') || 10000)); // a lived-in nest: about eight minutes of colony life before the page opens
+  const buf = AntRender.makeBuffer(sim);
+  let mapper = null, mapperKey = '';
+  const surf = new Int16Array(sim.W);
+  function repaint() {
+    const key = vis.palette + '|' + vis.dark;
+    if (key !== mapperKey) { mapper = AntPalette.mapper(vis.palette, { calm: 0, dark: vis.dark }); mapperKey = key; }
+    sim.paint(buf.src, { kind: buf.kind });
+    mapper.apply(buf.src, buf.kind, buf.px);
+    buf.ctx.putImageData(buf.img, 0, 0);
+    // the ground line, column by column (first grass or soil from the top), for the strip cameras
+    const K = AntPalette.K;
+    for (let x = 0; x < sim.W; x++) {
+      let y = 0;
+      while (y < sim.H - 1) { const k = buf.kind[y * sim.W + x]; if (k === K.GRASS || k === K.SOIL || k === K.ROCK) break; y++; }
+      surf[x] = y;
+    }
+  }
+  const ui = () => mapper.palette.ui;
+  const box = () => sim.interestBox();
+  // Cameras: each returns { x, y, s } (world cell at the top-left, screen points per cell) for a view of vw × vh points.
+  const CAM = {
+    // a close-up on the middle of the colony with the ground line a fraction f down the view
+    focus: (s, f) => (vw, vh) => { const b = box(), cx = b.x + b.w / 2; return { x: cx - vw / s / 2, y: surf[Math.round(cx)] - f * vh / s, s }; },
+    // the whole map's width, ground line a fraction f down (for strips along a screen edge)
+    strip: (f) => (vw, vh) => { const s = vw / sim.W, b = box(), cx = Math.round(b.x + b.w / 2); return { x: 0, y: surf[cx] - f * vh / s, s }; },
+    // the nest, close: the colony's width (at least 90 cells) and depth in the view, ground line a fraction f down
+    nest: (f) => (vw, vh) => {
+      const b = box(), cx = b.x + b.w / 2, g = surf[Math.round(cx)], deep = b.y + b.h - g + 8;
+      const s = Math.min(vw / Math.max(90, b.w + 24), vh * (1 - f) / deep);
+      return { x: cx - vw / s / 2, y: g - f * vh / s, s };
+    },
+    cover: () => (vw, vh) => { const s = Math.max(vw / sim.W, vh / sim.H); return { x: (sim.W - vw / s) / 2, y: (sim.H - vh / s) / 2, s }; },
+  };
+  let stageScale = 1;
+  const views = [];
+  function view(canvas, mode, cam, o) {
+    const v = Object.assign({ el: canvas, ctx: canvas.getContext('2d'), mode, cam, c: null, size: '' }, o || {});
+    views.push(v); return v;
+  }
+  function feather(ctx, col, d) {
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    const edge = (x0, y0, x1, y1, rx, ry, rw, rh) => { const g = ctx.createLinearGradient(x0, y0, x1, y1); g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(rx, ry, rw, rh); };
+    ctx.globalAlpha = 0.75;
+    edge(0, 0, d, 0, 0, 0, d, H); edge(W, 0, W - d, 0, W - d, 0, d, H); edge(0, H, 0, H - d, 0, H - d, W, d); edge(0, 0, 0, d, 0, 0, W, d);
+    ctx.globalAlpha = 1;
+  }
+  function drawView(v) {
+    const c = v.el, vw = c.clientWidth, vh = c.clientHeight;
+    if (!vw || !vh) return false;
+    const k = Math.min(3, stageScale * (window.devicePixelRatio || 1));
+    const W = Math.max(1, Math.round(vw * k)), H = Math.max(1, Math.round(vh * k));
+    if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+    const size = vw + 'x' + vh, t = v.cam(vw, vh);
+    v.c = !v.c || v.size !== size ? t : AntCamera.near(v.c, t) ? t : AntCamera.lerp(v.c, t, 0.15, vw, vh);
+    v.size = size;
+    const ctx = v.ctx, back = v.back || ui().back, s = v.c.s * k;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = back; ctx.fillRect(0, 0, W, H);
+    ctx.imageSmoothingEnabled = false;
+    ctx.setTransform(s, 0, 0, s, Math.round(-v.c.x * s), Math.round(-v.c.y * s));
+    ctx.drawImage(buf.canvas, 0, 0);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const dim = v.dim ? v.dim() : 0;
+    if (dim > 0) { ctx.globalAlpha = dim; ctx.fillStyle = back; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+    if (v.soft) feather(ctx, back, Math.max(3, Math.round(Math.min(W, H) * 0.06)));
+    return true;
+  }
+
+  // Terminal drawing: the painted buffer as half-block characters (two cells a character), one colour run per span.
+  function ascii(cols, rows, f) {
+    const b = box(), cx = Math.round(b.x + b.w / 2), step = Math.max(1, Math.ceil(b.w / cols));
+    const x0 = Math.round(cx - cols * step / 2), y0 = Math.round(surf[cx] - f * rows * 2 * step);
+    const hex = (v) => '#' + ((v & 255) << 16 | ((v >> 8) & 255) << 8 | ((v >> 16) & 255)).toString(16).padStart(6, '0');
+    const at = (x, y) => (x < 0 || y < 0 || x >= sim.W || y >= sim.H ? null : hex(buf.px[y * sim.W + x]));
+    const back = ui().back;
+    let html = '';
+    for (let r = 0; r < rows; r++) {
+      let run = '', key = '';
+      for (let i = 0; i < cols; i++) {
+        const top = at(x0 + i * step, y0 + r * 2 * step) || back, bot = at(x0 + i * step, y0 + (r * 2 + 1) * step) || back, k2 = top + bot;
+        if (k2 !== key) { if (run) html += '<span style="color:' + key.slice(0, 7) + ';background:' + key.slice(7) + '">' + run + '</span>'; run = ''; key = k2; }
+        run += '▀';
+      }
+      html += '<span style="color:' + key.slice(0, 7) + ';background:' + key.slice(7) + '">' + run + '</span>' + (r < rows - 1 ? '\n' : '');
+    }
+    return html;
+  }
+
+  // ---------- stats ----------
+  const fmt = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(Math.round(n)));
+  const BASE_TOK = 48200; // tokens "spent today" before the page opened, so the numbers look lived-in
+  const stats = () => ({ ants: sim.ants.length - 1, brood: sim.brood.length, energy: Math.floor(sim.energy), tok: fmt(BASE_TOK + sim.stats.tokens), food: sim.stats.stored });
+  function paintStats() {
+    const s = stats();
+    document.querySelectorAll('[data-s]').forEach((el) => {
+      const k = el.dataset.s;
+      el.textContent = k === 'line' ? s.ants + ' ants · ' + s.brood + ' brood · ⚡' + s.energy + ' · ' + s.tok + ' tokens today · fed'
+        : k === 'short' ? s.ants + ' ants · fed'
+        : k === 'ants' ? String(s.ants) : k === 'tok' ? s.tok : k === 'energy' ? '⚡' + s.energy : '';
+    });
+  }
+
+  // ---------- the screen ----------
+  const ICON_ANT = '<svg width="15" height="10" viewBox="0 0 16 11" fill="currentColor" aria-hidden="true"><ellipse cx="3.2" cy="5" rx="3" ry="2.4"/><ellipse cx="8" cy="4.6" rx="2" ry="1.5"/><circle cx="12" cy="4" r="1.8"/><path d="M13 2.4l1.6-2M13.6 2.8l2-1" stroke="currentColor" stroke-width="0.8"/><path d="M6.4 6l-1.6 4M8 6v4.2M9.6 6l1.6 4" stroke="currentColor" stroke-width="0.9"/></svg>';
+  const WIFI = '<svg width="16" height="12" viewBox="0 0 16 12" aria-hidden="true"><path d="M8 11.2l2.3-2.6a3.3 3.3 0 0 0-4.6 0z M3.6 6.6a6.2 6.2 0 0 1 8.8 0l1.2-1.3a8 8 0 0 0-11.2 0z M1 3.9a9.9 9.9 0 0 1 14 0l1-1.1a11.5 11.5 0 0 0-16 0z" fill="currentColor"/></svg>';
+  const BATT = '<svg width="24" height="12" viewBox="0 0 24 12" aria-hidden="true"><rect x="0.5" y="0.5" width="20" height="11" rx="3" fill="none" stroke="currentColor" opacity="0.6"/><rect x="2" y="2" width="14" height="8" rx="1.6" fill="currentColor"/><rect x="21.5" y="4" width="1.6" height="4" rx="0.8" fill="currentColor" opacity="0.6"/></svg>';
+  const APPLE = '<svg width="13" height="15" viewBox="0 0 13 15" fill="currentColor" aria-hidden="true"><path d="M10.6 8c0-1.9 1.6-2.8 1.6-2.9-.9-1.3-2.2-1.4-2.7-1.5-1.1-.1-2.2.7-2.8.7-.6 0-1.5-.7-2.4-.7C3 3.6 1.8 4.3 1.2 5.5-.1 7.8.9 11.2 2.1 13c.6.9 1.3 1.8 2.2 1.8.9 0 1.2-.6 2.3-.6s1.4.6 2.3.6c1 0 1.6-.9 2.2-1.8.7-1 1-2 1-2-.1 0-1.5-.6-1.5-3zM8.8 2.4c.5-.6.8-1.4.7-2.2-.7 0-1.6.5-2.1 1.1-.5.5-.9 1.3-.8 2.1.8.1 1.6-.4 2.2-1z"/></svg>';
+  const WALL = '<div class="wall" aria-hidden="true"><svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice"><rect width="1440" height="900" fill="url(#gSky)"/>' +
+    '<path d="M0 560 C 260 470 420 520 640 450 S 1080 380 1440 470 L 1440 900 L 0 900 Z" fill="url(#gH1)" opacity="0.85"/>' +
+    '<path d="M0 690 C 300 600 560 700 820 620 S 1220 560 1440 640 L 1440 900 L 0 900 Z" fill="url(#gH2)" opacity="0.9"/>' +
+    '<path d="M0 800 C 340 740 640 820 960 760 S 1300 730 1440 770 L 1440 900 L 0 900 Z" fill="url(#gH3)" opacity="0.8"/></svg></div>';
+  const TERM_TXT = '<span class="c">✻</span> Welcome to <b>Claude Code</b>\n<span class="d">  cwd: ~/Documents/GitHub/token-games</span>\n\n' +
+    '&gt; make the spoil heap spread out instead of piling by the entrance\n\n' +
+    '<span class="g">●</span> <span class="b">Read</span>(prototype/ant-farm/sim.js)\n  <span class="d">⎿ Read 878 lines</span>\n' +
+    '<span class="c">●</span> Ants drop grains at the first open cell. I will make them walk further when the heap is steep.\n' +
+    '<span class="g">●</span> <span class="b">Update</span>(prototype/ant-farm/sim.js)\n  <span class="d">⎿ Updated with 9 additions and 2 removals</span>\n' +
+    '<span class="g">●</span> <span class="b">Bash</span>(node --test prototype/ant-farm/test)\n  <span class="d">⎿ tests 21 · pass 21 · fail 0</span>\n' +
+    '<span class="c">✻ Working…</span> <span class="d">(↓ <span data-s="tok"></span> tokens · esc to interrupt)</span>';
+  const ED_TXT = '<span class="m">// Ants carry spoil to the heap; a steep heap sends them further.</span>\n<span class="k">function</span> <span class="f">dumpSpot</span>(a) {\n  <span class="k">let</span> x = a.dumpX;\n  <span class="k">while</span> (<span class="f">slope</span>(x) &gt; 2) x += a.side;\n  <span class="k">return</span> x;\n}\n\n<span class="m">// Foragers carry crumbs into the store by the queen.</span>\n<span class="k">function</span> <span class="f">forage</span>(a) {\n  <span class="k">const</span> c = <span class="f">nearestCrumb</span>(a);\n  <span class="k">if</span> (!c) <span class="k">return</span> <span class="f">wander</span>(a);\n  <span class="f">follow</span>(a, <span class="f">field</span>(<span class="m">\'food\'</span>));\n}';
+  function screenHTML(o) {
+    return WALL +
+      '<div class="win ed w-ed" style="left:560px;top:150px;width:600px;height:420px"><div class="wbar"><span class="lights"><i></i><i></i><i></i></span><span class="t">sim.js — token-games</span></div><pre>' + ED_TXT + '</pre></div>' +
+      (o.noTerm ? '' : '<div class="win term w-term" style="left:110px;top:96px;width:620px;height:430px"><div class="wbar"><span class="lights"><i></i><i></i><i></i></span><span class="t">token-games — claude — 96×30</span></div><pre>' + TERM_TXT + '</pre></div>') +
+      '<div class="menubar"><span class="apple">' + APPLE + '</span><b>Terminal</b><span>Shell</span><span>Edit</span><span>View</span><span>Window</span><span>Help</span>' +
+      '<span class="right"><span class="mbx"></span>' + WIFI + BATT + '<span>Fri Nov 27  9:41 AM</span></span></div>' +
+      '<div class="notchcut"></div>' +
+      '<div class="dock"><div class="app a1"></div><div class="app a2"></div><div class="app a3 run">&gt;_</div><div class="app a4 run">✻</div><div class="app a5"></div><div class="app a7 run dockslot">' + ICON_ANT.replace('width="15" height="10"', 'width="30" height="20"') + '</div><div class="app a6"></div></div>';
+  }
+
+  // ---------- modes ----------
+  // Each mode builds its own screen, wires its own hover/click/drag, and lists its states. CSS shows each state
+  // from the screen's data-state, so the state chips above the screen and the screen itself always agree.
+  const MODES = [];
+  const mode = (m) => { MODES.push(m); return m; };
+  const LABEL = { collapsed: 'Collapsed', peek: 'Peek', expanded: 'Expanded', popped: 'Popped out' };
+
+  // standard wiring: hover peeks, click expands, a click anywhere else on the screen collapses
+  function wire(m, hot, o) {
+    o = o || {};
+    hot.addEventListener('pointerenter', () => { if (m.state === 'collapsed' && !m.noHover) setState(m, 'peek'); });
+    hot.addEventListener('pointerleave', () => { if (m.state === 'peek') setState(m, 'collapsed'); });
+    hot.addEventListener('click', (e) => { if (o.ignore && o.ignore(e)) return; if (m.state !== 'expanded') setState(m, 'expanded'); });
+    m.scr.addEventListener('pointerdown', (e) => { if (!hot.contains(e.target) && m.state !== 'collapsed' && !(o.keep && o.keep(e))) setState(m, o.away ? o.away(m) : 'collapsed'); });
+  }
+  function islandHTML(pop) {
+    return '<div class="island"><div class="ear l"><canvas class="farm"></canvas></div><div class="ear r"><span data-s="ants"></span>' + ICON_ANT + '<span class="dot"></span></div>' +
+      '<div class="peek"><div class="strip"><canvas class="farm"></canvas></div><div class="stat"><span data-s="line"></span></div></div>' +
+      '<div class="panel"><div class="big"><canvas class="farm"></canvas></div><div class="bar stat"><span data-s="line"></span><span class="spacer" style="flex:1"></span>' +
+      '<span class="pill-btn' + (pop ? ' popbtn' : ' hide') + '">Pop out ↗</span><span class="pill-btn">Settings</span></div></div></div>';
+  }
+  function wireIsland(m) {
+    const isl = m.scr.querySelector('.island'), cv = isl.querySelectorAll('canvas');
+    view(cv[0], m, CAM.focus(1.3, 0.32), { states: ['collapsed', 'popped'] });
+    view(cv[1], m, CAM.focus(2, 0.3), { states: ['peek'] });
+    view(cv[2], m, CAM.nest(0.3), { states: ['expanded'], soft: true });
+    wire(m, isl, { ignore: (e) => e.target.closest('.popbtn') });
+    return isl;
+  }
+
+  mode({ id: 'notch', n: 1, name: 'Notch island', states: ['collapsed', 'peek', 'expanded'], notch: true,
+    hint: 'Hover the notch to peek · click it to open · click anywhere else to close',
+    build(m) { m.scr.insertAdjacentHTML('beforeend', screenHTML({}) + islandHTML(false)); wireIsland(m); },
+    tag: 'A tiny live colony hugging the MacBook notch that drops down into a bigger view, like NotchNook or Boring Notch.',
+    badges: { screen: 'Tiny', attention: 1, effort: 'Medium', live: 'Always' },
+    facts: [
+      ['Looks', 'A black strip that extends the notch: on the left a 58 × 22 pt window onto the colony (ants walking the surface, the shaft below), on the right the ant count and a quiet status dot. It reads as part of the hardware.'],
+      ['Behaves', 'Hover: the island grows into a 420 × 128 pt peek with a wider strip and one line of stats. Click: it drops down into a 640 × 360 pt panel with the full colony. Moving away from a peek or clicking anywhere else folds it back into the notch.'],
+      ['Screen use', 'About 75 pt of menu bar on each side of the notch while resting; nothing on the desktop. The panel covers the top centre only while it is open.'],
+      ['Attention', 'Very calm. Black on black next to the notch; motion is a few pixels at 2–8 frames a second. It could also stand still until you hover.'],
+      ['Without a notch', 'Macs and displays without a notch (external monitors, Airs before 2022, iMacs) get the same island as a pill hanging from the middle of the menu bar: a slightly wider live strip, the same peek and panel. Switch “No notch” above to see it.'],
+      ['Build (Electron)', 'A frameless, transparent <code>BrowserWindow</code> with <code>type: \'panel\'</code> (never takes focus), <code>setAlwaysOnTop(true, \'status\')</code> so it sits over the menu bar, and <code>setVisibleOnAllWorkspaces(true)</code>. Transparent areas pass clicks through with <code>setIgnoreMouseEvents(true, { forward: true })</code>, switched off while the pointer is over the island. Peek and panel are the same window animating its content, so no window resizing is needed.'],
+      ['Windows', 'No notch: use the top-centre pill, which works the same with <code>alwaysOnTop</code>. Medium effort, same code.'],
+      ['Limits', 'Electron has no notch API: the menu bar height on the built-in display (about 37 pt with a notch, 24 without, from <code>screen.getPrimaryDisplay().workArea</code>) is a good guess; a tiny native add-on reading <code>NSScreen.safeAreaInsets</code> and <code>auxiliaryTopLeftArea</code> gives the exact notch. Only the built-in display has one; with the lid closed, use the pill. In full-screen apps the menu bar slides away, so the island should hide and come back with it (or stay as a pill on hover at the top edge). Long app menus can run under the ears, which NotchNook users accept.'],
+    ] });
+
+  mode({ id: 'menubar', n: 2, name: 'Menu-bar strip', states: ['collapsed', 'peek', 'expanded'],
+    hint: 'Hover the little strip by the Wi-Fi icon · click it for the popover · click anywhere else to close',
+    build(m) {
+      m.scr.insertAdjacentHTML('beforeend', screenHTML({}) +
+        '<div class="tip" style="right:184px;top:31px"><span data-s="line"></span></div>' +
+        '<div class="popover" style="right:150px"><div class="head"><b>Ant Farm</b><span class="stat" data-s="short"></span></div><div class="big"><canvas class="farm"></canvas></div>' +
+        '<div class="acts"><span class="pill-btn">Open as window</span><span class="pill-btn">Settings…</span><span style="flex:1"></span><span class="stat" style="color:var(--win-dim);align-self:center"><span data-s="tok"></span> tokens today</span></div></div>');
+      const mbx = m.scr.querySelector('.mbx');
+      mbx.outerHTML = '<span class="mbitem" title=""><span class="mini"><canvas class="farm"></canvas></span></span>';
+      const item = m.scr.querySelector('.mbitem');
+      view(item.querySelector('canvas'), m, CAM.focus(1.1, 0.4), { states: ['collapsed', 'peek', 'expanded'] });
+      view(m.scr.querySelector('.popover canvas'), m, CAM.nest(0.3), { states: ['expanded'], soft: true });
+      wire(m, item, { keep: (e) => e.target.closest('.popover') });
+    },
+    tag: 'A live sliver of the colony as the menu-bar icon itself, with a popover for the full view.',
+    badges: { screen: 'Tiny', attention: 1, effort: 'Low', live: 'Always' },
+    facts: [
+      ['Looks', 'Where a normal menu-bar icon sits, a 46 × 15 pt strip of the surface: the sky, the grass line and ants marching in and out of the entrance. With Graphite or a template image it can be pure monochrome like the system icons.'],
+      ['Behaves', 'Hover shows a one-line tooltip with the colony’s stats. Click opens a standard popover (372 pt wide) with the colony, today’s tokens and buttons to open the bigger window or settings. Clicking elsewhere closes it, like every menu-bar app.'],
+      ['Screen use', 'One menu-bar slot, about 50 pt wide. Nothing else until you click.'],
+      ['Attention', 'Very calm: smaller than the clock, moves slowly. It does sit in the corner of your eye all day, so it should update at 2–4 frames a second.'],
+      ['Build (Electron)', 'Easiest of all. A <code>Tray</code> whose image is redrawn from an offscreen canvas a few times a second (<code>nativeImage.createFromBuffer</code> → <code>tray.setImage</code>), and a frameless window placed under <code>tray.getBounds()</code> that hides on <code>blur</code> (the <code>menubar</code> npm package does all of this). The app already has a menu-bar ant; this replaces its icon.'],
+      ['Windows', 'The tray icon is 16 × 16 px, too small for a strip, so show a still ant that changes with the colony’s state; the popover by the tray works the same.'],
+      ['Limits', 'A busy menu bar on a notched Mac hides overflow icons behind the notch, and the farm could be one of them. The menu bar (and the icon) is hidden in full-screen apps unless you point at the top. Redrawing a tray image costs a little CPU, so cap it and stop when the screen is locked.'],
+    ] });
+
+  mode({ id: 'orb', n: 3, name: 'Corner orb', states: ['collapsed', 'peek', 'expanded'],
+    hint: 'Drag the orb to any corner · hover to peek · click to expand · click elsewhere to shrink',
+    build(m) {
+      m.scr.insertAdjacentHTML('beforeend', screenHTML({}) +
+        '<div class="orb r b"><div class="ball"><canvas class="farm"></canvas></div><div class="info stat"><b>Ant Farm</b><span data-s="short"></span> · <span data-s="energy"></span></div>' +
+        '<div class="card"><canvas class="farm"></canvas></div><button class="shrink" title="Shrink">–</button></div>');
+      const orb = m.scr.querySelector('.orb');
+      view(orb.querySelector('.ball canvas'), m, CAM.focus(1.25, 0.35), { states: ['collapsed', 'peek', 'expanded'] });
+      view(orb.querySelector('.card canvas'), m, CAM.nest(0.3), { states: ['expanded'], soft: true });
+      m.corner = 'br';
+      const place = (c) => {
+        m.corner = c; orb.classList.remove('t', 'b', 'l', 'r'); orb.classList.add(c[0], c[1] === 'l' ? 'l' : 'r');
+        orb.style.left = orb.style.top = orb.style.right = orb.style.bottom = '';
+        orb.style[c[0] === 't' ? 'top' : 'bottom'] = (c[0] === 't' ? 46 : 92) + 'px';
+        orb.style[c[1] === 'l' ? 'left' : 'right'] = '20px';
+      };
+      m.place = place; place('br');
+      // drag: follow the pointer, then snap to the nearest corner
+      let drag = null;
+      const pt = (e) => { const r = m.scr.getBoundingClientRect(); return { x: (e.clientX - r.left) / stageScale, y: (e.clientY - r.top) / stageScale }; };
+      orb.addEventListener('pointerdown', (e) => {
+        if (m.state === 'expanded' || e.button) return;
+        const p = pt(e), r = { x: orb.offsetLeft, y: orb.offsetTop };
+        drag = { p, dx: p.x - r.x, dy: p.y - r.y, moved: false };
+        try { orb.setPointerCapture(e.pointerId); } catch (err) { /* synthetic events in tests */ }
+      });
+      orb.addEventListener('pointermove', (e) => {
+        if (!drag) return;
+        const p = pt(e);
+        if (!drag.moved && Math.hypot(p.x - drag.p.x, p.y - drag.p.y) < 4) return;
+        if (!drag.moved) { drag.moved = true; setState(m, 'collapsed'); orb.classList.add('dragging'); }
+        orb.style.right = orb.style.bottom = '';
+        orb.style.left = (p.x - drag.dx) + 'px'; orb.style.top = (p.y - drag.dy) + 'px';
+      });
+      const end = (e) => {
+        if (!drag) return;
+        const d = drag; drag = null;
+        if (!d.moved) return;
+        orb.classList.remove('dragging');
+        const cx = orb.offsetLeft + 32, cy = orb.offsetTop + 32;
+        // keep the current spot for one frame, then let the transition carry it to the corner
+        const fromL = orb.offsetLeft, fromT = orb.offsetTop, c = (cy < 400 ? 't' : 'b') + (cx < 640 ? 'l' : 'r');
+        orb.style.left = fromL + 'px'; orb.style.top = fromT + 'px';
+        requestAnimationFrame(() => {
+          const right = c[1] === 'r', bottom = c[0] === 'b';
+          orb.style.left = (right ? 1280 - 20 - 64 : 20) + 'px'; orb.style.top = (bottom ? 800 - 92 - 64 : 46) + 'px';
+          setTimeout(() => place(c), 380);
+        });
+        m.justDragged = true; setTimeout(() => { m.justDragged = false; }, 0);
+        if (TEST) place(c);
+      };
+      orb.addEventListener('pointerup', end); orb.addEventListener('pointercancel', end);
+      orb.querySelector('.shrink').addEventListener('click', (e) => { e.stopPropagation(); setState(m, 'collapsed'); });
+      wire(m, orb, { ignore: (e) => m.justDragged || e.target.closest('.shrink') });
+    },
+    tag: 'A small floating orb with the colony inside, like a voice assistant’s bubble: drag it anywhere, it grows on hover and opens on click.',
+    badges: { screen: 'Tiny', attention: 2, effort: 'Medium', live: 'Always' },
+    facts: [
+      ['Looks', 'A 64 pt black orb with a round window onto the colony and a thin ring that turns warm when the colony is hungry. It floats above other windows in a screen corner.'],
+      ['Behaves', 'Drag it anywhere; let go and it glides to the nearest corner. Hover grows it into a pill with the stats. Click opens a 440 × 330 pt card growing out of that corner; the – button or a click elsewhere shrinks it back.'],
+      ['Screen use', 'A 64 pt circle; the card only while open.'],
+      ['Attention', 'Calm but present: it floats over your work, so the round crop is kept dim and slow. Fade when idle (already in the app) suits it well.'],
+      ['Build (Electron)', 'A transparent frameless window that is as big as the open card, with clicks passing through its empty parts (<code>setIgnoreMouseEvents(true, { forward: true })</code>, off while the pointer is over the orb). Dragging is done by hand (pointer events + <code>win.setPosition</code> over IPC), since <code>-webkit-app-region: drag</code> would swallow the click. The current window, docking and settings carry over.'],
+      ['Windows', 'Transparent, click-through, always-on-top windows all work on Windows; the corner snap uses <code>screen.getDisplayNearestPoint</code>. The friendliest mode for both systems.'],
+      ['Limits', 'At the normal <code>floating</code> level it hides behind full-screen apps; <code>visibleOnFullScreen</code> brings it along but it then covers games and videos. With several displays it has to remember which one it lives on. It will sometimes sit over a button you need, hence the drag and the snap.'],
+    ] });
+
+  mode({ id: 'tile', n: 4, name: 'Click-to-expand', states: ['collapsed', 'peek', 'expanded'],
+    hint: 'Click the small window to open it · click anywhere else (or Esc) to shrink it back',
+    build(m) {
+      m.scr.insertAdjacentHTML('beforeend', screenHTML({}) +
+        '<div class="tile"><div class="fbar stat">' + ICON_ANT + '<b>Ant Farm</b><span class="more" data-s="line"></span></div><canvas class="farm"></canvas><span class="hintx">Click to open</span></div>');
+      const tile = m.scr.querySelector('.tile');
+      view(tile.querySelector('canvas'), m, CAM.nest(0.32), { states: ['collapsed', 'peek', 'expanded'], soft: true });
+      wire(m, tile);
+    },
+    tag: 'The overlay you have now, starting small and opening into the full view with one click.',
+    badges: { screen: 'Small', attention: 2, effort: 'Low', live: 'Always' },
+    facts: [
+      ['Looks', 'A 226 × 150 pt window in a corner, exactly today’s farm window with its title bar and Desktop Blend colours.'],
+      ['Behaves', 'Hover lifts it slightly and says “Click to open”. Click grows it smoothly from the corner into an 880 × 520 pt view in the middle of the screen with the camera controls. Clicking anywhere else, Esc, or leaving the app sends it back to its corner.'],
+      ['Screen use', 'About 3% of a laptop screen while small; the big view only on demand.'],
+      ['Attention', 'Calm: the same window you already like, but small most of the time.'],
+      ['Build (Electron)', 'Mostly done. Add a grow/shrink pair: <code>win.setBounds(rect, true)</code> animates on macOS, and <code>blur</code> collapses it. Keep the canvas drawn at the target size during the animation so it doesn’t stretch.'],
+      ['Windows', '<code>setBounds</code> doesn’t animate on Windows: either step it over a few frames or keep one larger transparent window and scale the content with CSS.'],
+      ['Limits', 'Collapsing on blur means a click on the farm to pan must not count as “away”, and a pin is needed to keep it open. Full-screen apps and several displays behave as today.'],
+    ] });
+
+  mode({ id: 'ground', n: 5, name: 'Ground line', states: ['collapsed', 'peek', 'expanded'],
+    hint: 'Hover the strip along the bottom edge to raise it · click to open the cross-section · click elsewhere to lower it',
+    build(m) {
+      m.scr.insertAdjacentHTML('beforeend', screenHTML({}) + '<div class="ground"><canvas class="farm"></canvas><span class="glabel stat"><span data-s="line"></span></span></div>');
+      m.scr.classList.add('m-ground');
+      const g = m.scr.querySelector('.ground');
+      view(g.querySelector('canvas'), m, CAM.strip(0.42), { states: ['collapsed', 'peek', 'expanded'] });
+      wire(m, g);
+    },
+    tag: 'The bottom edge of the screen becomes the ground: ants walk along it above the Dock and dig down into a thin cross-section.',
+    badges: { screen: 'Strip', attention: 2, effort: 'Medium', live: 'Always' },
+    facts: [
+      ['Looks', 'A 22 pt strip the full width of the screen: a sliver of sky, the grass line, and the tops of the tunnels, with ants walking in and out. The Dock sits on top of it like a building on the ground.'],
+      ['Behaves', 'Hover raises it to 120 pt so you see the upper galleries; click opens a 330 pt deep cross-section with the whole nest. Clicking elsewhere lowers it back to the ground line.'],
+      ['Screen use', 'A full-width strip of 22 pt, always. In a world of maximised windows, it takes that height from every one of them (or overlaps their bottom edge).'],
+      ['Attention', 'Medium: a long moving edge in peripheral vision is noticed more than a small corner. It needs slow ants and soft colours.'],
+      ['Build (Electron)', 'A frameless transparent window across <code>display.workArea</code>’s bottom (above the Dock) or <code>display.bounds</code> (under it), always on top at the <code>floating</code> level, a wide-aspect camera that keeps the ground line fixed. Medium effort.'],
+      ['Windows', 'Sit it just above the taskbar using <code>workArea</code>; works the same.'],
+      ['Limits', 'A real app can’t reserve space like the Dock does, so maximised windows go under it. A Dock at the bottom covers the middle of the strip (a Dock on the side or auto-hidden suits it best). Full-screen apps cover it.'],
+    ] });
+
+  mode({ id: 'wall', n: 6, name: 'Live wallpaper', states: ['collapsed', 'peek', 'expanded'],
+    hint: 'Point at the bottom-left hot corner to see through your windows · click the wallpaper to reveal the desktop · click a window to bring them back',
+    build(m) {
+      m.scr.insertAdjacentHTML('beforeend', screenHTML({}));
+      m.scr.classList.add('m-wall');
+      m.scr.querySelector('.wall').insertAdjacentHTML('afterend', '<canvas class="farm wp"></canvas><div class="icons"><div class="icon"><i></i>token-games</div><div class="icon"><i></i>Screenshots</div><div class="icon"><i></i>Notes</div></div>');
+      m.scr.insertAdjacentHTML('beforeend', '<div class="hotc" title="Hot corner"></div><div class="wpnote stat">Click a window to bring your windows back</div>');
+      view(m.scr.querySelector('.wp'), m, CAM.cover(), { states: ['collapsed', 'peek', 'expanded'], dim: () => (m.state === 'collapsed' ? 0.25 : 0) });
+      const hot = m.scr.querySelector('.hotc');
+      hot.addEventListener('pointerenter', () => { if (m.state === 'collapsed') setState(m, 'peek'); });
+      hot.addEventListener('pointerleave', () => { if (m.state === 'peek') setState(m, 'collapsed'); });
+      m.scr.addEventListener('pointerdown', (e) => {
+        const onWin = e.target.closest('.win'), onWall = e.target.classList.contains('wp') || e.target.closest('.icons');
+        if (m.state === 'expanded' && onWin) setState(m, 'collapsed');
+        else if (m.state !== 'expanded' && onWall) setState(m, 'expanded');
+      });
+      m.hot = m.scr.querySelector('.wp');
+    },
+    tag: 'The farm is the desktop picture: the colony digs behind your icons and windows, and shows itself whenever the desktop does.',
+    badges: { screen: 'None', attention: 1, effort: 'Medium–high', live: 'When visible' },
+    facts: [
+      ['Looks', 'The whole map, scaled up, as the wallpaper, a little dimmed so icons stay readable. Desktop icons and every window sit on top as usual.'],
+      ['Behaves', 'Clicks go to the desktop as normal. Point at a hot corner and your windows turn see-through for a look; click the wallpaper (the macOS Sonoma “reveal desktop” gesture) and windows slide aside to show the full colony; click a window and they come back.'],
+      ['Screen use', 'None of your working space at all.'],
+      ['Attention', 'The calmest possible: you see it only between windows or when you ask.'],
+      ['Build (Electron)', 'A window per display with <code>type: \'desktop\'</code> (macOS puts it at the desktop level, under the icons), <code>setIgnoreMouseEvents(true)</code>, and visible on all Spaces. The hot-corner peek needs a small native call to make other windows see-through, which Electron can’t do, so the realistic version is: the farm is the wallpaper, and Show Desktop / the Sonoma click reveals it.'],
+      ['Windows', 'Hard: no public API. Apps like Lively Wallpaper parent a window to the hidden WorkerW behind the icons through a native add-on.'],
+      ['Limits', 'You rarely see it while you work, so you miss the “it’s alive while Claude works” feeling. It should stop drawing when fully covered (Electron can’t tell; a native occlusion check can). Each display and each Space needs its window; the lock screen and Mission Control show the real wallpaper.'],
+    ] });
+
+  mode({ id: 'dock', n: 7, name: 'Dock icon', states: ['collapsed', 'peek', 'expanded'],
+    hint: 'Hover the farm icon in the Dock · click it to open the window · click anywhere else to minimise it back',
+    build(m) {
+      m.scr.insertAdjacentHTML('beforeend', screenHTML({}) + '<div class="dlabel"><b>Ant Farm</b> · <span data-s="short"></span></div>' +
+        '<div class="dwin"><div class="wbar"><span class="lights"><i></i><i></i><i></i></span><span class="t">Ant Farm — <span data-s="line"></span></span></div><div class="body"><canvas class="farm"></canvas></div></div>');
+      const slot = m.scr.querySelector('.dockslot');
+      slot.classList.add('dockfarm'); slot.innerHTML = '<canvas class="farm"></canvas>';
+      view(slot.querySelector('canvas'), m, CAM.focus(1.5, 0.3), { states: ['collapsed', 'peek', 'expanded'] });
+      view(m.scr.querySelector('.dwin canvas'), m, CAM.nest(0.3), { states: ['expanded'], soft: true });
+      const place = () => {
+        const x = slot.offsetLeft + m.scr.querySelector('.dock').offsetLeft + 26 - m.scr.querySelector('.dock').offsetWidth / 2;
+        m.scr.querySelector('.dlabel').style.left = x + 'px';
+        m.scr.querySelector('.dwin').style.setProperty('--ox', (x - 320) + 'px');
+      };
+      m.onShow = place;
+      wire(m, slot, { keep: (e) => e.target.closest('.dwin') });
+    },
+    tag: 'The app’s Dock icon is a live picture of the colony; click it for the window.',
+    badges: { screen: 'Dock slot', attention: 1, effort: 'Low', live: 'Always' },
+    facts: [
+      ['Looks', 'The Ant Farm icon in the Dock shows the middle of the nest, redrawn about once a second, inside the usual rounded square.'],
+      ['Behaves', 'Hover shows the Dock label with the stats. Click opens the farm window with the Dock’s own zoom; clicking elsewhere minimises it back into the icon.'],
+      ['Screen use', 'One Dock slot. Nothing on the desktop.'],
+      ['Attention', 'Calm, and only where you already look for apps.'],
+      ['Build (Electron)', 'Low: draw the icon offscreen and call <code>app.dock.setIcon(nativeImage)</code> about once a second; the <code>activate</code> event opens the window. <code>app.dock.setBadge</code> is always the red system badge, so use it only for “starving”, if at all.'],
+      ['Windows', 'The taskbar icon can’t be redrawn freely, but <code>win.setOverlayIcon</code> adds a small status dot, and the taskbar hover preview shows the live window.'],
+      ['Limits', 'Small (48–64 pt), hidden when the Dock auto-hides, and a menu-bar-only app has no Dock icon at all (<code>app.dock.hide()</code>), so it doesn’t combine with the notch or menu-bar modes unless the Dock icon is a setting.'],
+    ] });
+
+  mode({ id: 'status', n: 8, name: 'Status line', states: ['collapsed', 'peek', 'expanded'],
+    hint: 'Hover the status line under the prompt · click it to split a live farm pane beside the chat · click elsewhere to close it',
+    build(m) {
+      m.scr.insertAdjacentHTML('beforeend', screenHTML({ noTerm: true }) +
+        '<div class="win term bigterm"><div class="wbar"><span class="lights"><i></i><i></i><i></i></span><span class="t">token-games — claude — 140×40</span></div>' +
+        '<div class="panes"><div class="main"><pre>' + TERM_TXT + '</pre><div class="prompt">&gt; <span class="d">▍</span></div>' +
+        '<div class="sline"><span class="d">Opus · token-games</span><span>│</span><span class="ascii"></span><span data-s="line"></span><span class="peekhint">click or /ant to open the farm →</span></div></div>' +
+        '<div class="tui"><div class="th">$ ant-farm --tui   <span style="opacity:.6">(q to close)</span></div><div class="art"></div><div class="tf stat" data-s="line"></div></div></div></div>');
+      m.ascii = m.scr.querySelector('.sline .ascii'); m.art = m.scr.querySelector('.tui .art');
+      wire(m, m.scr.querySelector('.sline'), {});
+      m.scr.addEventListener('pointerdown', (e) => { if (e.target.closest('.tui') && m.state === 'expanded') e.stopImmediatePropagation(); }, true);
+    },
+    tag: 'One line in Claude Code itself: a few characters of colony next to the model name, and a live text-mode farm when you want it.',
+    badges: { screen: 'One line', attention: 1, effort: 'Low', live: 'While you work' },
+    facts: [
+      ['Looks', 'Claude Code’s status line, under the prompt, shows a 14-character half-block strip of the surface in colour and the colony’s stats. Click (or a <code>/ant</code> command) opens a text-mode farm in a split pane, drawn with ▀ half-blocks.'],
+      ['Behaves', 'The status line updates when the conversation does, so it moves while Claude works and rests when you stop, which matches how the farm is fed. The pane animates live until you close it.'],
+      ['Screen use', 'One line of the terminal; the pane only while open.'],
+      ['Attention', 'Calm and in context: it lives exactly where tokens are spent.'],
+      ['Build', 'Low. Claude Code’s <code>statusLine</code> setting runs a command and shows its first line: a tiny script reads the farm’s <code>colony.json</code> and prints the strip with ANSI colours. The text-mode pane (<code>ant-farm --tui</code>) reuses the simulation with a terminal renderer: medium.'],
+      ['Windows', 'Works in Windows Terminal (true colour and half-blocks); the old console host draws it poorly.'],
+      ['Limits', 'Only visible in the terminal, never on the desktop. A status line replaces any existing one, so the script should append to yours. No hover in a terminal: the click here stands for a key or command. Needs a true-colour terminal.'],
+    ] });
+
+  mode({ id: 'combo', n: 9, star: true, name: 'Combined', states: ['collapsed', 'peek', 'expanded', 'popped'], notch: true,
+    hint: 'Hover the notch · click to open · “Pop out ↗” turns it into the corner overlay · “↩ Notch” puts it back',
+    build(m) {
+      m.scr.insertAdjacentHTML('beforeend', screenHTML({}) + islandHTML(true) +
+        '<div class="popwin"><div class="fbar stat">' + ICON_ANT + '<b>Ant Farm</b><span data-s="line"></span><span class="pill-btn backbtn">↩ Notch</span></div><canvas class="farm"></canvas></div>');
+      wireIsland(m);
+      const pw = m.scr.querySelector('.popwin');
+      view(pw.querySelector('canvas'), m, CAM.nest(0.32), { states: ['popped'], soft: true });
+      m.scr.querySelector('.popbtn').addEventListener('click', (e) => { e.stopPropagation(); setState(m, 'popped'); });
+      pw.querySelector('.backbtn').addEventListener('click', () => setState(m, 'collapsed'));
+      // while popped out, clicks elsewhere leave the overlay where it is (it is a normal window now)
+      m.scr.addEventListener('pointerdown', (e) => { if (m.state === 'popped') e.stopImmediatePropagation(); }, true);
+      m.noHoverWhen = 'popped';
+    },
+    tag: 'Recommended: the farm lives in the notch (or the menu-bar pill), peeks on hover, opens on click, and pops out as today’s overlay when you want to watch.',
+    badges: { screen: 'Tiny → Small', attention: 1, effort: 'Medium', live: 'Always' },
+    facts: [
+      ['Looks', 'At rest it is the notch island from mode 1. Popped out it is the corner overlay you already have, and the island’s dot turns warm to show the farm is out.'],
+      ['Behaves', 'Hover the notch to peek; click for the drop-down panel; <i>Pop out ↗</i> flies it down into the corner overlay (drag, resize, camera, settings as today); <i>↩ Notch</i> or closing the window sends it home. Without a notch the home is the menu-bar pill.'],
+      ['Screen use', 'Nothing but the notch area until you choose otherwise.'],
+      ['Attention', 'The calmest default with the full farm one click away.'],
+      ['Build (Electron)', 'Two windows of the same renderer: the island panel (new, as in mode 1) and the existing overlay. One process, one simulation in the main process or a shared worker, both windows drawing it. A <i>Home</i> setting (Notch · Menu bar · Corner orb) picks where it rests. Order: island with peek and panel → pop out to the existing window → no-notch pill → status line.'],
+      ['Windows', 'Home defaults to the corner orb or a top-centre pill; pop-out is the same overlay.'],
+      ['Limits', 'The notch limits of mode 1 apply; everything else is the app as it is.'],
+    ] });
+
+  // ---------- page state ----------
+  let cur = null;
+  const stage = $('stage');
+  function setState(m, st) {
+    if (m.states.indexOf(st) < 0) return;
+    m.state = st; m.scr.dataset.state = st;
+    if (m === cur) renderStates();
+    animUntil = performance.now() + 650;
+  }
+  for (const m of MODES) {
+    m.scr = document.createElement('div');
+    m.scr.className = 'scr' + (m.notch ? ' notch' : '');
+    m.scr.dataset.mode = m.id;
+    m.build(m);
+    m.state = 'collapsed'; m.scr.dataset.state = 'collapsed';
+    m.scr.style.display = 'none';
+    stage.appendChild(m.scr);
+  }
+  function scaleStage() {
+    stageScale = stage.clientWidth / 1280;
+    stage.style.height = Math.round(800 * stageScale) + 'px';
+    for (const m of MODES) m.scr.style.transform = 'scale(' + stageScale + ')';
+  }
+  new ResizeObserver(scaleStage).observe(stage);
+
+  const tabs = $('tabs');
+  for (const m of MODES) {
+    const b = document.createElement('button');
+    b.className = 'tab'; b.dataset.mode = m.id;
+    b.innerHTML = (m.star ? '<span class="n">★</span>' : '<span class="n">' + m.n + '</span>') + m.name + (m.star ? '<span class="rec">recommended</span>' : '');
+    b.onclick = () => show(m.id);
+    tabs.appendChild(b);
+  }
+  function renderStates() {
+    const m = cur, el = $('states');
+    el.innerHTML = '<span class="lbl">State</span>';
+    const seg = document.createElement('span'); seg.className = 'seg';
+    for (const st of m.states) {
+      const b = document.createElement('button'); b.textContent = LABEL[st]; b.dataset.state = st;
+      if (m.state === st) b.className = 'on';
+      b.onclick = () => setState(m, st);
+      seg.appendChild(b);
+    }
+    el.appendChild(seg);
+    if (m.notch) {
+      const n = document.createElement('span'); n.className = 'seg'; n.id = 'segNotch';
+      n.innerHTML = '<button data-n="1">MacBook notch</button><button data-n="0">No notch</button>';
+      n.querySelectorAll('button').forEach((b) => {
+        b.classList.toggle('on', (b.dataset.n === '1') === m.scr.classList.contains('notch'));
+        b.onclick = () => { m.scr.classList.toggle('notch', b.dataset.n === '1'); renderStates(); animUntil = performance.now() + 650; };
+      });
+      el.appendChild(n);
+    }
+    const h = document.createElement('span'); h.className = 'hint'; h.textContent = h.title = m.hint; el.appendChild(h);
+  }
+  const dots = (n) => '<span class="dots">' + '●'.repeat(n) + '<i>' + '●'.repeat(5 - n) + '</i></span>';
+  function renderCard() {
+    const m = cur, b = m.badges;
+    $('card').innerHTML = '<div class="ch"><h2>' + (m.star ? '★ ' : m.n + '. ') + m.name + '</h2><div class="badges">' +
+      '<span class="bdg">Screen <b>' + b.screen + '</b></span><span class="bdg">Attention ' + dots(b.attention) + '</span><span class="bdg">Build <b>' + b.effort + '</b></span><span class="bdg">Live <b>' + b.live + '</b></span>' +
+      '</div><p>' + m.tag + '</p></div><dl class="facts">' + m.facts.map((f) => '<dt>' + f[0] + '</dt><dd>' + f[1] + '</dd>').join('') + '</dl>';
+  }
+  function show(id) {
+    const m = MODES.find((x) => x.id === id) || MODES[0];
+    if (cur) cur.scr.style.display = 'none';
+    cur = m; m.scr.style.display = '';
+    tabs.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.mode === id));
+    renderStates(); renderCard();
+    if (m.onShow) m.onShow();
+    for (const v of views) if (v.mode === m) v.c = null;
+    try { history.replaceState(null, '', '?' + new URLSearchParams(Object.assign(Object.fromEntries(q), { mode: id })).toString().replace(/&?test=1/, (TEST ? '&test=1' : ''))); } catch (e) { /* file:// in some browsers */ }
+    try { localStorage.setItem('af-mode', id); } catch (e) { /* storage off */ }
+    animUntil = performance.now() + 300;
+    drawNow();
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.target.closest('input,textarea')) return;
+    const i = MODES.indexOf(cur);
+    if (e.key >= '1' && e.key <= '9') show(MODES[+e.key - 1].id);
+    else if (e.key === 'ArrowRight') show(MODES[(i + 1) % MODES.length].id);
+    else if (e.key === 'ArrowLeft') show(MODES[(i + MODES.length - 1) % MODES.length].id);
+    else if (e.key === 'Escape' && cur.state !== 'collapsed' && cur.state !== 'popped') setState(cur, 'collapsed');
+  });
+
+  // comparison table
+  const CMP = [
+    ['notch', 'Tiny, top centre', 1, 'Always', 'Medium', 'Top-centre pill', 'No notch API; full-screen apps', 'good', 'Pick'],
+    ['menubar', 'One menu-bar slot', 1, 'Always', 'Low', 'Tray: still icon only', 'Can be hidden by the notch overflow', 'meh', 'Runner-up'],
+    ['orb', '64 pt circle', 2, 'Always', 'Medium', 'Works well', 'Floats over your work', 'meh', 'Runner-up'],
+    ['tile', 'Small window', 2, 'Always', 'Low', 'No animated resize', 'Blur-collapse needs a pin', 'good', 'Pick (as pop-out)'],
+    ['ground', 'Full-width strip', 2, 'Always', 'Medium', 'Above the taskbar', 'Dock covers it; can’t reserve space', 'no', 'Fun, costly'],
+    ['wall', 'None', 1, 'Only between windows', 'Medium–high', 'Hard (WorkerW)', 'Rarely seen while working', 'no', 'Skip'],
+    ['dock', 'One Dock slot', 1, 'When Dock shows', 'Low', 'Overlay dot only', 'Clashes with menu-bar-only app', 'no', 'Skip'],
+    ['status', 'One terminal line', 1, 'In the terminal', 'Low', 'Windows Terminal', 'Not on the desktop', 'good', 'Extra'],
+    ['combo', 'Notch, overlay on demand', 1, 'Always', 'Medium', 'Orb or pill home', 'Notch limits', 'good', 'Recommended'],
+  ];
+  $('cmp').innerHTML = '<thead><tr><th>Mode</th><th>Screen use</th><th>Attention</th><th>Seen</th><th>Electron build</th><th>Windows</th><th>Main catch</th><th>Verdict</th></tr></thead><tbody>' +
+    CMP.map((r) => { const m = MODES.find((x) => x.id === r[0]); return '<tr class="click" data-mode="' + r[0] + '"><td><b>' + (m.star ? '★' : m.n + '.') + ' ' + m.name + '</b></td><td>' + r[1] + '</td><td>' + dots(r[2]) + '</td><td>' + r[3] + '</td><td>' + r[4] + '</td><td>' + r[5] + '</td><td>' + r[6] + '</td><td><span class="pill ' + r[7] + '">' + r[8] + '</span></td></tr>'; }).join('') + '</tbody>';
+  $('cmp').querySelectorAll('tr.click').forEach((tr) => { tr.onclick = () => { show(tr.dataset.mode); window.scrollTo({ top: 0, behavior: 'smooth' }); }; });
+
+  // appearance controls
+  function applyLook() {
+    document.documentElement.dataset.theme = vis.dark ? 'dark' : 'light';
+    document.querySelectorAll('#segTheme button').forEach((b) => b.classList.toggle('on', (b.dataset.theme === 'dark') === vis.dark));
+    document.querySelectorAll('#segPal button').forEach((b) => b.classList.toggle('on', b.dataset.pal === vis.palette));
+    repaint();
+    const u = ui();
+    for (const m of MODES) { m.scr.style.setProperty('--fbar', u.bar); m.scr.style.setProperty('--fink', u.ink); m.scr.style.setProperty('--fline', u.line); m.scr.querySelectorAll('.tile,.popwin,.dwin .body,.ground').forEach((el) => { el.style.background = u.back; }); }
+    drawNow();
+  }
+  document.querySelectorAll('#segTheme button').forEach((b) => { b.onclick = () => { vis.dark = b.dataset.theme === 'dark'; applyLook(); }; });
+  document.querySelectorAll('#segPal button').forEach((b) => { b.onclick = () => { vis.palette = b.dataset.pal; applyLook(); }; });
+
+  // ---------- the demo feed: pretend Claude Code work, so the colony moves (the real game has no such thing) ----------
+  let rng = 12345;
+  const rnd = () => ((rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  function demoFeed() {
+    const n = Math.round(1500 + rnd() * 6500);
+    sim.feed({ v: 1, source: 'demo', type: 'tokens', input: Math.round(n * 0.6), output: Math.round(n * 0.4), ts: Date.now() });
+    if (rnd() < 0.12) sim.feed({ v: 1, source: 'demo', type: 'task_done' });
+    setTimeout(demoFeed, 2500 + rnd() * 4500);
+  }
+
+  // ---------- frame loop ----------
+  let animUntil = 0, lastT = 0, acc = 0, lastDraw = 0, lastAscii = 0;
+  function drawNow() {
+    if (!mapper || !cur) return 0;
+    repaint();
+    let n = 0;
+    for (const v of views) if (v.mode === cur && v.states.indexOf(cur.state) >= 0 && drawView(v)) n++;
+    if (cur.ascii) {
+      cur.ascii.innerHTML = ascii(14, 1, 0.5);
+      if (cur.state === 'expanded') cur.art.innerHTML = ascii(74, 30, 0.2);
+    }
+    paintStats();
+    return n;
+  }
+  function frame(t) {
+    requestAnimationFrame(frame);
+    if (document.hidden) { lastT = t; return; }
+    const dt = Math.min(250, t - (lastT || t)); lastT = t;
+    acc += dt * AntSim.TICK_HZ / 1000;
+    let n = 0;
+    while (acc >= 1 && n < 20) { sim.step(); acc -= 1; n++; }
+    if (n >= 20) acc = 0;
+    const fps = t < animUntil ? 60 : sim.isBusy() ? 12 : 6;
+    if (t - lastDraw >= 1000 / fps - 2) { lastDraw = t; drawNow(); }
+  }
+
+  // ---------- start ----------
+  scaleStage();
+  applyLook();
+  let start = q.get('mode');
+  if (!start) { try { start = localStorage.getItem('af-mode'); } catch (e) { /* storage off */ } }
+  show(MODES.some((m) => m.id === start) ? start : 'notch');
+  if (q.get('notch') === '0') { for (const m of MODES) m.scr.classList.remove('notch'); renderStates(); }
+  if (q.get('state')) setState(cur, q.get('state'));
+  if (!TEST) { setTimeout(demoFeed, 800); requestAnimationFrame(frame); }
+  window.antModes = { MODES, sim, setState, show, views, drawNow, vis, applyLook };
+
+  // ---------- in-page checks (?test=1), read by test/e2e.js ----------
+  if (TEST) {
+    document.body.classList.add('testing');
+    const checks = [];
+    const ok = (name, pass, info) => checks.push({ name, pass: !!pass, info });
+    const area = (el) => { const r = el.getBoundingClientRect(); return r.width * r.height; };
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const painted = (v) => {
+      const c = v.el; if (!c.width || !c.height) return 0;
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, seen = new Set();
+      for (let i = 0; i < d.length; i += 4 * 7) seen.add(d[i] << 16 | d[i + 1] << 8 | d[i + 2]);
+      return seen.size;
+    };
+    const HOT = { notch: '.island', menubar: '.popover', orb: '.orb', tile: '.tile', ground: '.ground', wall: '.w-term', dock: '.dwin', status: '.tui', combo: '.island' };
+    (async () => {
+      try {
+        for (let i = 0; i < 300; i++) sim.step();
+        ok('there are 9 display modes, each with a tab', MODES.length === 9 && tabs.children.length === 9);
+        for (const m of MODES) {
+          show(m.id); setState(m, 'collapsed'); await wait(700); drawNow();
+          const hot = m.scr.querySelector(HOT[m.id]), a0 = area(hot);
+          const small = views.filter((v) => v.mode === m && v.states.indexOf('collapsed') >= 0);
+          if (m.ascii) ok(m.name + ': the status line shows a strip of the colony', (m.ascii.textContent.match(/▀/g) || []).length === 14 && m.ascii.children.length > 1, m.ascii.textContent);
+          else ok(m.name + ': the collapsed view shows the colony', small.length && small.every((v) => painted(v) >= 3), small.map(painted));
+          setState(m, 'expanded'); await wait(700); drawNow();
+          const big = views.filter((v) => v.mode === m && v.states.indexOf('expanded') >= 0);
+          if (m.id === 'menubar') ok(m.name + ': clicking the strip opens the popover', getComputedStyle(hot).opacity === '1' && a0 > 30000, { a0, op: getComputedStyle(hot).opacity });
+          else if (m.id === 'wall') ok(m.name + ': revealing the desktop moves the windows aside', getComputedStyle(hot).transform !== 'none', getComputedStyle(hot).transform);
+          else if (m.id === 'status') ok(m.name + ': the farm pane opens with a half-block drawing', area(hot) > a0 + 1000 && (m.art.textContent.match(/▀/g) || []).length > 1500, { a0, a1: area(hot) });
+          else ok(m.name + ': expanding makes it bigger', area(hot) > a0 * 1.5 + 100, { a0, a1: area(hot) });
+          if (big.length) ok(m.name + ': the expanded view shows the colony', big.every((v) => painted(v) >= 3), big.map(painted));
+          // click away
+          const away = m.id === 'wall' ? m.scr.querySelector('.w-ed') : m.scr.querySelector('.wall');
+          away.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+          ok(m.name + ': clicking away collapses it', m.state === 'collapsed', m.state);
+          // hover peeks, click expands
+          const hov = { notch: '.island', menubar: '.mbitem', orb: '.orb', tile: '.tile', ground: '.ground', wall: '.hotc', dock: '.dockslot', status: '.sline', combo: '.island' }[m.id];
+          const h = m.scr.querySelector(hov);
+          h.dispatchEvent(new PointerEvent('pointerenter'));
+          ok(m.name + ': hovering peeks', m.state === 'peek', m.state);
+          h.dispatchEvent(new PointerEvent('pointerleave'));
+          ok(m.name + ': leaving the peek folds it back', m.state === 'collapsed', m.state);
+          if (m.id !== 'wall') { h.click(); ok(m.name + ': clicking opens it', m.state === 'expanded', m.state); setState(m, 'collapsed'); }
+        }
+        // the orb: drag to the top left, it snaps there
+        const orbM = MODES.find((m) => m.id === 'orb'); show('orb');
+        const orb = orbM.scr.querySelector('.orb'), r = orbM.scr.getBoundingClientRect(), s = stageScale;
+        const ev = (type, x, y) => orb.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: r.left + x * s, clientY: r.top + y * s, pointerId: 1 }));
+        ev('pointerdown', 1220, 700); ev('pointermove', 900, 500); ev('pointermove', 150, 120); ev('pointerup', 150, 120);
+        ok('the orb snaps to the corner it is dropped near', orbM.corner === 'tl', orbM.corner);
+        orbM.place('br');
+        // combined: pop out and back
+        const co = MODES.find((m) => m.id === 'combo'); show('combo'); setState(co, 'expanded');
+        co.scr.querySelector('.popbtn').click();
+        ok('combined: Pop out turns the panel into the corner overlay', co.state === 'popped');
+        co.scr.querySelector('.wall').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+        ok('combined: the popped-out overlay stays when you click elsewhere', co.state === 'popped');
+        co.scr.querySelector('.backbtn').click();
+        ok('combined: ↩ Notch sends it home', co.state === 'collapsed');
+        // no notch fallback
+        show('notch'); document.querySelector('#segNotch [data-n="0"]').click(); await wait(600);
+        const isl = MODES[0].scr.querySelector('.island').getBoundingClientRect();
+        ok('without a notch the island is a pill in the menu bar', isl.height / s < 30 && isl.top - r.top < 2, { h: isl.height / s });
+        document.querySelector('#segNotch [data-n="1"]').click();
+        // appearance
+        vis.dark = true; vis.palette = 'blend'; applyLook();
+        ok('dark mode draws the farm in Desktop Blend dark', ui().back === AntPalette.resolve('blend', true).ui.back);
+        vis.dark = false; applyLook();
+        ok('light mode draws the farm in Desktop Blend light', ui().back === AntPalette.resolve('blend', false).ui.back);
+        // only real usage feeds the game: no feed or cheat controls anywhere on the page
+        const btns = [...document.querySelectorAll('button, .pill-btn')].map((b) => b.textContent);
+        ok('no feed or cheat controls on the page', !btns.some((t) => /token|feed|task done|\+\d/i.test(t)), btns);
+      } catch (err) { ok('no exceptions', false, String(err && err.stack || err)); }
+      $('result').textContent = JSON.stringify({ pass: checks.every((c) => c.pass), checks, seed: +(q.get('seed') || 7), tick: sim.tick });
+    })();
+  }
+})();
+</script>
+</body>
+</html>
