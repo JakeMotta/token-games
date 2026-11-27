@@ -6,18 +6,27 @@
    &shine=<0-1>; &habitat=grass|flat|meadow|cave|wildwood|studio; &debug=1 draws the walk (heading and facing, turn
    pivot, goal, floor edges, planted feet, swing targets, legs, gait); &gait=walk|hurry keeps it walking;
    &heading=<radians> which way it faces; &hunger=<0-1>; &food=berry|seed|leaf|apple|fish puts one down in front of it;
-   &test=1 runs the self-checks.
+   &time=<0-24> the time of day (the sun's place, light.js); &day=slow|normal|fast how quickly the day goes by;
+   &dayPause=1 holds the sun still; &test=1 runs the self-checks.
    Dropping food by clicking the stage is for this prototype page only. In the game food comes from tokens of real
    Claude Code use, and levels only from real use; there are no buttons that add either. */
 (function () {
   'use strict';
   const G = window.CreatureGenome, R = window.CreatureRender, M = window.CreatureMotion, HAB = window.CreatureHabitats;
+  const L = window.CreatureLight;
   const $ = (id) => document.getElementById(id);
   const params = new URLSearchParams(location.search);
   const TEST = params.get('test') === '1';
   const PROOF = params.get('proof');               // turn|spin|eat|habitats: draw a proof sheet for tools/proof.js
   const PAUSE = params.get('pause') === '1' || TEST || !!PROOF;
   const GAIT = ['walk', 'hurry'].includes(params.get('gait')) ? params.get('gait') : null; // keep walking (or hurrying)
+  // The self-checks fail on any page error or console error, not only on the ones they catch themselves.
+  const pageErrors = [];
+  if (TEST || PROOF) {
+    addEventListener('error', (e) => pageErrors.push(String(e.message || e)));
+    const err = console.error.bind(console);
+    console.error = (...a) => { pageErrors.push(a.map(String).join(' ')); err(...a); };
+  }
   const reducedMotion = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 
   const STAGE_W = 384, STAGE_H = 216;   // stage grid (logical pixels)
@@ -50,6 +59,9 @@
     ['Wings', 'wings.size'], ['Ears', 'ears.kind'], ['Decor', 'decor.kind'], ['Colour', 'colour.hue'], ['Saturation', 'colour.sat'],
     ['Pattern', 'pattern.kind'], ['Pattern amount', 'pattern.amount'], ['Melt (fluff)', 'fluff'], ['Gloss', 'gloss'],
   ];
+  // How quickly the prototype's day goes by, in hours of the day per real second, and how the chip reads.
+  const DAY_SPEEDS = { slow: [24 / 1200, 'slow (20 min)'], normal: [24 / 240, 'normal (4 min)'], fast: [24 / 40, 'fast (40 s)'] };
+  const START_HOURS = 9.5;              // a morning sun: the shadow falls to the right and a little towards us
   const INTEGER_GENES = new Set(['legs.pairs', 'horns.count', 'ears.kind', 'decor.kind', 'pattern.kind', 'wings.fingers']);
 
   const habitatParam = params.get('habitat') || params.get('back');
@@ -61,6 +73,8 @@
     palette: R.PALETTES[params.get('palette')] ? params.get('palette') : 'own',
     shine: params.get('shine') != null ? Math.max(0, Math.min(1, Number(params.get('shine')) || 0)) : 1,
     debug: params.get('debug') === '1', food: 'berry', foods: [], poops: [], fx: [], pan: 0,
+    hours: params.get('time') != null && isFinite(Number(params.get('time'))) ? Number(params.get('time')) : START_HOURS, light: null,
+    daySpeed: DAY_SPEEDS[params.get('day')] ? params.get('day') : 'normal', dayPaused: params.get('dayPause') === '1',
     phase: 'egg', hatchT: 0, gallery: [], picks: [], current: -1, reveal: null, cam: null, ph: null, walker: null,
   };
 
@@ -113,6 +127,18 @@
       for (const b of pts) {
         const rx = dot(b, c.r), uy = dot(b, c.u);
         half = Math.max(half, Math.abs(rx) + b[3]); top = Math.max(top, uy + b[3]); bottom = Math.max(bottom, b[3] - uy);
+      }
+    }
+    // Room for the cast shadow: every piece thrown onto the floor by the sun or the moon at any hour, from any heading.
+    // The light is fixed in the world, so these are measured with the world camera (yaw 0).
+    const c0 = R.camera({ w: 1, h: 1, px, yaw: 0, pitch: PITCH, center: [0, 0, 0] }), dirs = [];
+    for (let h = 0; h < 24; h += 0.5) { const l = L.at(h); if (l.strength > 0.01) dirs.push(l.dir); }
+    for (const b of scene.prims.map((p) => p.bs)) for (let i = 0; i < 8; i++) {
+      const a = i * Math.PI / 4, x = b[0] * Math.cos(a) + b[2] * Math.sin(a), z = -b[0] * Math.sin(a) + b[2] * Math.cos(a);
+      for (const d of dirs) {
+        const g = L.ground([x, b[1], z], d), rad = b[3] / d[1] + 0.12 * (scene.scale || 1);
+        const rx = dot(g, c0.r), uy = dot(g, c0.u);
+        half = Math.max(half, Math.abs(rx) + rad); bottom = Math.max(bottom, rad - uy);
       }
     }
     const w = Math.ceil(2 * half * 1.06 / px) + 4, ground = Math.ceil((top * 1.06 + 0.4 * (top + bottom)) / px) + 2;
@@ -231,13 +257,39 @@
   function lookOpts() {
     return { style: S.view === 'gochi' ? S.style : S.view, shine: S.shine, palette: S.palette === 'own' ? null : S.palette };
   }
+  // The time of day: where the sun (or the moon) is, read by the renderer, the habitat and the stage tint.
+  function setHours(h) {
+    S.hours = ((h % 24) + 24) % 24;
+    S.light = L.at(S.hours);
+    $('hours').value = S.hours;
+    $('hoursVal').textContent = L.clock(S.hours) + ' · ' + S.light.phase;
+    S.dirty = true;
+  }
+  // The light as the body sees it: the sprite camera is turned by -heading, so the world light turns with it and the
+  // shadow stays put on the floor while the creature turns.
+  function lightFor(cam) {
+    const l = S.light;
+    return { dir: L.toBody(l.dir, -cam.yaw), strength: l.strength, soft: l.soft, rgb: l.shadowRgb };
+  }
   function renderCreature(pose, cam) {
     const sc = R.creatureScene(S.ph, pose);
     S.lastScene = sc;
-    return R.render(sc, cam || S.cam, lookOpts());
+    return R.render(sc, cam || S.cam, Object.assign(lookOpts(), { light: lightFor(cam || S.cam) }));
   }
   function renderEgg(pose, cam) {
-    return R.render(R.eggScene(G.eggLook(S.creature), pose), cam || S.cam, lookOpts());
+    return R.render(R.eggScene(G.eggLook(S.creature), pose), cam || S.cam, Object.assign(lookOpts(), { light: lightFor(cam || S.cam) }));
+  }
+  // Warm light at dawn and dusk, cool and dim at night: the whole stage (habitat, food, creature) multiplied by the
+  // light's tint. Dark habitats are already night-lit, so they take less of it.
+  function drawDaylight() {
+    const l = S.light;
+    if (l.tintAmount < 0.01) return;
+    sctx.save();
+    sctx.globalCompositeOperation = 'multiply';
+    sctx.globalAlpha = S.hab.dark ? 0.45 : 1;
+    sctx.fillStyle = 'rgb(' + l.tint.join(',') + ')';
+    sctx.fillRect(0, 0, STAGE_W, STAGE_H);
+    sctx.restore();
   }
   // The camera for the creature where it stands: turned by its heading (the world camera looks along -z, so the body
   // is seen from yaw = -heading) and scaled by how far back it is.
@@ -270,7 +322,9 @@
     const def = FOODS[f.kind], u = Math.min(1, f.age / DROP_TIME), up = (1 - u * u) * DROP_HEIGHT;
     const p = toStage(f.x, f.z), x = Math.round(p.x), y = Math.round(p.y);
     const s = def.size * p.k * (0.45 + 0.55 * f.bites / f.maxBites);
-    sctx.fillStyle = 'rgba(0,0,0,0.18)'; sctx.beginPath(); sctx.ellipse(x, y, s * 1.1, s * 0.4, 0, 0, Math.PI * 2); sctx.fill();
+    const l = S.light, reach = s * 0.5 / l.dir[1]; // the snack's own shadow, nudged away from the light
+    sctx.fillStyle = 'rgba(' + l.shadowRgb.join(',') + ',' + (0.1 + 0.12 * l.strength).toFixed(3) + ')'; sctx.beginPath();
+    sctx.ellipse(x - l.dir[0] * reach, y - l.dir[2] * reach * Math.sin(PITCH), s * 1.1, s * 0.4, 0, 0, Math.PI * 2); sctx.fill();
     const cy = Math.round(y - s * 0.7 - up * p.k);
     const disc = (cx, yy, r, col, ry) => { sctx.fillStyle = col; sctx.beginPath(); sctx.ellipse(Math.round(cx), Math.round(yy), Math.max(0.8, r), Math.max(0.8, ry || r), 0, 0, Math.PI * 2); sctx.fill(); };
     if (f.kind === 'berry') {
@@ -414,12 +468,13 @@
   // The creature on its floor for one step result: habitat, food, poop, the creature, crumbs and sparkles, the hungry
   // bubble, the debug overlay and the hunger meter.
   function paint(st, pose, dt, t) {
-    S.hab.draw(sctx, t, S.pan);
+    S.hab.draw(sctx, t, S.pan, S.light);
     let res, at0;
     drawFloor([{ z: st.z, draw: () => { res = renderCreature(pose, camAt(st.x, st.z, st.heading)); at0 = putSprite(res, st.x, st.z); } }]);
     const top = at0.sy + spriteTop(res);
     onEvents(st, top);
     drawFx(dt);
+    drawDaylight();
     if (st.hungry && st.state !== 'eat' && !foodFor(S.walker)) drawBubble(at0.sx + S.sw / 2, top);
     if (S.debug) drawDebug(res, st, at0);
     showMood(st);
@@ -427,10 +482,12 @@
 
   function frame(dt) {
     const t = reducedMotion || PAUSE ? 0 : performance.now() / 1000;
-    if (S.phase !== 'creature') S.hab.draw(sctx, t, S.pan);
+    if (!PAUSE && !S.dayPaused && dt > 0) setHours(S.hours + dt * DAY_SPEEDS[S.daySpeed][0]); // the day goes by
+    if (S.phase !== 'creature') S.hab.draw(sctx, t, S.pan, S.light);
     if (S.phase === 'egg') {
       const wob = PAUSE ? 0 : Math.sin(t * 2.2) * 0.05 * (Math.sin(t * 0.7) > 0.6 ? 1 : 0.25);
       drawFloor([{ z: 0, draw: () => putSprite(renderEgg({ wobble: wob }, camAt(0, 0, START_HEADING)), 0, 0) }]);
+      drawDaylight();
       if (S.debug) drawDebug(null, null);
       showMood(null);
       return;
@@ -442,11 +499,12 @@
       const eggPose = { wobble: wob, crack: ramp(HATCH.crack[0], HATCH.crack[1]), open: ramp(HATCH.open[0], HATCH.open[1]) };
       const fade = 1 - ramp(HATCH.fade[0], HATCH.fade[1]);
       const egg = () => putSprite(renderEgg(eggPose, camAt(0, 0, START_HEADING)), 0, -0.12 * S.ph.scale, T < HATCH.baby ? 1 : fade);
-      if (T < HATCH.baby) drawFloor([{ z: 0, draw: egg }]);
+      if (T < HATCH.baby) { drawFloor([{ z: 0, draw: egg }]); drawDaylight(); }
       else {
         const st = M.step(S.walker, dt, S.area, null, { walk: false, hop: T - dt < HATCH.baby });
         let res, at0;
         drawFloor([{ z: -0.12 * S.ph.scale, draw: egg }, { z: st.z, draw: () => { res = renderCreature(st.pose, camAt(st.x, st.z, st.heading)); at0 = putSprite(res, st.x, st.z); } }]);
+        drawDaylight();
         if (S.debug) drawDebug(res, st, at0);
       }
       showMood(null);
@@ -509,6 +567,9 @@
     $('paletteRow').style.display = R.styles[S.style].pixel ? '' : 'none';
     $('shineVal').textContent = S.shine.toFixed(2);
     $('debug').classList.toggle('on', S.debug);
+    for (const b of $('daySpeeds').children) b.classList.toggle('on', b.dataset.v === S.daySpeed);
+    $('dayPause').classList.toggle('on', S.dayPaused);
+    $('dayPause').textContent = S.dayPaused ? 'Sun paused' : 'Pause sun';
     for (const b of $('habitats').children) b.classList.toggle('on', b.dataset.v === S.habitat);
     for (const b of $('foods').children) b.classList.toggle('on', b.dataset.v === S.food);
     $('walk').classList.toggle('on', S.walk); $('repair').classList.toggle('on', S.repair);
@@ -621,6 +682,10 @@
   $('shine').value = S.shine;
   $('shine').addEventListener('input', () => { S.shine = Number($('shine').value); relook(); });
   $('debug').addEventListener('click', () => { S.debug = !S.debug; S.dirty = true; updatePanels(); });
+  // Time of day: scrub with the slider, pick how fast the day goes by, or hold the sun still. Only the light changes.
+  $('hours').addEventListener('input', () => setHours(Number($('hours').value)));
+  chips('daySpeeds', Object.entries(DAY_SPEEDS).map(([k, v]) => [k, v[1]]), (v) => { S.daySpeed = v; updatePanels(); });
+  $('dayPause').addEventListener('click', () => { S.dayPaused = !S.dayPaused; updatePanels(); });
   chips('habitats', HAB.LIST.map((h) => [h[0], h[1]]), (v) => { setHabitat(v); updatePanels(); });
   for (const b of $('habitats').children) b.title = HAB.LIST.find((h) => h[0] === b.dataset.v)[2];
   // Prototype only: pick a food, then click the floor to drop it there. The game has no such button.
@@ -652,6 +717,7 @@
   S.gallery = loadGallery().filter((e) => e && e.creature && e.creature.copies);
   if (params.get('hunger') != null) S.startHunger = Math.max(0, Math.min(1, Number(params.get('hunger')) || 0));
   setHabitat(S.habitat);
+  setHours(S.hours);
   newEgg(params.get('seed') || undefined);
   if (params.get('temperament') != null) { S.temperament = Number(params.get('temperament')); $('temper').value = S.temperament; }
   if (params.get('level') || params.get('hatched') === '1') {
@@ -675,11 +741,24 @@
 
   // ---------- proof sheets (?proof=...), read by tools/proof.js ----------
   // turn: a 180° turn from walking side-on; spin: a 360° spin; eat: walk to a dropped snack, bite, swallow, be happy;
-  // habitats: the creature standing in every habitat. Frames are the real stage, stepped at the sprite clock, with the
-  // seconds and state under each. The sheet goes into #result as a PNG data URL.
+  // habitats: the creature standing in every habitat; light: the creature in each look (rows) with the sun on the left,
+  // at noon, on the right, at dusk and at night (columns). Frames are the real stage, stepped at the sprite clock, with
+  // the seconds and state under each. The sheet goes into #result as a PNG data URL.
+  const PROOF_HOURS = [[8, 'sun left'], [12, 'noon'], [16, 'sun right'], [17.6, 'dusk'], [23, 'night']];
   function runProof(kind) {
     const DT = 1 / SPRITE_FPS, shots = [];
     const label = (st, time) => time.toFixed(2) + 's ' + st.state + ' ' + Math.round(((st.heading * 180 / Math.PI) % 360 + 540) % 360 - 180) + '°';
+    if (kind === 'light') {
+      const w = S.walker = M.createWalker(S.ph, G.hashSeed(String(S.creature.seed)), { x: 0, z: (S.area.minZ + S.area.maxZ) / 2, heading: START_HEADING });
+      const p0 = toStage(w.x, w.z), cy = Math.max(0, Math.round(p0.y - S.sg - 3)), ch = STAGE_H - cy;
+      for (const style of R.looks) for (const [h, name] of PROOF_HOURS) {
+        S.style = style; setHours(h);
+        const st = M.step(w, 0, S.area, null, { walk: false });
+        paint(st, st.pose, 0, 2.6);
+        shots.push({ img: sctx.getImageData(0, cy, STAGE_W, ch), text: R.styles[style].label + ' ' + L.clock(h) + ' ' + name });
+      }
+      return sheet(shots, PROOF_HOURS.length, STAGE_W, ch, 1);
+    }
     if (kind === 'habitats') {
       for (const [key, name] of HAB.LIST) {
         setHabitat(key);
@@ -725,6 +804,66 @@
       o.fillStyle = '#ece6f2'; o.font = '10px monospace'; o.fillText(s.text, x + 3, y + ch * scale + 9);
     });
     $('result').textContent = out.toDataURL('image/png');
+  }
+
+  // The light: the shadow is the body's own, cast away from the sun, and it moves with the time of day, the heading and
+  // the legs. Measured on the creature's sprite: where the shadow pixels sit against the body pixels.
+  function lightChecks(check, hash) {
+    check('time of day controls exist', $('hours') && $('hoursVal') && $('dayPause') && $('daySpeeds').children.length === 3);
+    const h0 = S.hours;
+    frame(0.5);
+    check('the paused page holds the sun still', S.hours === h0, S.hours);
+    $('hours').value = 17.5; $('hours').dispatchEvent(new Event('input'));
+    check('the slider scrubs the time of day', Math.abs(S.hours - 17.5) < 1e-9 && /^17:30/.test($('hoursVal').textContent), $('hoursVal').textContent);
+    const shape = (res) => {
+      let bx = 0, bn = 0, sx = 0, sn = 0, sa = 0, x0 = Infinity, x1 = -Infinity;
+      for (let i = 0; i < res.mask.length; i++) {
+        const x = i % res.w;
+        if (res.mask[i] === 1) { bx += x; bn++; }
+        if (res.mask[i] === 2) { sx += x; sn++; sa += res.rgba[i * 4 + 3]; x0 = Math.min(x0, x); x1 = Math.max(x1, x); }
+      }
+      return { dx: sn ? sx / sn - bx / bn : 0, n: sn, alpha: sn ? sa / sn : 0, span: sn ? x1 - x0 : 0 };
+    };
+    const at = (hours, heading, pose) => { setHours(hours); return shape(renderCreature(pose || {}, spriteCam(-heading, 1))); };
+    // Morning sun on the left throws the shadow right, evening sun on the right throws it left, from any heading.
+    const sides = [];
+    for (const heading of [START_HEADING, 0, Math.PI / 2, Math.PI, 2.4]) {
+      const am = at(8, heading), pm = at(16, heading);
+      sides.push([heading, Math.round(am.dx), Math.round(pm.dx)]);
+    }
+    check('the shadow falls away from the sun at every heading', sides.every(([, a, b]) => a > 2 && b < -2), sides);
+    const dawn = at(6.6, START_HEADING), noon = at(12, START_HEADING), dusk = at(17.4, START_HEADING), night = at(23, START_HEADING);
+    check('low sun, long shadow; noon, short shadow', dawn.span > noon.span * 1.4 && dusk.span > noon.span * 1.4, { dawn: dawn.span, noon: noon.span, dusk: dusk.span });
+    check('night: only a faint moon shadow', night.n > 0 && night.alpha < noon.alpha * 0.8, { night: Math.round(night.alpha), noon: Math.round(noon.alpha) });
+    // The shadow is the body's: legs moving and turning change it.
+    const w = M.createWalker(S.ph, 5, { x: 0, z: 0, heading: 0 });
+    const shadowHash = (res) => hash(res.mask.map((m, i) => (m === 2 ? res.rgba[i * 4 + 3] : 0)));
+    setHours(9);
+    const poses = [];
+    for (let i = 0; i < 40; i++) { const st = M.step(w, 1 / 12, S.area, null, { walk: true, force: 'walk' }); if (i % 6 === 5) poses.push(shadowHash(renderCreature(st.pose, spriteCam(0, 1)))); }
+    check('the shadow moves with the legs', new Set(poses).size >= 3, new Set(poses).size);
+    // Every look casts its own kind of shadow: soft for the Original, flat and hard for Cel and Pixel.
+    const kinds = {};
+    for (const style of R.looks) {
+      S.style = style;
+      const res = renderCreature({}, spriteCam(-START_HEADING, 1)), tones = new Set();
+      for (let i = 0; i < res.mask.length; i++) if (res.mask[i] === 2) tones.add(res.rgba[i * 4 + 3]);
+      kinds[style] = tones.size;
+    }
+    S.style = 'gochi';
+    check('soft shadow in Original, hard flat shadow in Cel and Pixel', kinds.gochi > 12 && kinds.cel <= 4 && kinds.pixel <= 4, kinds);
+    // Dawn is warmer and night is darker on the stage, in every habitat.
+    const stageMean = () => { const d = sctx.getImageData(0, 0, STAGE_W, STAGE_H).data; let r = 0, b = 0, l = 0; for (let i = 0; i < d.length; i += 4) { r += d[i]; b += d[i + 2]; l += d[i] + d[i + 1] + d[i + 2]; } const n = d.length / 4; return { r: r / n, b: b / n, l: l / n }; };
+    const tints = [];
+    for (const [key] of HAB.LIST) {
+      setHabitat(key);
+      setHours(12); frame(0); const day = stageMean();
+      setHours(6.6); frame(0); const warm = stageMean();
+      setHours(23); frame(0); const dark = stageMean();
+      tints.push({ key, ok: warm.r - warm.b > day.r - day.b && dark.l < day.l });
+    }
+    check('dawn tints warm and night dims, in every habitat', tints.every((t) => t.ok), tints.filter((t) => !t.ok));
+    setHabitat('grass'); setHours(h0);
   }
 
   function runChecks() {
@@ -820,7 +959,9 @@
       S.debug = true; frame(0.1); S.debug = false;
       check('walk debug draws', true);
       frame(0.1);
+      lightChecks(check, hash);
     } catch (e) { check('no errors', false, String(e && e.stack || e)); }
+    check('no page or console errors', pageErrors.length === 0, pageErrors.slice(0, 3));
     const pass = checks.every((c) => c.pass);
     $('result').textContent = JSON.stringify({ checks, pass, seed });
   }

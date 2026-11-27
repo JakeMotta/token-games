@@ -3,7 +3,8 @@
    drawn smaller. Still layers are drawn once into offscreen canvases; a few things move: grass, flowers and leaves sway
    in the wind, clouds drift, crystals glow and fireflies wander. The far layers slide a little with the creature
    (parallax). With reduced motion the moving bits hold still and nothing slides.
-   CreatureHabitats.create(key, { W, H, yFar, yNear }) -> { draw(ctx, t, pan), dark } where pan is in stage pixels. */
+   CreatureHabitats.create(key, { W, H, yFar, yNear }) -> { draw(ctx, t, pan, light), dark } where pan is in stage pixels
+   and light (optional, light.js) moves the meadow's sun, or its moon at night, across the sky with the time of day. */
 (function (root) {
   'use strict';
   const PAN = 10;                  // the far layers are this much wider on each side, for parallax
@@ -95,9 +96,13 @@
 
     meadow(g) {
       const { W, H } = g, HZ = g.yFar - 10, r = rng(7), FW = W + 2 * PAN;
-      const far = canvas(FW, H), mid = canvas(FW, H), ground = canvas(W, H);
-      bands(far.ctx, 0, HZ, ['#6fbbe9', '#7fc6ef', '#92d0f2', '#a7daf4', '#bfe5f6']);
-      disc(far.ctx, FW * 0.82, 26, 9, '#fff6c8'); disc(far.ctx, FW * 0.82, 26, 7, '#fffbe3');
+      const sky = canvas(FW, H), far = canvas(FW, H), mid = canvas(FW, H), ground = canvas(W, H);
+      bands(sky.ctx, 0, HZ, ['#6fbbe9', '#7fc6ef', '#92d0f2', '#a7daf4', '#bfe5f6']);
+      // The sun sits between the sky and the mountains: still at the upper right, or where the light says it is.
+      const sun = (ctx, x, y, moon) => {
+        if (moon) { disc(ctx, x, y, 6, '#dfe6f4'); disc(ctx, x + 2, y - 1, 4, '#c9d3e8'); return; }
+        disc(ctx, x, y, 9, '#fff6c8'); disc(ctx, x, y, 7, '#fffbe3');
+      };
       // Mountains: a stepped ridge, far and pale, then nearer hills.
       let h = 30;
       for (let x = 0; x < FW; x += 2) { h = Math.max(12, Math.min(52, h + (r() - 0.5) * 7)); box(far.ctx, x, HZ - h, 2, h, '#9fc1dd'); if (h > 40) box(far.ctx, x, HZ - h, 2, 3, '#eef6fb'); }
@@ -123,8 +128,12 @@
       const clouds = [0, 1, 2].map((i) => ({ x: r() * FW, y: 12 + i * 13 + r() * 6, w: 22 + r() * 18, v: 1.2 + r() * 1.5 }));
       return {
         dark: false,
-        draw(ctx, t, pan) {
-          ctx.drawImage(far.c, -PAN + pan * FAR_SLIDE, 0);
+        draw(ctx, t, pan, light) {
+          const ox = -PAN + pan * FAR_SLIDE;
+          ctx.drawImage(sky.c, ox, 0);
+          if (!light) sun(ctx, ox + FW * 0.82, 26);
+          else if (light.sky.visible) sun(ctx, ox + FW * (0.06 + 0.88 * light.sky.x), HZ - 8 - (HZ - 34) * light.sky.up, light.kind === 'moon');
+          ctx.drawImage(far.c, ox, 0);
           for (const c of clouds) {
             const x = ((c.x - t * c.v) % (FW + 60) + FW + 60) % (FW + 60) - 30 - PAN + pan * FAR_SLIDE;
             box(ctx, x, c.y, c.w, 5, '#ffffff'); box(ctx, x + c.w * 0.2, c.y - 3, c.w * 0.45, 4, '#ffffff'); box(ctx, x + 2, c.y + 5, c.w - 4, 2, '#e2f1fa');

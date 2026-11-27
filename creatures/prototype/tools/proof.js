@@ -1,6 +1,6 @@
 // Proof sheets from the real page, headless (no window opens): the page draws them itself with ?proof=<kind> and this
 // saves the PNG. Kinds: turn (a 180° turn), spin (a 360° spin), eat (walk to a snack, bite, swallow, be happy),
-// habitats (the creature in every habitat).
+// habitats (the creature in every habitat), light (each look with the sun left, at noon, right, at dusk and at night).
 // Usage: node tools/proof.js <out-dir> [name=query ...]   e.g. node tools/proof.js ../docs/shots turn-moss='proof=turn&seed=moss&level=60'
 // With no name=query pairs it makes the standard set used in docs/. CHROME=/path/to/chrome overrides the browser.
 'use strict';
@@ -22,6 +22,12 @@ const STANDARD = {
   'proof-eat-beak-pixel': 'proof=eat&seed=g9&level=60&habitat=cave&style=pixel&food=fish',
   'habitats': 'proof=habitats&seed=moss&level=70',
   'habitats-cel': 'proof=habitats&seed=g15&level=60&style=cel',
+  'habitats-dusk-pixel': 'proof=habitats&seed=g37&level=70&style=pixel&time=17.3',
+  'light-2legs': 'proof=light&seed=g37&level=70',
+  'light-4legs': 'proof=light&seed=moss&level=70&habitat=meadow',
+  'light-6legs': 'proof=light&seed=g12&level=70&habitat=studio',
+  'proof-turn-dawn-4legs': 'proof=turn&seed=moss&level=70&time=7',
+  'proof-spin-dusk-6legs-cel': 'proof=spin&seed=g12&level=70&time=17.2&style=cel',
 };
 const jobs = process.argv.length > 3 ? Object.fromEntries(process.argv.slice(3).map((a) => a.split(/=(.*)/s).slice(0, 2))) : STANDARD;
 fs.mkdirSync(out, { recursive: true });
