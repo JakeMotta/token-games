@@ -1,0 +1,2186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Creature Hatchery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f3ecdf; --panel: #fffaf1; --line: #e2d6c1; --fg: #2a2433; --dim: #8a7f90; --accent: #f2c84b; --accent-ink: #2a2433;
+    --cute: #ef8fb1; --scary: #d9483b; --good: #5f9b62; --stage: #2a2638; --chip: #efe5d4; --copyA: #b8860b; --copyB: #2f8f5b; --edited: #c2417a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1a1826; --panel: #23202f; --line: #353047; --fg: #ece6f2; --dim: #9188a3; --accent: #f6d34a; --accent-ink: #1a1826;
+      --stage: #2a2638; --chip: #2e2a3d; --copyA: #f6d34a; --copyB: #8fe0a8; --edited: #ff8fc0;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1a1826; --panel: #23202f; --line: #353047; --fg: #ece6f2; --dim: #9188a3; --accent: #f6d34a; --accent-ink: #1a1826;
+    --stage: #2a2638; --chip: #2e2a3d; --copyA: #f6d34a; --copyB: #8fe0a8; --edited: #ff8fc0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  h1, h2, .big { font-family: "Lilita One", system-ui, sans-serif; font-weight: 400; letter-spacing: 0.01em; }
+  h1 { font-size: 26px; margin: 0; }
+  h2 { font-size: 17px; margin: 0 0 8px; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  header p { margin: 0; color: var(--dim); }
+  .grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 14px; }
+  @media (max-width: 860px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; min-width: 0; }
+  #stageBox { position: relative; border-radius: 10px; overflow: hidden; background: var(--stage); }
+  #stage { display: block; width: 100%; image-rendering: pixelated; image-rendering: crisp-edges; aspect-ratio: 240 / 140; }
+  #stageBox .who { position: absolute; left: 10px; top: 8px; color: #fff; font-family: "Lilita One", system-ui; font-size: 18px; text-shadow: 0 2px 0 rgba(0,0,0,.35); }
+  #stageBox .who small { font-family: system-ui; font-size: 12px; opacity: .8; margin-left: 6px; }
+  #stageBox .badge { position: absolute; right: 10px; top: 10px; background: var(--accent); color: var(--accent-ink); border-radius: 8px; padding: 2px 8px; font-weight: 700; font-size: 12px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  button, select, input[type=text] { font: inherit; color: var(--fg); background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 700; }
+  button.on { outline: 2px solid var(--accent); outline-offset: -2px; }
+  button:disabled { opacity: .45; cursor: default; }
+  input[type=text] { width: 9em; }
+  .temper { margin-top: 12px; }
+  .temper .ends { display: flex; justify-content: space-between; font-family: "Lilita One", system-ui; font-size: 15px; }
+  .temper .ends .s { color: var(--scary); } .temper .ends .c { color: var(--cute); }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .lvl { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-top: 8px; }
+  .lvl b { min-width: 6.5em; text-align: right; }
+  .note { color: var(--dim); font-size: 12px; margin: 4px 0 0; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .genes { display: grid; grid-template-columns: 7.5em minmax(0, 1fr) 3.2em; gap: 4px 8px; align-items: center; }
+  .genes label { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .genes output { font-variant-numeric: tabular-nums; text-align: right; font-size: 12px; }
+  #numbers { font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--stage); color: #e9e4f0; border-radius: 8px; padding: 10px; height: 360px; overflow: auto; margin: 0; }
+  #numbers .a { color: #f6d34a; } #numbers .b { color: #8fe0a8; } #numbers .e { color: #ff8fc0; }
+  .legend span { margin-right: 10px; font-size: 12px; }
+  .legend .a { color: var(--copyA); } .legend .b { color: var(--copyB); } .legend .e { color: var(--edited); }
+  .traits { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .traits span { background: var(--chip); border-radius: 999px; padding: 2px 9px; font-size: 12px; }
+  .traits span.rare { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+  #repairs { color: var(--edited); font-size: 12px; }
+  #gallery { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; min-height: 120px; }
+  .cardc { flex: 0 0 auto; width: 104px; border: 1px solid var(--line); border-radius: 10px; padding: 6px; background: var(--chip); cursor: pointer; text-align: center; }
+  .cardc.cur { outline: 2px solid var(--accent); }
+  .cardc canvas { width: 88px; height: 88px; image-rendering: pixelated; display: block; margin: 0 auto; }
+  .cardc .n { font-weight: 700; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cardc .l { font-size: 11px; color: var(--dim); }
+  .cardc button { font-size: 11px; padding: 2px 6px; margin-top: 4px; }
+  .cardc button.on { background: var(--accent); color: var(--accent-ink); }
+  .empty { color: var(--dim); padding: 30px 8px; }
+  #result { display: none; }
+  .steps { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tokens { font-size: 12px; color: var(--dim); margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Creature Hatchery</h1>
+    <p>A working model of the GOCHITAMA creature technique: numbers → rings → one melted body → every pixel asks "am I inside?" → light and ink.</p>
+  </header>
+
+  <div class="grid">
+    <section class="card">
+      <div id="stageBox">
+        <canvas id="stage" width="240" height="140"></canvas>
+        <div class="who"><span id="name">…</span><small id="stageName"></small></div>
+        <div class="badge" id="rarity"></div>
+      </div>
+
+      <div class="temper">
+        <div class="ends"><span class="s">SCARY</span><span id="tval" class="big">0.00</span><span class="c">CUTE</span></div>
+        <input id="temper" type="range" min="-1" max="1" step="0.01" value="0" aria-label="Temperament: scary to cute">
+      </div>
+
+      <div class="lvl">
+        <span>Level</span>
+        <input id="level" type="range" min="1" max="100" step="1" value="1" aria-label="Level">
+        <b id="lval">1 · baby</b>
+      </div>
+      <p class="note">Preview only. In the game, levels come only from real Claude Code usage; there are no buttons that add levels.</p>
+      <div class="tokens" id="tokens"></div>
+
+      <div class="row">
+        <button class="primary" id="newEgg">New egg</button>
+        <button class="primary" id="hatch">Hatch</button>
+        <input id="seed" type="text" aria-label="Seed" placeholder="seed">
+        <button id="loadSeed">Load seed</button>
+        <button id="walk" class="on">Walk</button>
+        <button id="repair" class="on">Repair pass</button>
+      </div>
+      <div class="row">
+        <span class="note" style="margin:0">Face:</span>
+        <div class="steps" id="faces"></div>
+      </div>
+      <div class="row">
+        <span class="note" style="margin:0">View:</span>
+        <div class="steps" id="views"></div>
+        <button id="askPixels">Ask every pixel ▶</button>
+      </div>
+      <div class="row">
+        <span class="note" style="margin:0">Backdrop:</span>
+        <div class="steps" id="backs"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="tabs" id="tabs"></div>
+      <div id="tab-genes">
+        <div class="genes" id="genes"></div>
+        <div class="row"><button id="resetGenes">Reset genes</button><span class="note" style="margin:0" id="edited"></span></div>
+      </div>
+      <div id="tab-numbers" hidden>
+        <div class="legend"><span class="a">■ from copy 1</span><span class="b">■ from copy 2</span><span class="e">■ edited</span></div>
+        <pre id="numbers"></pre>
+      </div>
+      <div id="tab-about" hidden>
+        <h2 id="aboutName"></h2>
+        <div class="traits" id="traits"></div>
+        <p id="flight" class="note"></p>
+        <p id="repairs"></p>
+        <p class="note" id="lineage"></p>
+      </div>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top:14px">
+    <div class="row" style="margin-top:0; justify-content: space-between">
+      <h2 style="margin:0">Collection</h2>
+      <div class="row" style="margin-top:0">
+        <span class="note" style="margin:0" id="pickNote">Pick two to breed.</span>
+        <button id="breed" disabled>Breed → egg</button>
+        <button id="clearGallery">Clear</button>
+      </div>
+    </div>
+    <div id="gallery"></div>
+  </section>
+</div>
+<pre id="result"></pre>
+<script>
+/* Creatures prototype: the genome. A creature is a flat list of named numbers (the video's "step 1: numbers"),
+   carried twice (one hidden copy from each parent). Everything here is deterministic per seed and has no DOM,
+   so the tests run it in Node. In a browser it defines window.CreatureGenome. */
+(function (root) {
+  'use strict';
+
+  // ---------- seeded randomness ----------
+  // A seed is any string or number. It is hashed to 32 bits and drives a small fast generator (mulberry32).
+  function hashSeed(seed) {
+    const s = String(seed);
+    let h = 1779033703 ^ s.length;
+    for (let i = 0; i < s.length; i++) { h = Math.imul(h ^ s.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
+    h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909);
+    return (h ^ (h >>> 16)) >>> 0;
+  }
+  function makeRng(seed) {
+    let a = typeof seed === 'number' ? seed >>> 0 : hashSeed(seed);
+    const next = () => {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const rng = () => next();
+    rng.range = (lo, hi) => lo + (hi - lo) * next();
+    rng.int = (lo, hi) => lo + Math.floor(next() * (hi - lo + 1));
+    rng.pick = (arr) => arr[Math.floor(next() * arr.length)];
+    rng.chance = (p) => next() < p;
+    rng.normal = () => { let u = 0, v = 0; while (u === 0) u = next(); v = next(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+    return rng;
+  }
+
+  const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const smooth = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
+
+  // ---------- the gene table ----------
+  // Every gene: [min, max]. Genes are grouped into pieces; a piece is inherited whole (the video's "rule 1").
+  const RINGS = { head: 5, neck: 3, torso: 5, tail: 5 };
+  const GENES = {};
+  const PIECE = {}; // gene name -> piece
+  function gene(piece, name, min, max) { GENES[name] = [min, max]; PIECE[name] = piece; }
+  for (const p of ['head', 'neck', 'torso', 'tail']) {
+    gene(p, p + '.length', ...({ head: [0.32, 0.85], neck: [0, 0.6], torso: [0.45, 1.25], tail: [0, 1.5] })[p]);
+    gene(p, p + '.angle', ...({ head: [-0.55, 0.3], neck: [0.25, 1.25], torso: [-0.22, 0.22], tail: [-0.5, 0.9] })[p]);
+    gene(p, p + '.curve', ...({ head: [-0.35, 0.35], neck: [-0.5, 0.5], torso: [-0.3, 0.3], tail: [-0.9, 0.9] })[p]);
+    for (let i = 0; i < RINGS[p]; i++) {
+      gene(p, `${p}.rings[${i}].width`, 0.025, 0.42);
+      gene(p, `${p}.rings[${i}].height`, 0.025, 0.42);
+    }
+    gene(p, p + '.dom', 0, 1);
+  }
+  gene('tail', 'tail.tip', 0, 1);           // pale tip, like a fox brush
+  gene('legs', 'legs.pairs', 0, 3.49);      // rounded: 0..3 pairs
+  gene('legs', 'legs.length', 0.12, 0.8);
+  gene('legs', 'legs.width', 0.028, 0.11);
+  gene('legs', 'legs.foot', 0.025, 0.11);
+  gene('legs', 'legs.knee', -1, 1);         // which way the knees bend
+  gene('legs', 'legs.spread', 0.55, 1.15);
+  gene('legs', 'legs.claws', 0, 1);
+  gene('legs', 'legs.dom', 0, 1);
+  gene('wings', 'wings.size', 0, 1);        // under WING_MIN: no wings
+  gene('wings', 'wings.span', 0.4, 1.4);
+  gene('wings', 'wings.angle', 0.2, 1.25);
+  gene('wings', 'wings.fingers', 2, 4.49);
+  gene('wings', 'wings.dom', 0, 1);
+  gene('horns', 'horns.count', 0, 2.49);    // rounded: 0, 1 (a unicorn horn) or 2
+  gene('horns', 'horns.length', 0.04, 0.5);
+  gene('horns', 'horns.curve', -1, 1);
+  gene('horns', 'horns.spread', 0, 1);
+  gene('horns', 'horns.width', 0.02, 0.07);
+  gene('horns', 'horns.dom', 0, 1);
+  gene('ears', 'ears.kind', 0, 3.49);       // rounded: none, pointed, round, long
+  gene('ears', 'ears.size', 0.05, 0.3);
+  gene('ears', 'ears.angle', -0.6, 0.6);
+  gene('ears', 'ears.dom', 0, 1);
+  gene('eyes', 'eyes.size', 0.3, 1);
+  gene('eyes', 'eyes.spacing', 0.35, 1);
+  gene('eyes', 'eyes.height', 0, 1);
+  gene('eyes', 'eyes.dom', 0, 1);
+  gene('face', 'mouth.width', 0, 1);
+  gene('face', 'mouth.smile', -1, 1);
+  gene('face', 'fangs', 0, 1);
+  gene('face', 'blush', 0, 1);
+  gene('face', 'face.dom', 0, 1);
+  gene('decor', 'decor.kind', 0, 4.49);     // rounded: none, sprout, flower, antennae, back spikes
+  gene('decor', 'decor.size', 0, 1);
+  gene('decor', 'decor.hue', 0, 360);
+  gene('decor', 'decor.dom', 0, 1);
+  gene('colour', 'colour.hue', 0, 360);
+  gene('colour', 'colour.sat', 0.12, 0.85);
+  gene('colour', 'colour.light', 0.2, 0.72);
+  gene('colour', 'colour.belly', 0, 1);      // how pale the underside is
+  gene('colour', 'colour.accent', 0, 1);     // horns and claws: bone white .. body colour
+  gene('colour', 'colour.wing', -60, 60);    // wing membrane hue shift
+  gene('colour', 'colour.dom', 0, 1);
+  gene('pattern', 'pattern.kind', 0, 4.49);  // rounded: none, spots, stripes, patches, speckles
+  gene('pattern', 'pattern.scale', 0, 1);
+  gene('pattern', 'pattern.amount', 0, 1);
+  gene('pattern', 'pattern.light', -1, 1);   // darker (-) or paler (+) marks
+  gene('pattern', 'pattern.dom', 0, 1);
+  gene('skin', 'gloss', 0, 1);
+  gene('skin', 'fluff', 0, 1);               // how much the pieces melt together
+  gene('skin', 'temperament', -1, 1);        // the video's one-bar slider: scary -1 .. +1 cute
+  gene('skin', 'skin.dom', 0, 1);
+  const GENE_NAMES = Object.keys(GENES);
+  const PIECES = [...new Set(GENE_NAMES.map((g) => PIECE[g]))];
+
+  const LEG_KINDS = 4, EAR_KINDS = ['none', 'pointed', 'round', 'long'];
+  const DECOR_KINDS = ['none', 'sprout', 'flower', 'antennae', 'spikes'];
+  const PATTERN_KINDS = ['none', 'spots', 'stripes', 'patches', 'speckles'];
+  const WING_MIN = 0.42;
+
+  // ---------- one random copy ----------
+  // Pieces are drawn with some structure (a ring profile, a body size) so a random list of numbers still reads
+  // as an animal; every number stays inside its gene's range.
+  function ringProfile(rng, n, base, shape) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const t = n === 1 ? 0.5 : i / (n - 1);
+      let r;
+      if (shape === 'taper') r = base * lerp(1, rng.range(0.12, 0.6), t);
+      else if (shape === 'bulge') r = base * (0.65 + 0.45 * Math.sin(Math.PI * clamp(t * 0.9 + 0.05, 0, 1)));
+      else if (shape === 'snout') r = base * (i === 0 ? rng.range(0.75, 0.95) : i === 1 ? 1 : lerp(0.95, rng.range(0.3, 0.7), (i - 1) / (n - 2)));
+      else r = base * lerp(rng.range(0.7, 1.1), rng.range(0.7, 1.1), t);
+      const squash = rng.range(0.8, 1.2);
+      out.push([r * rng.range(0.92, 1.08), r * squash * rng.range(0.92, 1.08)]);
+    }
+    return out;
+  }
+  function randomCopy(rng) {
+    const g = {};
+    const set = (name, v) => { const [lo, hi] = GENES[name]; g[name] = clamp(v, lo, hi); };
+    const any = (name) => set(name, rng.range(GENES[name][0], GENES[name][1]));
+    for (const n of GENE_NAMES) any(n); // start fully random, then shape the pieces
+    const torsoR = rng.range(0.13, 0.33);
+    const rings = (p, base, shape) => ringProfile(rng, RINGS[p], base, shape).forEach(([w, h], i) => {
+      set(`${p}.rings[${i}].width`, w); set(`${p}.rings[${i}].height`, h);
+    });
+    rings('torso', torsoR, 'bulge');
+    // The head is usually a bit smaller than the body, sometimes far bigger (the video's owl-snake).
+    const headR = torsoR * (rng.chance(0.08) ? rng.range(1.7, 2.6) : rng.range(0.55, 1.2));
+    rings('head', headR, 'snout');
+    rings('neck', Math.min(headR, torsoR) * rng.range(0.45, 0.8), 'even');
+    rings('tail', torsoR * rng.range(0.3, 0.9), rng.chance(0.25) ? 'even' : 'taper');
+    if (rng.chance(0.3)) set('tail.length', rng.range(0, 0.3));
+    if (rng.chance(0.45)) set('neck.length', rng.range(0, 0.15));
+    if (rng.chance(0.55)) set('wings.size', rng.range(0, WING_MIN)); // most have no wings
+    if (rng.chance(0.4)) set('horns.count', rng.range(0, 0.49));
+    if (rng.chance(0.35)) set('decor.kind', rng.range(0, 0.49));
+    if (rng.chance(0.25)) set('pattern.kind', rng.range(0, 0.49));
+    if (rng.chance(0.6)) set('fangs', rng.range(0, 0.4));
+    set('legs.pairs', rng.chance(0.12) ? rng.range(0, 0.49) : rng.chance(0.7) ? rng.range(1.5, 2.49) : rng.range(0.5, 3.49));
+    set('legs.width', torsoR * rng.range(0.22, 0.42));
+    set('colour.light', rng.range(0.28, 0.68));
+    set('temperament', rng.range(-0.6, 0.6));
+    return g;
+  }
+
+  // ---------- names ----------
+  const SYL_A = ['Fli', 'Cro', 'Mo', 'Pip', 'Bu', 'Ki', 'Zu', 'Lu', 'Ta', 'Gri', 'No', 'Wi', 'Sa', 'Dra', 'Pe', 'Ru', 'Mi', 'Fo', 'Ga', 'Chi'];
+  const SYL_B = ['ck', 'ak', 'm', 'zz', 'b', 'n', 'pp', 'r', 'sh', 'gg', 'l', 'x', 'nd', 'ff', 'tt'];
+  const SYL_C = ['er', 'le', 'o', 'y', 'a', 'it', 'kin', 'ble', 'oo', 'ie', 'us', 'el', 'on', 'ette'];
+  function randomName(rng) { return rng.pick(SYL_A) + rng.pick(SYL_B) + rng.pick(SYL_C); }
+  // Names breed too: the front of one parent's name and the back of the other's (Flicker + Croakle = Flickle).
+  function breedName(a, b, rng) {
+    const cut = (s, front) => {
+      const m = front ? s.match(/^[^aeiouy]*[aeiouy]+[^aeiouy]+/i) : s.match(/[^aeiouy]*[aeiouy]+[^aeiouy]*$/i);
+      return m ? m[0] : s;
+    };
+    const [x, y] = rng.chance(0.5) ? [a, b] : [b, a];
+    let n = cut(x, true) + cut(y, false).replace(/^[^aeiouy]+/i, '');
+    n = n.charAt(0).toUpperCase() + n.slice(1).toLowerCase();
+    return n.length < 3 ? x : n;
+  }
+
+  // ---------- creatures ----------
+  // { seed, name, generation, copies: [copyA, copyB], parents }
+  function randomCreature(seed) {
+    const rng = makeRng('creature:' + seed);
+    return { seed: String(seed), name: randomName(rng), generation: 0, copies: [randomCopy(rng), randomCopy(rng)], parents: null };
+  }
+
+  // The copy each piece shows: whichever copy has the higher dominance number for that piece.
+  function expressedCopyIndex(c, piece) { return c.copies[1][piece + '.dom'] > c.copies[0][piece + '.dom'] ? 1 : 0; }
+  function genotype(c) {
+    const g = {};
+    for (const n of GENE_NAMES) g[n] = c.copies[expressedCopyIndex(c, PIECE[n])][n];
+    return g;
+  }
+
+  // Breeding (the video's three rules): each parent passes one of its two copies of each piece, whole (rule 1 and 2,
+  // so a hidden trait can skip a generation and come back); every number gets a tiny nudge, and about six babies in
+  // a hundred get a real surprise (rule 3).
+  const NUDGE = 0.025, SURPRISE_CHANCE = 0.06;
+  function gamete(parent, rng) {
+    const g = {};
+    for (const piece of PIECES) {
+      const from = parent.copies[rng.chance(0.5) ? 1 : 0];
+      for (const n of GENE_NAMES) if (PIECE[n] === piece) g[n] = from[n];
+    }
+    return g;
+  }
+  function mutate(g, rng, surprise) {
+    for (const n of GENE_NAMES) {
+      const [lo, hi] = GENES[n];
+      g[n] = clamp(g[n] + rng.normal() * NUDGE * (hi - lo), lo, hi);
+    }
+    if (surprise) {
+      const fresh = randomCopy(rng);
+      const piece = rng.pick(PIECES.filter((p) => !['skin'].includes(p)));
+      for (const n of GENE_NAMES) if (PIECE[n] === piece) g[n] = fresh[n];
+    }
+    return g;
+  }
+  function breed(a, b, seed) {
+    const rng = makeRng('breed:' + seed);
+    const surprise = rng.chance(SURPRISE_CHANCE);
+    const copies = [mutate(gamete(a, rng), rng, surprise), mutate(gamete(b, rng), rng, false)];
+    return { seed: String(seed), name: breedName(a.name, b.name, rng), generation: Math.max(a.generation, b.generation) + 1,
+      copies, parents: [a.name, b.name], surprise };
+  }
+
+  // ---------- phenotype: genome -> body numbers ----------
+  // Rounded kinds and a few derived numbers, plus the one-bar slider and growth on top.
+  function rings(g, p) {
+    const r = [];
+    for (let i = 0; i < RINGS[p]; i++) r.push({ w: g[`${p}.rings[${i}].width`], h: g[`${p}.rings[${i}].height`] });
+    return r;
+  }
+  function maxRing(rs) { return Math.max(...rs.map((r) => Math.max(r.w, r.h))); }
+
+  // The video's slider: one number, temperament, from scary (-1) to cute (+1). Cute: big head, big eyes, short legs,
+  // blush, rounder and paler. Scary: bigger, darker, fangs, longer horns, smaller narrower eyes.
+  const SPROUT_HORNS = 0.3;             // how far toward scary before a hornless creature grows horns
+  function applyTemperament(ph, t) {
+    const cute = Math.max(0, t), scary = Math.max(0, -t);
+    // The video's captions: "cute: big head, big eyes, short legs, blush"; "scary: bigger, darker, fangs, horns".
+    ph.scale *= 1 - 0.2 * cute + 0.3 * scary;
+    const hs = 1 + 0.45 * cute - 0.1 * scary;
+    ph.head.rings.forEach((r) => { r.w *= hs; r.h *= hs; });
+    ph.head.length *= 1 - 0.25 * cute + 0.12 * scary;
+    // Cute rounds the snout off: the front rings move toward the widest one.
+    const m = maxRing(ph.head.rings);
+    ph.head.rings.forEach((r, i) => { if (i >= 2) { r.w = lerp(r.w, m * 0.85, 0.5 * cute); r.h = lerp(r.h, m * 0.8, 0.5 * cute); } });
+    ph.eyes.size *= 1 + 0.9 * cute - 0.45 * scary;
+    ph.eyes.round = cute;
+    ph.eyes.slant = scary;
+    ph.legs.length *= 1 - 0.38 * cute + 0.15 * scary;
+    ph.blush = clamp(ph.blush * 0.6 + cute * 0.9 - scary, 0, 1);
+    ph.fangs = clamp(ph.fangs + scary * 1.2 - cute * 1.2, 0, 1);
+    ph.horns.length *= 1 - 0.55 * cute + 0.8 * scary;
+    // A hornless creature sprouts a pair as it is pushed toward scary.
+    if (ph.horns.count === 0 && scary > SPROUT_HORNS) { ph.horns.count = 2; ph.horns.length *= smooth(SPROUT_HORNS, 1, scary); }
+    ph.ears.size *= 1 + 0.25 * cute;
+    ph.mouth.smile = clamp(ph.mouth.smile + cute - scary, -1, 1);
+    ph.colour.light = clamp(ph.colour.light + 0.28 * cute * (1 - ph.colour.light) - 0.42 * scary * ph.colour.light, 0.06, 0.9);
+    ph.colour.sat = clamp(ph.colour.sat * (1 - 0.45 * cute) + 0.18 * scary, 0.05, 0.95);
+    ph.colour.hueShift = 25 * cute;       // a cute shift drifts the hue a little (the video's dragon turns lilac)
+    ph.eyes.glow = scary;
+    ph.temperament = t;
+    return ph;
+  }
+
+  // ---------- growth: level 1..100 ----------
+  const LEVEL_MAX = 100;
+  const STAGES = [ // first level of each stage
+    { name: 'baby', from: 1 }, { name: 'child', from: 26 }, { name: 'teen', from: 56 }, { name: 'adult', from: 100 },
+  ];
+  function stageOf(level) { let s = STAGES[0]; for (const st of STAGES) if (level >= st.from) s = st; return s.name; }
+  // Growth from 0 (just hatched) to 1 (level 100). Every level moves every growing number a little, so each
+  // level-up changes the body; parts also have their own windows (horns sprout in childhood, wings unfold as a teen).
+  function growthOf(level) { return clamp((level - 1) / (LEVEL_MAX - 1), 0, 1); }
+  function applyGrowth(ph, level) {
+    const g = growthOf(level);
+    const e = 1 - Math.pow(1 - g, 1.6); // fast early, slow late
+    ph.level = level; ph.growth = g; ph.stage = stageOf(level);
+    ph.scale *= lerp(0.5, 1, e);
+    // Babies: big round head, big eyes, short legs, stubby neck and tail, pale colours, faint markings.
+    const baby = 1 - e;
+    const hs = 1 + 0.5 * baby;
+    ph.head.rings.forEach((r) => { r.w *= hs; r.h *= hs; });
+    ph.head.length *= 1 - 0.3 * baby;
+    const m = maxRing(ph.head.rings);
+    ph.head.rings.forEach((r, i) => { if (i >= 2) { r.w = lerp(r.w, m * 0.8, 0.55 * baby); r.h = lerp(r.h, m * 0.75, 0.55 * baby); } });
+    ph.neck.length *= lerp(0.25, 1, e);
+    ph.tail.length *= lerp(0.3, 1, e);
+    ph.torso.length *= lerp(0.75, 1, e);
+    ph.legs.length *= lerp(0.6, 1, e);
+    ph.eyes.size *= 1 + 0.55 * baby;
+    ph.eyes.round = clamp(ph.eyes.round + 0.8 * baby, 0, 1);
+    ph.blush = clamp(ph.blush + 0.4 * baby, 0, 1);
+    ph.horns.length *= smooth(20, 75, level);
+    ph.ears.size *= lerp(0.55, 1, e);
+    ph.wings.size *= smooth(12, 85, level);
+    ph.decor.size *= lerp(0.35, 1, e);
+    ph.fangs *= smooth(40, 90, level);
+    ph.pattern.amount *= smooth(6, 70, level);
+    ph.colour.light = clamp(ph.colour.light + 0.18 * baby * (1 - ph.colour.light), 0, 0.92);
+    ph.colour.sat *= lerp(0.7, 1, e);
+    ph.claws = smooth(30, 80, level) * ph.legs.claws;
+    // Fully grown at 100: a final flourish (extra gloss).
+    ph.gloss = clamp(ph.gloss + (level >= LEVEL_MAX ? 0.25 : 0), 0, 1);
+    return ph;
+  }
+
+  // ---------- repair pass ----------
+  // Rules that stop the worst babies (the video's owl-snake and potato): heads at most 1.6x the body, legs back
+  // when a body has none, a neck no longer than the body, a tail no fatter than the body, rings that don't jump.
+  const HEAD_MAX_RATIO = 1.6;
+  function repair(ph) {
+    const notes = [];
+    const torsoMax = maxRing(ph.torso.rings), headMax = maxRing(ph.head.rings);
+    if (headMax > HEAD_MAX_RATIO * torsoMax) {
+      const s = (HEAD_MAX_RATIO * torsoMax) / headMax;
+      ph.head.rings.forEach((r) => { r.w *= s; r.h *= s; });
+      notes.push('head ' + HEAD_MAX_RATIO + 'x');
+    }
+    if (ph.legs.pairs === 0) { ph.legs.pairs = 2; notes.push('legs back'); }
+    if (ph.neck.length > ph.torso.length * 1.1) { ph.neck.length = ph.torso.length * 1.1; notes.push('neck'); }
+    const tailCap = torsoMax * 0.9;
+    ph.tail.rings.forEach((r) => { if (r.w > tailCap) r.w = tailCap; if (r.h > tailCap) r.h = tailCap; });
+    for (const p of ['head', 'neck', 'torso', 'tail']) {
+      const rs = ph[p].rings;
+      for (let i = 1; i < rs.length; i++) for (const k of ['w', 'h']) rs[i][k] = clamp(rs[i][k], rs[i - 1][k] / 1.9, rs[i - 1][k] * 1.9);
+    }
+    // Legs long enough to hold the body off the ground.
+    const minLeg = maxRing(ph.torso.rings) * 0.9;
+    if (ph.legs.pairs > 0 && ph.legs.length < minLeg) ph.legs.length = minLeg;
+    ph.repairs = notes;
+    return ph;
+  }
+
+  function phenotype(g, opts) {
+    opts = opts || {};
+    const piece = (p) => ({ length: g[p + '.length'], angle: g[p + '.angle'], curve: g[p + '.curve'], rings: rings(g, p) });
+    const ph = {
+      scale: 1,
+      head: piece('head'), neck: piece('neck'), torso: piece('torso'), tail: Object.assign(piece('tail'), { tip: g['tail.tip'] }),
+      legs: { pairs: Math.round(g['legs.pairs']), length: g['legs.length'], width: g['legs.width'], foot: g['legs.foot'],
+        knee: g['legs.knee'], spread: g['legs.spread'], claws: g['legs.claws'] },
+      wings: { size: g['wings.size'] < WING_MIN ? 0 : (g['wings.size'] - WING_MIN) / (1 - WING_MIN), span: g['wings.span'],
+        angle: g['wings.angle'], fingers: Math.round(g['wings.fingers']) },
+      horns: { count: Math.round(g['horns.count']), length: g['horns.length'], curve: g['horns.curve'], spread: g['horns.spread'], width: g['horns.width'] },
+      ears: { kind: EAR_KINDS[Math.round(g['ears.kind'])], size: g['ears.size'], angle: g['ears.angle'] },
+      eyes: { size: g['eyes.size'], spacing: g['eyes.spacing'], height: g['eyes.height'], round: 0, slant: 0, glow: 0 },
+      mouth: { width: g['mouth.width'], smile: g['mouth.smile'] },
+      fangs: g.fangs, blush: g.blush,
+      decor: { kind: DECOR_KINDS[Math.round(g['decor.kind'])], size: g['decor.size'], hue: g['decor.hue'] },
+      colour: { hue: g['colour.hue'], sat: g['colour.sat'], light: g['colour.light'], belly: g['colour.belly'],
+        accent: g['colour.accent'], wing: g['colour.wing'], hueShift: 0 },
+      pattern: { kind: PATTERN_KINDS[Math.round(g['pattern.kind'])], scale: g['pattern.scale'], amount: g['pattern.amount'], light: g['pattern.light'] },
+      gloss: g.gloss, fluff: g.fluff, claws: g['legs.claws'],
+    };
+    const t = opts.temperament != null ? opts.temperament : g.temperament;
+    applyTemperament(ph, clamp(t, -1, 1));
+    applyGrowth(ph, opts.level != null ? clamp(Math.round(opts.level), 1, LEVEL_MAX) : LEVEL_MAX);
+    if (opts.repair !== false) repair(ph); else ph.repairs = [];
+    ph.expression = opts.expression || 'neutral';
+    return ph;
+  }
+
+  // Genes that move when a gene slider in the prototype is dragged: overrides are applied to the shown genotype.
+  function express(creature, opts) {
+    opts = opts || {};
+    const g = Object.assign(genotype(creature), opts.overrides || {});
+    return phenotype(g, opts);
+  }
+
+  // ---------- traits and rarity ----------
+  // A few readable traits, and a rarity from how unusual the creature's numbers are.
+  function traits(creature) {
+    const g = genotype(creature);
+    const ph = phenotype(g, { level: LEVEL_MAX });
+    const t = [];
+    if (ph.wings.size > 0) t.push(ph.wings.size > 0.55 ? 'great wings' : 'wings');
+    if (ph.horns.count === 1) t.push('unicorn horn'); else if (ph.horns.count === 2) t.push('horns');
+    if (ph.legs.pairs === 3) t.push('six legs'); else if (ph.legs.pairs === 1) t.push('two legs');
+    if (ph.decor.kind !== 'none') t.push(ph.decor.kind);
+    if (ph.pattern.kind !== 'none') t.push(ph.pattern.kind);
+    if (ph.ears.kind !== 'none') t.push(ph.ears.kind + ' ears');
+    if (g['tail.length'] > 1.1) t.push('long tail');
+    if (g['neck.length'] > 0.45) t.push('long neck');
+    if (g.temperament > 0.45) t.push('sweet'); else if (g.temperament < -0.45) t.push('fierce');
+    // Rarity: count how far out on the tails each of a few signature numbers sits.
+    let score = 0;
+    const far = (v, lo, hi) => { const u = (v - lo) / (hi - lo); return u < 0.06 || u > 0.94 ? 1 : 0; };
+    for (const n of ['colour.hue', 'colour.sat', 'tail.length', 'neck.length', 'head.length', 'legs.length', 'eyes.size', 'wings.span', 'horns.length'])
+      score += far(g[n], ...GENES[n]);
+    if (ph.wings.size > 0 && ph.horns.count > 0) score += 1;
+    if (ph.legs.pairs === 3) score += 1;
+    if (ph.decor.kind !== 'none' && ph.pattern.kind !== 'none' && ph.wings.size > 0) score += 1;
+    const rarity = score >= 4 ? 'legendary' : score >= 3 ? 'rare' : score >= 2 ? 'uncommon' : 'common';
+    return { traits: t, rarity, score };
+  }
+
+  // ---------- eggs ----------
+  // The egg's shell comes from the genome too, so eggs differ before they hatch: shell tint from the body colour,
+  // markings from the pattern piece, marking colour from the accent/decor hue, egg shape from the body shape.
+  function eggLook(creature) {
+    const g = genotype(creature);
+    const kinds = ['speckles', 'spots', 'zigzag', 'bands', 'speckles'];
+    return {
+      hue: g['colour.hue'], sat: clamp(g['colour.sat'] * 0.55, 0.08, 0.5), light: clamp(0.62 + g['colour.belly'] * 0.22, 0.6, 0.86),
+      markHue: (g['colour.hue'] + 180 + g['decor.hue'] * 0.25) % 360, markLight: g['pattern.light'] > 0 ? 0.88 : 0.36,
+      marks: kinds[Math.round(g['pattern.kind'])], markScale: g['pattern.scale'], markAmount: 0.35 + 0.6 * g['pattern.amount'],
+      round: clamp(0.78 + (g['torso.rings[2].width'] - 0.2) * 0.8, 0.7, 0.95), gloss: g.gloss,
+    };
+  }
+
+  // ---------- tokens -> levels (see docs/creature-generation.md, "Levels from Claude usage") ----------
+  const HATCH_TOKENS = 25_000;          // weighted tokens of warmth to hatch an egg
+  const LEVEL_BASE_TOKENS = 3_000;      // cost of level 1 -> 2
+  const LEVEL_EXP = 1.15;               // each level costs a bit more than the last
+  function tokensForLevelUp(level) { return Math.round(LEVEL_BASE_TOKENS * Math.pow(level, LEVEL_EXP)); }
+  function tokensToReach(level) { let s = 0; for (let l = 1; l < level; l++) s += tokensForLevelUp(l); return s; }
+  // Level from total weighted tokens fed since hatching.
+  function levelFromTokens(tokens) {
+    let l = 1, left = tokens;
+    while (l < LEVEL_MAX && left >= tokensForLevelUp(l)) { left -= tokensForLevelUp(l); l++; }
+    return { level: l, into: left, need: l < LEVEL_MAX ? tokensForLevelUp(l) : 0 };
+  }
+
+  // A stable short fingerprint of a creature's shown numbers (for tests and the gallery).
+  function fingerprint(creature) {
+    const g = genotype(creature);
+    return hashSeed(GENE_NAMES.map((n) => g[n].toFixed(4)).join(',')).toString(36);
+  }
+
+  const api = { hashSeed, makeRng, GENES, GENE_NAMES, PIECES, PIECE, RINGS, WING_MIN, EAR_KINDS, DECOR_KINDS, PATTERN_KINDS,
+    randomCreature, randomCopy, genotype, expressedCopyIndex, breed, breedName, randomName, phenotype, express, repair,
+    applyTemperament, applyGrowth, traits, eggLook, fingerprint, STAGES, stageOf, growthOf, LEVEL_MAX, HEAD_MAX_RATIO,
+    HATCH_TOKENS, LEVEL_BASE_TOKENS, LEVEL_EXP, tokensForLevelUp, tokensToReach, levelFromTokens, NUDGE, SURPRISE_CHANCE,
+    clamp, lerp, smooth };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.CreatureGenome = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/* Creatures prototype: from body numbers (a phenotype) to a 3D shape made of simple pieces (the video's "step 2:
+   parts"). Each body piece is a stack of rings joined by round cones (a sausage); legs, wings, horns, ears and
+   decorations are added on; the renderer melts them together with a smooth union (step 3) and asks every pixel
+   whether it is inside (step 4). Eyes, mouth and blush are flat face marks (decals) placed on the surface.
+   Coordinates: x forward (the way the creature faces), y up, z to its right; the ground is y = 0. No DOM. */
+(function (root) {
+  'use strict';
+
+  // Primitive kinds.
+  const CONE = 0;      // round cone between a and b, radii r1 -> r2, cross-section squashed by sy along frame u
+  const ELLIPSOID = 1; // centre a, radii rx (along axis), ry (along u), rz (along side)
+  const TRI = 2;       // a thin plate: triangle a, b, c with half thickness r1
+
+  // Materials (what colour a piece takes).
+  const MAT = { BODY: 0, ACCENT: 1, WING: 2, LEAF: 3, PETAL: 4, DARK: 5, EGG: 6, SHELL_IN: 7 };
+
+  const v = {
+    add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
+    sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+    mul: (a, s) => [a[0] * s, a[1] * s, a[2] * s],
+    dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
+    cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+    len: (a) => Math.hypot(a[0], a[1], a[2]),
+    norm: (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; },
+    lerp: (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t],
+    // rotate p around the vertical axis through o by angle
+    rotY: (p, o, ang) => { const c = Math.cos(ang), s = Math.sin(ang), x = p[0] - o[0], z = p[2] - o[2]; return [o[0] + c * x + s * z, p[1], o[2] - s * x + c * z]; },
+    // rotate p around the x axis through o
+    rotX: (p, o, ang) => { const c = Math.cos(ang), s = Math.sin(ang), y = p[1] - o[1], z = p[2] - o[2]; return [p[0], o[1] + c * y - s * z, o[2] + s * y + c * z]; },
+  };
+
+  // A frame for a segment: axis along it, u its "up" (in the plane of the body), side across.
+  function frame(axis, upHint) {
+    const ax = v.norm(axis);
+    let side = v.cross(ax, upHint || [0, 1, 0]);
+    if (v.len(side) < 1e-4) side = v.cross(ax, [1, 0, 0]);
+    side = v.norm(side);
+    const u = v.norm(v.cross(side, ax));
+    return { ax, u, side };
+  }
+
+  function cone(a, b, r1, r2, sy, piece, mat, extra) {
+    const f = frame(v.sub(b, a), extra && extra.upHint);
+    const p = { k: CONE, a, b, r1, r2, sy: sy || 1, ax: f.ax, u: f.u, side: f.side, len: v.len(v.sub(b, a)), piece, mat,
+      t0: 0, t1: 1, pieceLen: 1 };
+    return Object.assign(p, extra || {});
+  }
+  function ellipsoid(c, axis, rx, ry, rz, piece, mat, extra) {
+    const f = frame(axis, extra && extra.upHint);
+    return Object.assign({ k: ELLIPSOID, a: c, rx, ry, rz, ax: f.ax, u: f.u, side: f.side, piece, mat, t0: 0, t1: 1, pieceLen: 1 }, extra || {});
+  }
+  function tri(a, b, c, th, piece, mat) {
+    const f = frame(v.sub(b, a), v.cross(v.sub(b, a), v.sub(c, a)));
+    return { k: TRI, a, b, c, r1: th, ax: f.ax, u: f.u, side: f.side, piece, mat, t0: 0, t1: 1, pieceLen: 1 };
+  }
+
+  // Bounding sphere of a primitive (used by the renderer to skip pieces a ray can't touch).
+  function bound(p) {
+    if (p.k === CONE) { const c = v.lerp(p.a, p.b, 0.5); return [c[0], c[1], c[2], p.len / 2 + Math.max(p.r1, p.r2) * Math.max(1, p.sy)]; }
+    if (p.k === ELLIPSOID) return [p.a[0], p.a[1], p.a[2], Math.max(p.rx, p.ry, p.rz)];
+    const c = v.mul(v.add(v.add(p.a, p.b), p.c), 1 / 3);
+    return [c[0], c[1], c[2], Math.max(v.len(v.sub(p.a, c)), v.len(v.sub(p.b, c)), v.len(v.sub(p.c, c))) + p.r1];
+  }
+
+  // A spine in the x-y plane: n points from `start`, heading `angle` (radians from +x, counter-clockwise toward +y),
+  // turning by `curve` radians over its length.
+  function spine(start, angle, length, curve, n) {
+    const pts = [start], dirs = [];
+    const seg = length / Math.max(1, n - 1);
+    let p = start;
+    for (let i = 0; i < n - 1; i++) {
+      const a = angle + curve * ((i + 0.5) / Math.max(1, n - 1));
+      const d = [Math.cos(a), Math.sin(a), 0];
+      dirs.push(d);
+      p = v.add(p, v.mul(d, seg));
+      pts.push(p);
+    }
+    if (!dirs.length) dirs.push([Math.cos(angle), Math.sin(angle), 0]);
+    dirs.push(dirs[dirs.length - 1]);
+    return { pts, dirs };
+  }
+
+  // Joins a ring stack into round cones. rings: [{w, h}] already scaled.
+  function sausage(prims, sp, rings, piece, mat, k, upHint) {
+    const n = rings.length;
+    const total = sp.pts.length > 1 ? sp.pts.reduce((s, p, i) => (i ? s + v.len(v.sub(p, sp.pts[i - 1])) : 0), 0) : 0;
+    for (let i = 0; i < n - 1; i++) {
+      const a = sp.pts[i], b = sp.pts[i + 1];
+      const r1 = rings[i].w, r2 = rings[i + 1].w;
+      const sy = ((rings[i].h + rings[i + 1].h) / 2) / ((r1 + r2) / 2);
+      if (v.len(v.sub(b, a)) < 1e-4) {
+        prims.push(ellipsoid(a, [1, 0, 0], r1, rings[i].h, r1, piece, mat, { k2: k, t0: i / (n - 1), t1: i / (n - 1), pieceLen: total }));
+        continue;
+      }
+      prims.push(cone(a, b, r1, r2, sy, piece, mat, { k2: k, t0: i / (n - 1), t1: (i + 1) / (n - 1), pieceLen: total, upHint }));
+    }
+  }
+
+  // Point on a spine at fraction t (0..1) and the ring size there.
+  function along(sp, rings, t) {
+    const n = sp.pts.length, f = Math.max(0, Math.min(0.9999, t)) * (n - 1), i = Math.floor(f), u = f - i;
+    const j = Math.min(n - 1, i + 1);
+    return { p: v.lerp(sp.pts[i], sp.pts[j], u), d: v.norm(v.lerp(sp.dirs[i], sp.dirs[j], u)),
+      w: rings[i].w + (rings[j].w - rings[i].w) * u, h: rings[i].h + (rings[j].h - rings[i].h) * u };
+  }
+
+  // Two-bone leg from hip to foot; the knee bends toward `bend` (a unit vector).
+  function legIK(hip, foot, len, bend) {
+    const d = v.sub(foot, hip), dist = Math.min(v.len(d), len * 0.999);
+    const dir = v.norm(d), mid = v.add(hip, v.mul(dir, dist / 2));
+    const h = Math.sqrt(Math.max(0, (len / 2) ** 2 - (dist / 2) ** 2));
+    // bend direction made perpendicular to the leg
+    const b = v.norm(v.sub(bend, v.mul(dir, v.dot(bend, dir))));
+    const knee = v.add(mid, v.mul(b, h));
+    const end = v.add(hip, v.mul(dir, dist));
+    return { knee, end };
+  }
+
+  // Rest layout shared by the body and the walker: hip points and where each foot stands.
+  function layout(ph) {
+    const s = ph.scale;
+    const R = (rs) => rs.map((r) => ({ w: r.w * s, h: r.h * s }));
+    const torsoR = R(ph.torso.rings), maxH = Math.max(...torsoR.map((r) => r.h));
+    const legLen = ph.legs.length * s;
+    const pairs = ph.legs.pairs;
+    const tLen = ph.torso.length * s;
+    // Torso spine built at height 0 first.
+    const tsp0 = spine([-tLen / 2 * Math.cos(ph.torso.angle), -tLen / 2 * Math.sin(ph.torso.angle), 0], ph.torso.angle - ph.torso.curve / 2, tLen, ph.torso.curve, torsoR.length);
+    const legTs = pairs === 1 ? [0.5] : pairs === 2 ? [0.18, 0.82] : pairs === 3 ? [0.12, 0.5, 0.88] : [];
+    const hips0 = [];
+    for (const t of legTs) {
+      const q = along(tsp0, torsoR, t);
+      for (const side of [-1, 1]) hips0.push({ t, side, p: v.add(q.p, [0, -q.h * 0.35, side * q.w * 0.62 * ph.legs.spread]), front: t > 0.5 });
+    }
+    let H;
+    if (pairs > 0) {
+      const avgHipY = hips0.reduce((s2, hp) => s2 + hp.p[1], 0) / hips0.length;
+      H = legLen * 0.9 - avgHipY;
+    } else H = maxH * 0.92;
+    const lift = [0, H, 0];
+    const tsp = { pts: tsp0.pts.map((p) => v.add(p, lift)), dirs: tsp0.dirs };
+    const hips = hips0.map((hp) => Object.assign({}, hp, { p: v.add(hp.p, lift) }));
+    const footR = Math.max(ph.legs.foot, ph.legs.width * 0.9) * s;
+    const feet = hips.map((hp) => [hp.p[0] + (hp.front ? 0.02 : -0.02) * s, footR * 0.55, hp.p[2] * 1.12]);
+    // Legs long enough to reach the ground from where the hips ended up.
+    const reach = Math.max(legLen, ...hips.map((hp) => (hp.p[1] - footR * 0.55) / 0.97));
+    return { s, torsoR, tsp, hips, feet, legLen: reach, footR, H };
+  }
+
+  // Build the creature. pose: { breathe, lookYaw, tailSway, tailLift, wingFlap, feet (local, like layout().feet),
+  // blink, expression, hop }.
+  function build(ph, pose) {
+    pose = pose || {};
+    const L = layout(ph);
+    const s = L.s, prims = [], decals = [];
+    const k = (0.035 + 0.06 * ph.fluff) * Math.max(0.6, s); // melt amount for the smooth union
+    const breathe = 1 + (pose.breathe || 0) * 0.03;
+    const R = (rs, f) => rs.map((r) => ({ w: r.w * s * (f || 1), h: r.h * s * (f || 1) }));
+
+    // Torso
+    const torsoR = R(ph.torso.rings, breathe);
+    const tsp = L.tsp;
+    sausage(prims, tsp, torsoR, 'torso', MAT.BODY, k);
+    const front = { p: tsp.pts[tsp.pts.length - 1], d: tsp.dirs[tsp.dirs.length - 1], w: torsoR[torsoR.length - 1].w, h: torsoR[torsoR.length - 1].h };
+    const back = { p: tsp.pts[0], d: tsp.dirs[0], w: torsoR[0].w, h: torsoR[0].h };
+
+    // Neck: from the front of the torso, angled up.
+    const neckR = R(ph.neck.rings);
+    const neckLen = ph.neck.length * s;
+    const torsoEndAngle = Math.atan2(front.d[1], front.d[0]);
+    let headStart;
+    const neckBase = v.add(front.p, v.mul(front.d, -front.w * 0.25));
+    if (neckLen > 0.03 * s) {
+      const nsp = spine(v.add(neckBase, [0, front.h * 0.2, 0]), torsoEndAngle + ph.neck.angle, neckLen + front.w * 0.5, ph.neck.curve, neckR.length);
+      sausage(prims, nsp, neckR, 'neck', MAT.BODY, k);
+      headStart = nsp.pts[nsp.pts.length - 1];
+    } else headStart = v.add(front.p, v.add(v.mul(front.d, front.w * 0.35), [0, front.h * 0.45, 0]));
+
+    // Head: starts where the neck ends, pointing forward (head.angle tips the snout up or down).
+    const headR = R(ph.head.rings);
+    const headLen = ph.head.length * s;
+    const look = pose.lookYaw || 0;
+    let hsp = spine(v.add(headStart, v.mul([Math.cos(ph.head.angle), Math.sin(ph.head.angle), 0], -headR[0].w * 0.2)), ph.head.angle, headLen, ph.head.curve, headR.length);
+    if (look) hsp = { pts: hsp.pts.map((p) => v.rotY(p, headStart, look)), dirs: hsp.dirs.map((d) => v.rotY(d, [0, 0, 0], look)) };
+    sausage(prims, hsp, headR, 'head', MAT.BODY, k);
+
+    // Tail: from the back of the torso, pointing back.
+    const tailR = R(ph.tail.rings);
+    const tailLen = ph.tail.length * s;
+    if (tailLen > 0.03 * s) {
+      const backAngle = Math.atan2(-back.d[1], -back.d[0]);
+      const lift = pose.tailLift || 0;
+      let tsp2 = spine(v.add(back.p, v.mul(back.d, back.w * 0.3)), backAngle - ph.tail.angle - lift, tailLen + back.w * 0.3, -ph.tail.curve, tailR.length);
+      const sway = pose.tailSway || 0;
+      if (sway) tsp2 = { pts: tsp2.pts.map((p, i) => v.rotY(p, tsp2.pts[0], sway * (i / (tsp2.pts.length - 1)))), dirs: tsp2.dirs };
+      sausage(prims, tsp2, tailR, 'tail', MAT.BODY, k);
+      prims[prims.length - 1].tip = ph.tail.tip;
+      for (const p of prims) if (p.piece === 'tail') p.tip = ph.tail.tip;
+    }
+
+    // Legs: two round cones each and a paw; the paw stands where the walker put it.
+    const legW = ph.legs.width * s;
+    L.hips.forEach((hp, i) => {
+      const foot = (pose.feet && pose.feet[i]) || L.feet[i];
+      const kneeSign = (ph.legs.knee >= 0 ? 1 : -1) * (hp.front ? -1 : 1);
+      const ik = legIK(hp.p, foot, L.legLen, [kneeSign, 0, hp.side * 0.25]);
+      prims.push(cone(hp.p, ik.knee, legW * 1.15, legW * 0.85, 1, 'leg', MAT.BODY, { k2: k * 0.5 }));
+      prims.push(cone(ik.knee, ik.end, legW * 0.85, legW * 0.7, 1, 'leg', MAT.BODY, { k2: k * 0.5 }));
+      prims.push(ellipsoid(v.add(ik.end, [L.footR * 0.35, 0, 0]), [1, 0, 0], L.footR * 1.2, L.footR * 0.6, L.footR * 0.85, 'foot', MAT.BODY, { k2: k * 0.4 }));
+      if (ph.claws > 0.45) {
+        for (const dz of [-0.5, 0, 0.5]) {
+          const base = v.add(ik.end, [L.footR * 1.25, -L.footR * 0.15, dz * L.footR * 0.7]);
+          prims.push(cone(base, v.add(base, [L.footR * 0.55 * ph.claws, -L.footR * 0.25, 0]), L.footR * 0.22, 0.004 * s, 1, 'claw', MAT.ACCENT, { k2: 0.002 }));
+        }
+      }
+    });
+
+    // Wings: a shoulder, an elbow and finger bones with a membrane between them (a bat's wing).
+    if (ph.wings.size > 0) {
+      const q = along(tsp, torsoR, 0.68);
+      const span = ph.wings.span * (0.55 + 0.75 * ph.wings.size) * s * 1.1;
+      const flap = pose.wingFlap || 0;
+      for (const side of [-1, 1]) {
+        const S = v.add(q.p, [0, q.h * 0.55, side * q.w * 0.35]);
+        const elev = ph.wings.angle + flap;
+        const out = [0, Math.sin(elev), side * Math.cos(elev)];
+        const E = v.add(S, v.add(v.mul(out, span * 0.42), [-span * 0.05, 0, 0]));
+        const nF = ph.wings.fingers;
+        const tips = [];
+        for (let f = 0; f < nF; f++) {
+          const a = (f / Math.max(1, nF - 1)); // 0: along the arm, 1: swept back
+          const dir = v.norm(v.add(v.mul(out, 1 - a * 0.75), [-a * 1.1 - 0.15, -a * 0.25, 0]));
+          tips.push(v.add(E, v.mul(dir, span * (0.62 - a * 0.18))));
+        }
+        const th = 0.008 * s + 0.004;
+        const bw = Math.max(0.012 * s, legW * 0.35);
+        prims.push(cone(S, E, bw * 1.3, bw, 1, 'wingbone', MAT.WING, { k2: k * 0.4, bone: true }));
+        tips.forEach((t) => prims.push(cone(E, t, bw * 0.8, bw * 0.3, 1, 'wingbone', MAT.WING, { k2: 0.003, bone: true })));
+        for (let f = 0; f < tips.length - 1; f++) prims.push(tri(E, tips[f], tips[f + 1], th, 'wing', MAT.WING));
+        const backAttach = v.add(along(tsp, torsoR, 0.3).p, [0, q.h * 0.5, side * q.w * 0.2]);
+        prims.push(tri(S, E, tips[tips.length - 1], th, 'wing', MAT.WING));
+        prims.push(tri(S, tips[tips.length - 1], backAttach, th, 'wing', MAT.WING));
+      }
+    }
+
+    // Head features are placed on the head's rings.
+    const hAt = (t) => along(hsp, headR, t);
+    const top = (t, side, spread) => { const q = hAt(t); const f = frame(q.d); return v.add(q.p, v.add(v.mul(f.u, q.h * 0.82), v.mul(f.side, side * q.w * spread))); };
+
+    // Horns: round cones that bend, bone coloured.
+    if (ph.horns.count > 0 && ph.horns.length > 0.015) {
+      const hl = ph.horns.length * s, hw = ph.horns.width * s * (0.6 + 0.4 * Math.min(1, ph.horns.length * 4));
+      const list = ph.horns.count === 1 ? [{ side: 0, t: 0.55 }] : [{ side: -1, t: 0.3 }, { side: 1, t: 0.3 }];
+      for (const h of list) {
+        const base = top(h.t, h.side, 0.45 + 0.3 * ph.horns.spread);
+        let dir = v.norm([h.side === 0 ? 0.35 : -0.55, 1, h.side * (0.15 + ph.horns.spread * 0.7)]);
+        const mid = v.add(base, v.mul(dir, hl * 0.5));
+        dir = v.norm(v.add(dir, [-0.6 * ph.horns.curve, -0.2 * Math.abs(ph.horns.curve), 0]));
+        const tip = v.add(mid, v.mul(dir, hl * 0.5));
+        prims.push(cone(base, mid, hw, hw * 0.6, 1, 'horn', MAT.ACCENT, { k2: 0.004 }));
+        prims.push(cone(mid, tip, hw * 0.6, 0.003 * s + 0.002, 1, 'horn', MAT.ACCENT, { k2: 0.002 }));
+      }
+    }
+
+    // Ears.
+    if (ph.ears.kind !== 'none') {
+      const es = ph.ears.size * s;
+      for (const side of [-1, 1]) {
+        const base = top(0.22, side, 0.55);
+        if (ph.ears.kind === 'pointed') {
+          const dir = v.norm([-0.15 + ph.ears.angle * 0.3, 1, side * 0.45]);
+          prims.push(cone(base, v.add(base, v.mul(dir, es * 1.3)), es * 0.42, 0.006 * s, 0.38, 'ear', MAT.BODY, { k2: k * 0.6, upHint: [1, 0, 0] }));
+        } else if (ph.ears.kind === 'round') {
+          const c = v.add(base, v.mul(v.norm([0, 1, side * 0.5]), es * 0.45));
+          prims.push(ellipsoid(c, [0, 1, side * 0.5], es * 0.55, es * 0.2, es * 0.5, 'ear', MAT.BODY, { k2: k * 0.6, upHint: [1, 0, 0] }));
+        } else {
+          const dir = v.norm([-0.6, 0.1 - 0.5 * (ph.ears.angle + 0.6), side * 0.8]);
+          prims.push(cone(base, v.add(base, v.mul(dir, es * 1.8)), es * 0.3, es * 0.22, 0.45, 'ear', MAT.BODY, { k2: k * 0.6, upHint: [0, 1, 0] }));
+        }
+      }
+    }
+
+    // Decorations.
+    const ds = 0.35 + 0.65 * ph.decor.size;
+    if (ph.decor.kind === 'sprout' || ph.decor.kind === 'flower') {
+      const base = top(0.35, 0, 0);
+      const stemTop = v.add(base, [0, 0.07 * s * ds, 0]);
+      if (ph.decor.kind === 'sprout') {
+        prims.push(cone(base, stemTop, 0.012 * s, 0.01 * s, 1, 'decor', MAT.LEAF, { k2: 0.004 }));
+        for (const side of [-1, 1]) {
+          const c = v.add(stemTop, [0.02 * s * side, 0.03 * s * ds, side * 0.045 * s * ds]);
+          prims.push(ellipsoid(c, [0.3 * side, 0.6, side], 0.06 * s * ds, 0.012 * s, 0.032 * s * ds, 'decor', MAT.LEAF, { k2: 0.005 }));
+        }
+      } else {
+        const c = v.add(base, [0, 0.025 * s * ds, 0]);
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * Math.PI * 2;
+          prims.push(ellipsoid(v.add(c, [Math.cos(a) * 0.04 * s * ds, 0.005 * s, Math.sin(a) * 0.04 * s * ds]), [Math.cos(a), 0.2, Math.sin(a)],
+            0.035 * s * ds, 0.016 * s * ds, 0.03 * s * ds, 'decor', MAT.PETAL, { k2: 0.006 }));
+        }
+        prims.push(ellipsoid(v.add(c, [0, 0.015 * s * ds, 0]), [1, 0, 0], 0.02 * s * ds, 0.016 * s * ds, 0.02 * s * ds, 'decor', MAT.ACCENT, { k2: 0.004 }));
+      }
+    } else if (ph.decor.kind === 'antennae') {
+      for (const side of [-1, 1]) {
+        const base = top(0.4, side, 0.35);
+        const tip = v.add(base, [0.06 * s * ds, 0.2 * s * ds, side * 0.07 * s * ds]);
+        prims.push(cone(base, tip, 0.009 * s, 0.006 * s, 1, 'decor', MAT.DARK, { k2: 0.003 }));
+        prims.push(ellipsoid(tip, [1, 0, 0], 0.025 * s * ds, 0.025 * s * ds, 0.025 * s * ds, 'decor', MAT.PETAL, { k2: 0.003 }));
+      }
+    } else if (ph.decor.kind === 'spikes') {
+      const n = 3 + Math.round(ph.decor.size * 4);
+      for (let i = 0; i < n; i++) {
+        const q = along(tsp, torsoR, 0.15 + 0.75 * (i / Math.max(1, n - 1)));
+        const f = frame(q.d);
+        const base = v.add(q.p, v.mul(f.u, q.h * 0.85));
+        const hgt = (0.05 + 0.07 * ds) * s * (0.6 + 0.4 * Math.sin(Math.PI * (i + 0.5) / n));
+        prims.push(cone(base, v.add(base, v.add(v.mul(f.u, hgt), v.mul(f.ax, -hgt * 0.35))), hgt * 0.4, 0.003 * s, 0.5, 'spike', MAT.ACCENT, { k2: 0.006, upHint: [1, 0, 0] }));
+      }
+    }
+
+    for (const p of prims) { p.bs = bound(p); if (p.k2 == null) p.k2 = k; }
+
+    // Face marks: anchors on the head; the renderer snaps them to the surface and draws them in pixels.
+    // Eyes sit toward the front of the head so both show from the 3/4 view, like the video's creatures.
+    const eyeT = 0.45 + 0.15 * (1 - ph.eyes.spacing);
+    const eq = hAt(eyeT), ef = frame(eq.d);
+    const eyeHead = Math.max(eq.w, eq.h);
+    const eyeR = Math.min(0.55 * eyeHead, Math.max(0.022 * s, ph.eyes.size * eyeHead * 0.42));
+    for (const side of [-1, 1]) {
+      const dir = v.norm(v.add(v.add(v.mul(ef.ax, 0.6 + 0.4 * (1 - ph.eyes.spacing)), v.mul(ef.u, 0.1 + 0.55 * ph.eyes.height)), v.mul(ef.side, side * (0.3 + 0.5 * ph.eyes.spacing))));
+      decals.push({ kind: 'eye', from: eq.p, dir, r: eyeR, side, round: ph.eyes.round, slant: ph.eyes.slant, glow: ph.eyes.glow,
+        blink: pose.blink || 0, expression: pose.expression || ph.expression });
+      if (ph.blush > 0.25) {
+        const bdir = v.norm(v.add(dir, v.add(v.mul(ef.u, -0.5), v.mul(ef.side, side * 0.25))));
+        decals.push({ kind: 'blush', from: eq.p, dir: bdir, r: eyeR * 0.9, amount: ph.blush, side });
+      }
+    }
+    // Mouth: a line through three anchors (one jaw corner, the chin, the other corner); the renderer joins whichever show.
+    const mq = hAt(0.96), mf = frame(mq.d), cq = hAt(0.8 - 0.25 * ph.mouth.width), cf = frame(cq.d);
+    const corner = (side) => ({ from: cq.p, dir: v.norm(v.add(v.add(v.mul(cf.ax, 0.35), v.mul(cf.u, -0.45)), v.mul(cf.side, side * 0.8))) });
+    decals.push({ kind: 'mouth', pts: [corner(-1), { from: mq.p, dir: v.norm(v.add(v.mul(mf.ax, 0.8), v.mul(mf.u, -0.55))) }, corner(1)],
+      from: mq.p, dir: mf.ax, width: (0.4 + 0.8 * ph.mouth.width) * Math.max(mq.w, 0.04 * s),
+      smile: ph.mouth.smile, fangs: ph.fangs, expression: pose.expression || ph.expression });
+
+    return { prims, decals, k, scale: s, layout: L, kind: 'creature' };
+  }
+
+  // The egg: one ellipsoid with a shell pattern; `crack` (0..1) grows a zigzag crack, `open` (0..1) lifts the cap.
+  function buildEgg(look, pose) {
+    pose = pose || {};
+    const prims = [];
+    const H = 0.34, W = H * look.round;
+    const c = [0, H, 0];
+    const wob = pose.wobble || 0;
+    const up = v.norm([Math.sin(wob), Math.cos(wob), 0]);
+    const egg = ellipsoid(v.add([0, 0, 0], c), up, H, W, W, 'egg', MAT.EGG, { k2: 0.001, upHint: [1, 0, 0], look });
+    // The egg's long axis is its frame axis; the renderer's pattern uses frame coordinates.
+    if ((pose.open || 0) > 0) {
+      // Split: a lower shell and a cap, cut along a zigzag at 62% height; the cap rises and tips away.
+      egg.cut = { y: 0.25 * H, below: true };
+      const cap = Object.assign({}, egg, { cut: { y: 0.25 * H, below: false } });
+      const o = pose.open;
+      cap.a = v.add(cap.a, [-0.12 * o, 0.28 * o, 0]);
+      // Tip the cap away by turning its frame about the z axis.
+      const ang = 0.9 * o, rz = (d) => [d[0] * Math.cos(ang) - d[1] * Math.sin(ang), d[0] * Math.sin(ang) + d[1] * Math.cos(ang), d[2]];
+      cap.ax = rz(cap.ax); cap.u = rz(cap.u); cap.side = rz(cap.side);
+      prims.push(egg, cap);
+    } else prims.push(egg);
+    for (const p of prims) p.bs = [p.a[0], p.a[1], p.a[2], H * 1.05];
+    return { prims, decals: pose.crack ? [{ kind: 'crack', amount: pose.crack, center: c, H, W }] : [], k: 0.001, scale: 1, kind: 'egg', look };
+  }
+
+  const api = { build, buildEgg, layout, legIK, spine, frame, bound, v, CONE, ELLIPSOID, TRI, MAT };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.CreatureBody = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/* Creatures prototype: the renderer. Signed distance fields, asked once per pixel (the video's "step 4: ask every
+   pixel"): for each pixel of a small grid, a ray marches through the smooth union of the creature's pieces; if it hits,
+   the pixel gets a colour, banded light and, on edges, ink (step 5). Misses stay see-through, except the ground shadow.
+   Styles are pluggable: `gochi` is the video's finished look; `inside`, `flat` and `pieces` are the video's
+   in-between views (silhouette, one colour, coloured by body position). No DOM: it returns an RGBA buffer. */
+(function (root) {
+  'use strict';
+  const B = typeof module !== 'undefined' && module.exports ? require('./body.js') : root.CreatureBody;
+  const { CONE, ELLIPSOID, TRI, MAT } = B;
+
+  // ---------- colour helpers ----------
+  function hsl(h, s, l) {
+    h = ((h % 360) + 360) % 360 / 360; s = Math.max(0, Math.min(1, s)); l = Math.max(0, Math.min(1, l));
+    if (s === 0) return [l * 255, l * 255, l * 255];
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+    const f = (t) => { t = (t + 1) % 1; return t < 1 / 6 ? p + (q - p) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p; };
+    return [f(h + 1 / 3) * 255, f(h) * 255, f(h - 1 / 3) * 255];
+  }
+  // A colour ramp from one base colour: ink, shadow, mid shadow, base, light, highlight. Shadows lean cool, lights warm.
+  function ramp(h, s, l) {
+    const toward = (h0, target, amt) => { let d = ((target - h0 + 540) % 360) - 180; return h0 + d * amt; };
+    return [
+      hsl(toward(h, 250, 0.15), Math.min(1, s * 1.05 + 0.1), Math.min(0.15, l * 0.26)),
+      hsl(toward(h, 250, 0.12), Math.min(1, s * 1.02), l * 0.62),
+      hsl(toward(h, 250, 0.05), s, l * 0.81),
+      hsl(h, s, l),
+      hsl(toward(h, 55, 0.08), s * 0.95, l + (1 - l) * 0.22),
+      hsl(toward(h, 55, 0.12), s * 0.7, l + (1 - l) * 0.6),
+    ];
+  }
+
+  // ---------- noise for markings ----------
+  function hash3(x, y, z) {
+    let h = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(z, 2147483647);
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
+  function vnoise(x, y, z) {
+    const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+    const xf = x - xi, yf = y - yi, zf = z - zi;
+    const u = xf * xf * (3 - 2 * xf), v2 = yf * yf * (3 - 2 * yf), w = zf * zf * (3 - 2 * zf);
+    const L = (a, b, t) => a + (b - a) * t;
+    const c = (dx, dy, dz) => hash3(xi + dx, yi + dy, zi + dz);
+    return L(L(L(c(0, 0, 0), c(1, 0, 0), u), L(c(0, 1, 0), c(1, 1, 0), u), v2), L(L(c(0, 0, 1), c(1, 0, 1), u), L(c(0, 1, 1), c(1, 1, 1), u), v2), w);
+  }
+
+  // ---------- distance functions ----------
+  function prep(p) {
+    const q = { k: p.k, k2: p.k2, mat: p.mat, piece: p.piece, src: p,
+      ax: p.a[0], ay: p.a[1], az: p.a[2], fx: p.ax[0], fy: p.ax[1], fz: p.ax[2], ux: p.u[0], uy: p.u[1], uz: p.u[2],
+      sx: p.side[0], sy2: p.side[1], sz: p.side[2] };
+    if (p.k === CONE) {
+      q.len = p.len; q.r1 = p.r1; q.r2 = p.r2; q.sy = p.sy; q.scale = Math.min(1, p.sy);
+      const b = (p.r1 - p.r2) / Math.max(1e-6, p.len);
+      q.degenerate = Math.abs(b) >= 0.999;
+      q.cb = b; q.ca = Math.sqrt(Math.max(0, 1 - b * b));
+    } else if (p.k === ELLIPSOID) {
+      q.rx = p.rx; q.ry = p.ry; q.rz = p.rz; q.cut = p.cut || null; q.shell = p.piece === 'egg' ? 0.012 : 0;
+    } else {
+      const a = p.a, b = p.b, c = p.c;
+      const ba = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], cb = [c[0] - b[0], c[1] - b[1], c[2] - b[2]], ac = [a[0] - c[0], a[1] - c[1], a[2] - c[2]];
+      const nor = B.v.cross(ba, ac);
+      Object.assign(q, { bx: b[0], by: b[1], bz: b[2], cx: c[0], cy: c[1], cz: c[2], ba, cb, ac, nor,
+        n1: B.v.cross(ba, nor), n2: B.v.cross(cb, nor), n3: B.v.cross(ac, nor), dba: B.v.dot(ba, ba), dcb: B.v.dot(cb, cb), dac: B.v.dot(ac, ac),
+        dnor: B.v.dot(nor, nor) || 1e-9, th: p.r1 });
+    }
+    return q;
+  }
+
+  // Distance from (x,y,z) to one prepared primitive. Writes frame coordinates into `out` when given.
+  function dist(q, x, y, z, out) {
+    const px = x - q.ax, py = y - q.ay, pz = z - q.az;
+    if (q.k === CONE) {
+      const along = px * q.fx + py * q.fy + pz * q.fz;
+      const up = (px * q.ux + py * q.uy + pz * q.uz) / q.sy;
+      const sd = px * q.sx + py * q.sy2 + pz * q.sz;
+      const rad = Math.sqrt(up * up + sd * sd);
+      if (out) { out.along = along; out.up = up * q.sy; out.side = sd; }
+      let d;
+      if (q.degenerate) {
+        d = Math.min(Math.hypot(rad, along) - q.r1, Math.hypot(rad, along - q.len) - q.r2);
+      } else {
+        const k = -q.cb * rad + q.ca * along;
+        if (k < 0) d = Math.hypot(rad, along) - q.r1;
+        else if (k > q.ca * q.len) d = Math.hypot(rad, along - q.len) - q.r2;
+        else d = q.ca * rad + q.cb * along - q.r1;
+      }
+      return d * q.scale;
+    }
+    if (q.k === ELLIPSOID) {
+      const lx = px * q.fx + py * q.fy + pz * q.fz, ly = px * q.ux + py * q.uy + pz * q.uz, lz = px * q.sx + py * q.sy2 + pz * q.sz;
+      if (out) { out.along = lx; out.up = ly; out.side = lz; }
+      const ax = lx / q.rx, ay = ly / q.ry, az = lz / q.rz;
+      const k0 = Math.sqrt(ax * ax + ay * ay + az * az);
+      const k1 = Math.sqrt((ax / q.rx) ** 2 + (ay / q.ry) ** 2 + (az / q.rz) ** 2) || 1e-9;
+      let d = (k0 * (k0 - 1)) / k1;
+      if (q.shell) {
+        if (out) out.inner = d < -q.shell * 0.3;
+        d = Math.abs(d + q.shell) - q.shell;
+      }
+      if (q.cut) {
+        const ang = Math.atan2(lz, ly);
+        const zig = q.rx * 0.07 * (Math.abs(((ang / (Math.PI * 2)) * 14) % 2 - 1) * 2 - 1);
+        const plane = q.cut.below ? lx - (q.cut.y + zig) : (q.cut.y + zig) - lx;
+        d = Math.max(d, plane);
+      }
+      return d;
+    }
+    // thin triangle
+    const pa = [px, py, pz];
+    const pb = [x - q.bx, y - q.by, z - q.bz], pc = [x - q.cx, y - q.cy, z - q.cz];
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const sgn = (t) => (t > 0 ? 1 : t < 0 ? -1 : 0);
+    let d2;
+    if (sgn(dot(q.n1, pa)) + sgn(dot(q.n2, pb)) + sgn(dot(q.n3, pc)) < 2) {
+      const seg = (e, p, de) => { const t = Math.max(0, Math.min(1, dot(e, p) / de)); const a = e[0] * t - p[0], b = e[1] * t - p[1], c = e[2] * t - p[2]; return a * a + b * b + c * c; };
+      d2 = Math.min(seg(q.ba, pa, q.dba), seg(q.cb, pb, q.dcb), seg(q.ac, pc, q.dac));
+    } else { const t = dot(q.nor, pa); d2 = (t * t) / q.dnor; }
+    if (out) { out.along = px * q.fx + py * q.fy + pz * q.fz; out.up = 0; out.side = 0; }
+    return Math.sqrt(d2) - q.th;
+  }
+
+  // Polynomial smooth minimum: the "melt" that joins the pieces into one body.
+  function smin(a, b, k) {
+    if (k <= 0) return Math.min(a, b);
+    const h = Math.max(k - Math.abs(a - b), 0) / k;
+    return Math.min(a, b) - h * h * k * 0.25;
+  }
+
+  // The whole field over a list of prepared primitives. Returns the distance; scene.best gets the nearest piece.
+  function field(list, x, y, z, ctx) {
+    let d = 1e9, best = -1, bestD = 1e9;
+    for (let i = 0; i < list.length; i++) {
+      const q = list[i];
+      const di = dist(q, x, y, z, null);
+      if (di < bestD) { bestD = di; best = i; }
+      d = i === 0 ? di : smin(d, di, q.k2);
+    }
+    if (ctx) ctx.best = best;
+    return d;
+  }
+
+  // ---------- camera ----------
+  function camera(c) {
+    const yaw = c.yaw != null ? c.yaw : 1.0, pitch = c.pitch != null ? c.pitch : 0.45;
+    const toCam = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
+    const d = [-toCam[0], -toCam[1], -toCam[2]];
+    const r = B.v.norm(B.v.cross(d, [0, 1, 0]));
+    const u = B.v.cross(r, d);
+    return { w: c.w, h: c.h, px: c.px, center: c.center || [0, 0.3, 0], d, r, u, toCam };
+  }
+  // World point -> pixel position and depth along the view.
+  function project(cam, p) {
+    const q = [p[0] - cam.center[0], p[1] - cam.center[1], p[2] - cam.center[2]];
+    return { x: cam.w / 2 + B.v.dot(q, cam.r) / cam.px, y: cam.h / 2 - B.v.dot(q, cam.u) / cam.px, z: B.v.dot(q, cam.d) };
+  }
+
+  // ---------- styles ----------
+  // A style turns a hit (material, position in the piece, normal, light) into a colour, and says what ink to draw.
+  const styles = {};
+  function registerStyle(name, s) { styles[name] = s; }
+
+  // Body colours from the phenotype (or egg look).
+  function palette(scene) {
+    const ph = scene.ph;
+    if (scene.kind === 'egg') {
+      const e = scene.look;
+      return { egg: ramp(e.hue, e.sat, e.light), mark: ramp(e.markHue, 0.5, e.markLight), inner: ramp(e.hue, 0.15, 0.9) };
+    }
+    const c = ph.colour, hue = c.hue + c.hueShift;
+    const body = ramp(hue, c.sat, c.light);
+    const belly = ramp(hue + 8, c.sat * 0.6, c.light + (1 - c.light) * (0.25 + 0.4 * c.belly));
+    const bone = ramp(45, 0.25, 0.86);
+    const accentSrc = c.accent < 0.5 ? bone : ramp(hue + 15, c.sat * 0.8, c.light * 0.75);
+    const markL = ph.pattern.light >= 0 ? c.light + (1 - c.light) * (0.35 + 0.4 * ph.pattern.light) : c.light * (0.75 + 0.3 * ph.pattern.light);
+    return {
+      body, belly, accent: accentSrc,
+      wing: ramp(hue + c.wing, c.sat * 0.9, c.light * 0.85 + 0.05),
+      leaf: ramp(108 + (ph.decor.hue - 180) * 0.08, 0.6, 0.45),
+      petal: ramp(ph.decor.hue, 0.65, 0.7),
+      dark: ramp(hue, c.sat * 0.4, 0.2),
+      tip: ramp(40, 0.25, 0.92),
+      mark: ramp(hue + (ph.pattern.light >= 0 ? 0 : 10), c.sat * (ph.pattern.light >= 0 ? 0.45 : 1.05), markL),
+    };
+  }
+
+  // Which ramp a body pixel uses: belly, tail tip, markings or plain body.
+  function bodyRamp(scene, pal, h) {
+    const ph = scene.ph;
+    const q = h.q, pr = q.src;
+    const s = scene.scale || 1;
+    if (q.mat === MAT.ACCENT) return pal.accent;
+    if (q.mat === MAT.WING) return pal.wing;
+    if (q.mat === MAT.LEAF) return pal.leaf;
+    if (q.mat === MAT.PETAL) return pal.petal;
+    if (q.mat === MAT.DARK) return pal.dark;
+    const tAlong = pr.t0 + (pr.t1 - pr.t0) * Math.max(0, Math.min(1, h.fc.along / Math.max(1e-6, q.len || 1)));
+    if (q.piece === 'tail' && pr.tip > 0.3 && tAlong > 1 - pr.tip * 0.5) return pal.tip;
+    const main = q.piece === 'torso' || q.piece === 'neck' || q.piece === 'head' || q.piece === 'tail';
+    if (main && ph.colour.belly > 0.15) {
+      const rr = Math.max(1e-6, (q.r1 + (q.r2 - q.r1) * Math.max(0, Math.min(1, h.fc.along / (q.len || 1)))) * q.sy);
+      if (h.fc.up / rr < -0.3 + (q.piece === 'head' ? 0.05 : 0)) return pal.belly;
+    }
+    const pk = ph.pattern.kind, amt = ph.pattern.amount;
+    if (pk !== 'none' && amt > 0.02 && (main || q.piece === 'leg')) {
+      const off = scene.patternOffset;
+      const along = (h.fc.along + (pr.t0 || 0) * (pr.pieceLen || 0)) / s, up = h.fc.up / s, side = h.fc.side / s;
+      const pieceOff = { torso: 0, neck: 17, head: 31, tail: 47, leg: 63 }[q.piece] || 0;
+      const f = 5 + 9 * ph.pattern.scale;
+      const X = along * f + off[0] + pieceOff, Y = up * f + off[1], Z = side * f + off[2];
+      let on = false;
+      if (pk === 'spots') on = vnoise(X, Y, Z) > 0.78 - amt * 0.3;
+      else if (pk === 'stripes') on = h.fc.up > -0.2 * s * 0.1 && Math.sin(along * f * 1.6 + vnoise(X * 0.5, Y * 0.5, Z * 0.5) * 3) > 1 - amt * 0.9;
+      else if (pk === 'patches') on = vnoise(X * 0.45, Y * 0.45, Z * 0.45) > 0.66 - amt * 0.22;
+      else if (pk === 'speckles') on = vnoise(X * 2.2, Y * 2.2, Z * 2.2) > 0.86 - amt * 0.12;
+      if (on) return pal.mark;
+    }
+    return pal.body;
+  }
+
+  registerStyle('gochi', {
+    // Banded light: four tones from a cool shadow to a warm light, plus a glint where the surface is glossy.
+    shade(scene, pal, h) {
+      let rp;
+      if (scene.kind === 'egg') rp = h.inner ? pal.inner : eggMark(scene, h) ? pal.mark : pal.egg;
+      else rp = bodyRamp(scene, pal, h);
+      const L = h.light;
+      let band = L < 0.18 ? 1 : L < 0.45 ? 2 : L < 0.8 ? 3 : 4;
+      const gloss = scene.kind === 'egg' ? scene.look.gloss : scene.ph.gloss;
+      if (gloss > 0.25 && h.spec > 0.985 - gloss * 0.04) band = 5;
+      return { rgb: rp[band], ink: rp[0] };
+    },
+    inkEdges: true,
+  });
+  registerStyle('inside', { shade: () => ({ rgb: [42, 36, 46], ink: [42, 36, 46] }), inkEdges: false });
+  registerStyle('flat', { shade: (scene, pal) => ({ rgb: scene.kind === 'egg' ? pal.egg[3] : [128, 78, 168], ink: [128, 78, 168] }), inkEdges: false });
+  registerStyle('pieces', {
+    // The video's "smooth union" view: every pixel coloured by where along the body it is (tail -> head rainbow).
+    shade(scene, pal, h) {
+      const order = { tail: 0, torso: 1, neck: 2, head: 3 };
+      const pr = h.q.src;
+      const t = h.q.piece in order ? (order[h.q.piece] + pr.t0 + (pr.t1 - pr.t0) * Math.max(0, Math.min(1, h.fc.along / (h.q.len || 1)))) / 4 : 0.35;
+      const base = hsl(200 + 300 * t, 0.75, 0.62);
+      const lit = 0.75 + 0.35 * h.light;
+      return { rgb: base.map((c) => Math.min(255, c * lit)), ink: base.map((c) => c * 0.4) };
+    },
+    inkEdges: false,
+  });
+
+  function eggMark(scene, h) {
+    const e = scene.look;
+    const lx = h.fc.along, ly = h.fc.up, lz = h.fc.side;
+    const H = 0.34;
+    const a = lx / H, ang = Math.atan2(lz, ly);
+    const f = 4 + 8 * e.markScale;
+    if (e.marks === 'speckles') return vnoise(lx * f * 9, ly * f * 9, lz * f * 9) > 0.86 - e.markAmount * 0.08;
+    if (e.marks === 'spots') return vnoise(lx * f * 5 + 5, ly * f * 5, lz * f * 5) > 0.8 - e.markAmount * 0.18;
+    if (e.marks === 'zigzag') { const z = 0.12 * (Math.abs(((ang / (Math.PI * 2)) * 10) % 2 - 1) * 2 - 1); return Math.abs(a - 0.1 - z) < 0.07 + 0.06 * e.markAmount; }
+    if (e.marks === 'bands') return Math.sin(a * (5 + 6 * e.markScale)) > 1 - e.markAmount * 0.8;
+    return false;
+  }
+
+  // ---------- the renderer ----------
+  // scene: from CreatureBody.build/buildEgg (plus .ph for creatures). cam: { w, h, px, yaw, pitch, center }.
+  // opts: { style, shadow: true, background: null | [r,g,b] }. Returns { w, h, rgba, depth, mask, stats }.
+  function render(scene, camIn, opts) {
+    opts = opts || {};
+    const cam = camera(camIn);
+    const style = styles[opts.style || 'gochi'] || styles.gochi;
+    const W = cam.w, H = cam.h, N = W * H;
+    const rgba = new Uint8ClampedArray(N * 4), depth = new Float32Array(N).fill(Infinity), mask = new Uint8Array(N);
+    const ink = new Array(N), info = new Array(N);
+    const list = scene.prims.map(prep);
+    const pal = palette(scene);
+    if (!scene.patternOffset) {
+      const p = scene.ph ? scene.ph.pattern : { scale: 0, amount: 0 };
+      scene.patternOffset = [p.scale * 97.3 + 3.1, p.amount * 41.7 + 7.7, (scene.ph ? scene.ph.colour.hue : 0) * 0.37 + 1.3];
+    }
+
+    // Which primitives can each pixel's ray touch? (bounding spheres projected onto the grid)
+    const cand = new Array(N);
+    const tRange = new Float32Array(N * 2);
+    for (let i = 0; i < N; i++) { tRange[i * 2] = Infinity; tRange[i * 2 + 1] = -Infinity; }
+    const D = 6; // rays start this far in front of the centre
+    list.forEach((q, idx) => {
+      const bs = q.src.bs, R = bs[3] + q.k2 * 0.6 + cam.px;
+      const pr = project(cam, [bs[0], bs[1], bs[2]]);
+      const rp = R / cam.px;
+      const x0 = Math.max(0, Math.floor(pr.x - rp)), x1 = Math.min(W - 1, Math.ceil(pr.x + rp));
+      const y0 = Math.max(0, Math.floor(pr.y - rp)), y1 = Math.min(H - 1, Math.ceil(pr.y + rp));
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+        const dx = x + 0.5 - pr.x, dy = y + 0.5 - pr.y;
+        if (dx * dx + dy * dy > (rp + 0.75) * (rp + 0.75)) continue;
+        const i = y * W + x;
+        (cand[i] || (cand[i] = [])).push(q);
+        const tc = D + pr.z;
+        if (tc - R < tRange[i * 2]) tRange[i * 2] = tc - R;
+        if (tc + R > tRange[i * 2 + 1]) tRange[i * 2 + 1] = tc + R;
+      }
+    });
+
+    // Light from the upper left, a little toward the viewer.
+    const Lw = B.v.norm(B.v.add(B.v.add(B.v.mul(cam.r, -0.65), B.v.mul(cam.u, 1)), B.v.mul(cam.toCam, 0.55)));
+    const Hv = B.v.norm(B.v.add(Lw, cam.toCam));
+    const eps = cam.px * 0.5;
+    let steps = 0, hits = 0;
+    const fc = { along: 0, up: 0, side: 0, inner: false };
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x, lst = cand[i];
+      if (!lst) continue;
+      // Sort near-to-far is not needed: the union is order-free except for melt amounts; keep the build order.
+      const ox = cam.center[0] + cam.r[0] * (x + 0.5 - W / 2) * cam.px + cam.u[0] * (H / 2 - y - 0.5) * cam.px - cam.d[0] * D;
+      const oy = cam.center[1] + cam.r[1] * (x + 0.5 - W / 2) * cam.px + cam.u[1] * (H / 2 - y - 0.5) * cam.px - cam.d[1] * D;
+      const oz = cam.center[2] + cam.r[2] * (x + 0.5 - W / 2) * cam.px + cam.u[2] * (H / 2 - y - 0.5) * cam.px - cam.d[2] * D;
+      let t = Math.max(0, tRange[i * 2]), tmax = tRange[i * 2 + 1];
+      let hit = false, n = 0;
+      const sorted = lst.length > 1 ? lst.slice().sort((a, b) => list.indexOf(a) - list.indexOf(b)) : lst;
+      while (t <= tmax && n < 96) {
+        const px = ox + cam.d[0] * t, py = oy + cam.d[1] * t, pz = oz + cam.d[2] * t;
+        const d = field(sorted, px, py, pz, null);
+        n++;
+        if (d < eps * 0.35) { hit = true; break; }
+        t += Math.max(d * 0.85, eps * 0.2);
+      }
+      steps += n;
+      if (!hit) continue;
+      hits++;
+      const px = ox + cam.d[0] * t, py = oy + cam.d[1] * t, pz = oz + cam.d[2] * t;
+      // Normal from four samples (tetrahedron).
+      const e = eps * 0.6;
+      const f1 = field(sorted, px + e, py - e, pz - e), f2 = field(sorted, px - e, py - e, pz + e), f3 = field(sorted, px - e, py + e, pz - e), f4 = field(sorted, px + e, py + e, pz + e);
+      const nrm = B.v.norm([f1 - f2 - f3 + f4, -f1 - f2 + f3 + f4, -f1 + f2 - f3 + f4]);
+      const ctx = {};
+      field(sorted, px, py, pz, ctx);
+      const q = sorted[ctx.best];
+      dist(q, px, py, pz, fc);
+      const lam = B.v.dot(nrm, Lw);
+      const h = { q, fc: { along: fc.along, up: fc.up, side: fc.side }, inner: fc.inner, n: nrm, p: [px, py, pz],
+        light: lam * 0.62 + 0.38 * Math.max(0, nrm[1]) + 0.12, spec: B.v.dot(nrm, Hv) };
+      const c = style.shade(scene, pal, h);
+      rgba[i * 4] = c.rgb[0]; rgba[i * 4 + 1] = c.rgb[1]; rgba[i * 4 + 2] = c.rgb[2]; rgba[i * 4 + 3] = 255;
+      depth[i] = t - D; mask[i] = 1; ink[i] = c.ink; info[i] = h;
+    }
+
+    // Ink: outline pixels on the silhouette, and where a piece passes in front of another one far behind it.
+    if (style.inkEdges) {
+      const thr = Math.max(cam.px * 5, 0.07 * (scene.scale || 1));
+      const out = new Uint8Array(N);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (!mask[i]) continue;
+        let edge = false;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const xx = x + dx, yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= W || yy >= H) { edge = true; break; }
+          const j = yy * W + xx;
+          if (!mask[j] || depth[j] - depth[i] > thr) { edge = true; break; }
+        }
+        if (edge) out[i] = 1;
+      }
+      for (let i = 0; i < N; i++) if (out[i]) { const k = ink[i]; rgba[i * 4] = k[0]; rgba[i * 4 + 1] = k[1]; rgba[i * 4 + 2] = k[2]; }
+    }
+
+    // Ground shadow: a flat ellipse under the body, see-through.
+    if (opts.shadow !== false && scene.shadow) {
+      const sh = scene.shadow;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (mask[i]) continue;
+        const ox = cam.center[0] + cam.r[0] * (x + 0.5 - W / 2) * cam.px + cam.u[0] * (H / 2 - y - 0.5) * cam.px;
+        const oy = cam.center[1] + cam.r[1] * (x + 0.5 - W / 2) * cam.px + cam.u[1] * (H / 2 - y - 0.5) * cam.px;
+        const oz = cam.center[2] + cam.r[2] * (x + 0.5 - W / 2) * cam.px + cam.u[2] * (H / 2 - y - 0.5) * cam.px;
+        if (cam.d[1] >= 0) continue;
+        const tt = (sh.y - oy) / cam.d[1];
+        const gx = ox + cam.d[0] * tt, gz = oz + cam.d[2] * tt;
+        const ex = (gx - sh.cx) / sh.rx, ez = (gz - sh.cz) / sh.rz;
+        if (ex * ex + ez * ez < 1) { rgba[i * 4 + 3] = Math.round(255 * (sh.alpha || 0.2)); mask[i] = 2; }
+      }
+    }
+
+    const res = { w: W, h: H, rgba, depth, mask, info, cam, stats: { steps, hits } };
+    if (opts.style == null || opts.style === 'gochi') drawDecals(scene, list, res);
+    return res;
+  }
+
+  // ---------- face marks ----------
+  function put(res, x, y, rgb, a) {
+    x = Math.round(x); y = Math.round(y);
+    if (x < 0 || y < 0 || x >= res.w || y >= res.h) return;
+    const i = y * res.w + x;
+    if (res.mask[i] !== 1) return; // marks only land on the body
+    const k = i * 4, al = a == null ? 1 : a;
+    res.rgba[k] = res.rgba[k] * (1 - al) + rgb[0] * al; res.rgba[k + 1] = res.rgba[k + 1] * (1 - al) + rgb[1] * al; res.rgba[k + 2] = res.rgba[k + 2] * (1 - al) + rgb[2] * al;
+  }
+  // From an anchor inside the head, walk out along dir to the surface.
+  function snap(list, from, dir, maxT) {
+    let t = 0, prev = field(list, from[0], from[1], from[2]);
+    if (prev > 0) return { p: from, ok: true };
+    const step = maxT / 48;
+    for (let k = 0; k < 48; k++) {
+      t += step;
+      const p = [from[0] + dir[0] * t, from[1] + dir[1] * t, from[2] + dir[2] * t];
+      const d = field(list, p[0], p[1], p[2]);
+      if (d >= 0) {
+        let lo = t - step, hi = t;
+        for (let j = 0; j < 10; j++) { const m = (lo + hi) / 2; const q = [from[0] + dir[0] * m, from[1] + dir[1] * m, from[2] + dir[2] * m]; if (field(list, q[0], q[1], q[2]) >= 0) hi = m; else lo = m; }
+        return { p: [from[0] + dir[0] * hi, from[1] + dir[1] * hi, from[2] + dir[2] * hi], ok: true };
+      }
+    }
+    return { ok: false };
+  }
+  // From a point outside, walk in along dir until the surface (for hollow things like the egg shell).
+  function snapIn(list, from, dir, maxT) {
+    const step = maxT / 64;
+    for (let t = 0; t <= maxT; t += step) {
+      const p = [from[0] + dir[0] * t, from[1] + dir[1] * t, from[2] + dir[2] * t];
+      if (field(list, p[0], p[1], p[2]) < 0) return { p, ok: true };
+    }
+    return { ok: false };
+  }
+  function normalAt(list, p, e) {
+    const f = (x, y, z) => field(list, x, y, z);
+    return B.v.norm([f(p[0] + e, p[1], p[2]) - f(p[0] - e, p[1], p[2]), f(p[0], p[1] + e, p[2]) - f(p[0], p[1] - e, p[2]), f(p[0], p[1], p[2] + e) - f(p[0], p[1], p[2] - e)]);
+  }
+  function drawDecals(scene, list, res) {
+    if (!scene.decals || !scene.decals.length) return;
+    const cam = res.cam;
+    const pal = palette(scene);
+    // Snap an anchor to the surface and check it faces the camera and isn't hidden behind another piece.
+    const place = (from, dir) => {
+      const sn = snap(list, from, dir, 1.5);
+      if (!sn.ok) return null;
+      const facing = B.v.dot(normalAt(list, sn.p, cam.px * 0.5), cam.toCam);
+      const pr = project(cam, sn.p);
+      const i = Math.round(pr.y) * res.w + Math.round(pr.x);
+      const vis = facing > 0.05 && pr.x >= 0 && pr.y >= 0 && pr.x < res.w && pr.y < res.h && res.mask[i] === 1 && pr.z <= res.depth[i] + cam.px * 3;
+      return { sx: pr.x, sy: pr.y, facing, vis, p: sn.p };
+    };
+    const placed = [];
+    for (const dc of scene.decals) {
+      if (dc.kind === 'crack') { drawCrack(scene, list, res, dc); continue; }
+      if (dc.pts) {
+        const pts = dc.pts.map((a) => place(a.from, a.dir));
+        const mid = pts[1] || pts.find(Boolean);
+        if (!mid) continue;
+        placed.push(Object.assign({}, dc, mid, { pts, vis: pts.some((q) => q && q.vis) }));
+        continue;
+      }
+      const q = place(dc.from, dc.dir);
+      if (q) placed.push(Object.assign({}, dc, q));
+    }
+    res.decals = placed;
+    const eyes = placed.filter((d) => d.kind === 'eye');
+    const ink = pal.body ? pal.body[0] : [30, 20, 30];
+    // blush first, then eyes, then the mouth
+    for (const d of placed) if (d.kind === 'blush' && d.vis) {
+      const rp = Math.max(1, d.r / cam.px);
+      const rx = rp * 1.1 * Math.max(0.45, d.facing), ry = Math.max(0.6, rp * 0.45);
+      for (let y = -Math.ceil(ry); y <= Math.ceil(ry); y++) for (let x = -Math.ceil(rx); x <= Math.ceil(rx); x++)
+        if ((x / rx) ** 2 + (y / ry) ** 2 <= 1) put(res, d.sx + x, d.sy + y, [242, 128, 150], 0.55 * Math.min(1, d.amount * 1.2));
+    }
+    for (const d of eyes) if (d.vis) {
+      const other = eyes.find((e) => e !== d);
+      const inner = other ? Math.sign(other.sx - d.sx) || 1 : 1;
+      drawEye(res, d, cam, inner, ink);
+    }
+    for (const d of placed) if (d.kind === 'mouth' && d.vis) drawMouth(res, d, ink);
+  }
+
+  function line(res, x0, y0, x1, y1, c) {
+    const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 1.5));
+    for (let k = 0; k <= n; k++) put(res, x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n, c);
+  }
+
+  function drawEye(res, d, cam, inner, ink) {
+    const rp = Math.max(1.4, d.r / cam.px);
+    const sq = Math.max(0.42, Math.pow(Math.max(0, d.facing), 0.6));
+    const rx = Math.max(0.6, rp * sq), ry = Math.max(0.8, rp * (1.05 + 0.15 * d.round - 0.35 * d.slant));
+    const dark = [26, 18, 30], white = [250, 246, 238];
+    const cx = d.sx, cy = d.sy;
+    const ex = d.expression;
+    if (d.blink > 0.5 || ex === 'sleepy') {
+      line(res, cx - rx, cy + (ex === 'sleepy' ? 0 : 0), cx + rx, cy + (ex === 'sleepy' ? 0.6 : 0), dark);
+      return;
+    }
+    if (ex === 'happy') {
+      line(res, cx - rx, cy + ry * 0.3, cx, cy - ry * 0.5, dark); line(res, cx, cy - ry * 0.5, cx + rx, cy + ry * 0.3, dark);
+      return;
+    }
+    const surprised = ex === 'surprised';
+    const angry = ex === 'angry' || d.slant > 0.55;
+    const R = surprised ? 1.15 : 1;
+    for (let y = -Math.ceil(ry * R); y <= Math.ceil(ry * R); y++) for (let x = -Math.ceil(rx * R); x <= Math.ceil(rx * R); x++) {
+      const e = (x / (rx * R)) ** 2 + (y / (ry * R)) ** 2;
+      if (e > 1.05) continue;
+      // A slanted brow cuts the top of the eye on the inner side (angry / scary).
+      if (angry && y < -ry * 0.2 + (x * inner) * 0.55 * (0.6 + d.slant)) continue;
+      let c = dark;
+      if (surprised) c = e < 0.3 ? dark : white;
+      else if (d.glow > 0.35 && e < 0.6 && rp >= 1.5) c = [235, 70 + 60 * (1 - d.glow), 60];
+      put(res, cx + x, cy + y, c);
+    }
+    // Highlights: big round cute eyes get two glints.
+    if (!surprised && rp >= 1.2 && !(d.glow > 0.35)) {
+      put(res, cx - Math.max(0, rx * 0.35) * inner * -1 - 0.2, cy - ry * 0.4, white);
+      if (d.round > 0.4 && rp >= 2.4) { put(res, cx - rx * 0.35 * -inner + 1, cy - ry * 0.4, white); put(res, cx + rx * 0.3 * -inner, cy + ry * 0.45, white, 0.8); }
+    }
+    if (angry) line(res, cx - rx * inner * 1.1, cy - ry * 1.0 - 0.5 - 0.5 * inner * 0, cx + rx * inner * 0.9, cy - ry * 0.1 - 1, ink);
+  }
+
+  // The mouth: a line from the visible jaw corner(s) through the chin. A smile lifts the corners, anger drops them.
+  function drawMouth(res, d, ink) {
+    const ex = d.expression;
+    const chin = d.pts[1];
+    if (ex === 'surprised') {
+      if (chin && chin.vis) for (const [x, y] of [[0, 0], [1, 0], [0, 1], [1, 1]]) put(res, chin.sx + x, chin.sy + y, [40, 20, 30]);
+      return;
+    }
+    const smile = ex === 'happy' ? 1 : ex === 'angry' ? -0.8 : ex === 'sleepy' ? 0 : d.smile;
+    const vis = d.pts.map((q, i) => (q && q.vis ? { x: q.sx, y: q.sy - (i === 1 ? 0 : smile * 1.4), mid: i === 1 } : null)).filter(Boolean);
+    if (vis.length === 1) { line(res, vis[0].x - 1, vis[0].y, vis[0].x + 1, vis[0].y, ink); return; }
+    for (let i = 0; i + 1 < vis.length; i++) line(res, vis[i].x, vis[i].y, vis[i + 1].x, vis[i + 1].y, ink);
+    if (d.fangs > 0.35) {
+      const len = d.fangs > 0.75 ? 2 : 1;
+      for (let i = 0; i + 1 < vis.length; i++) {
+        const a = vis[i], b = vis[i + 1], f = a.mid ? 0.3 : 0.7;
+        const x = a.x + (b.x - a.x) * f, y = a.y + (b.y - a.y) * f;
+        for (let k = 1; k <= len; k++) put(res, x, y + k, [246, 242, 226]);
+      }
+    }
+  }
+
+  function drawCrack(scene, list, res, dc) {
+    const cam = res.cam;
+    const n = 80, H = dc.H;
+    const span = Math.PI * 2 * Math.min(1, dc.amount);
+    const start = Math.atan2(cam.toCam[2], cam.toCam[0]) - span / 2;
+    let last = null;
+    for (let k = 0; k <= n; k++) {
+      const a = start + span * (k / n);
+      const zig = H * 0.07 * (Math.abs(((k / n) * span / (Math.PI * 2) * 14) % 2 - 1) * 2 - 1);
+      const y = dc.center[1] + 0.25 * H + zig;
+      const dir = [Math.cos(a), 0, Math.sin(a)];
+      const sn = snapIn(list, [dir[0] * 0.6, y, dir[2] * 0.6], [-dir[0], 0, -dir[2]], 0.6);
+      if (!sn.ok) continue;
+      const pr = project(cam, sn.p);
+      const i = Math.round(pr.y) * res.w + Math.round(pr.x);
+      if (pr.x < 0 || pr.y < 0 || pr.x >= res.w || pr.y >= res.h || res.mask[i] !== 1 || pr.z > res.depth[i] + cam.px * 2) { last = null; continue; }
+      if (last) {
+        const m = Math.max(1, Math.ceil(Math.hypot(pr.x - last.x, pr.y - last.y) * 1.5));
+        for (let j = 0; j <= m; j++) put(res, last.x + (pr.x - last.x) * j / m, last.y + (pr.y - last.y) * j / m, [60, 44, 40]);
+      }
+      last = pr;
+    }
+  }
+
+  // Shadow and framing helpers for a built scene.
+  function withShadow(scene) {
+    if (scene.kind === 'egg') { scene.shadow = { cx: 0, cz: 0, rx: 0.3, rz: 0.24, y: 0, alpha: 0.2 }; return scene; }
+    const L = scene.layout;
+    let xmin = Infinity, xmax = -Infinity, zmax = 0;
+    for (const p of scene.prims) if (p.piece === 'torso' || p.piece === 'foot' || p.piece === 'head') {
+      xmin = Math.min(xmin, p.bs[0] - p.bs[3] * 0.7); xmax = Math.max(xmax, p.bs[0] + p.bs[3] * 0.7); zmax = Math.max(zmax, Math.abs(p.bs[2]) + p.bs[3] * 0.6);
+    }
+    const lift = scene.lift || 0;
+    scene.shadow = { cx: (xmin + xmax) / 2, cz: 0, rx: Math.max(0.1, (xmax - xmin) / 2 * 0.8) * (1 - Math.min(0.5, lift)), rz: Math.max(0.08, zmax * 1.05, (xmax - xmin) * 0.3) * (1 - Math.min(0.5, lift)), y: 0, alpha: 0.22 - Math.min(0.12, lift * 0.3) };
+    return scene;
+  }
+
+  // A creature scene ready to render: body + phenotype + shadow.
+  function creatureScene(ph, pose) {
+    const scene = B.build(ph, pose || {});
+    scene.ph = ph;
+    scene.lift = (pose && pose.lift) || 0;
+    // Hopping or flying lifts the whole body (feet too) off the ground; the shadow stays on the ground.
+    if (scene.lift) {
+      const up = (p) => [p[0], p[1] + scene.lift, p[2]];
+      for (const p of scene.prims) { p.a = up(p.a); if (p.b) p.b = up(p.b); if (p.c) p.c = up(p.c); p.bs = [p.bs[0], p.bs[1] + scene.lift, p.bs[2], p.bs[3]]; }
+      for (const d of scene.decals) { d.from = up(d.from); if (d.pts) d.pts = d.pts.map((q) => ({ from: up(q.from), dir: q.dir })); }
+    }
+    return withShadow(scene);
+  }
+  function eggScene(look, pose) { return withShadow(B.buildEgg(look, pose || {})); }
+
+  // A camera that frames a scene in a w x h grid. Fixed `px` (world units per pixel) keeps sizes honest across levels,
+  // so a baby looks small next to its adult self; `fit: true` instead zooms the scene to fill the grid.
+  function frameCamera(scene, w, h, o) {
+    o = o || {};
+    const base = { w, h, px: o.px || 0.0125, yaw: o.yaw != null ? o.yaw : 1.0, pitch: o.pitch != null ? o.pitch : 0.45 };
+    const cam = camera(Object.assign({}, base, { center: [0, 0, 0] }));
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    const pts = scene.prims.map((p) => p.bs).concat(scene.shadow ? [[scene.shadow.cx - scene.shadow.rx, 0, 0, 0], [scene.shadow.cx + scene.shadow.rx, 0, 0, 0]] : []);
+    for (const b of pts) {
+      const rx = B.v.dot(b, cam.r), uy = B.v.dot(b, cam.u), R = b[3];
+      x0 = Math.min(x0, rx - R); x1 = Math.max(x1, rx + R); y0 = Math.min(y0, uy - R); y1 = Math.max(y1, uy + R);
+    }
+    let cu;
+    if (o.fit) {
+      base.px = Math.max((x1 - x0) / (w * 0.88), (y1 - y0) / (h * 0.88));
+      cu = (y0 + y1) / 2;
+    } else cu = ((o.groundRow != null ? o.groundRow : h * 0.8) - h / 2) * base.px; // the ground origin sits on groundRow
+    base.center = B.v.add(B.v.mul(cam.r, (x0 + x1) / 2), B.v.mul(cam.u, cu));
+    return base;
+  }
+
+  // Paint a render result onto a 2D canvas context at (x, y) with an integer pixel size.
+  function blit(ctx2d, res, x, y, size) {
+    const img = ctx2d.createImageData(res.w, res.h);
+    img.data.set(res.rgba);
+    if (size === 1) { ctx2d.putImageData(img, x, y); return; }
+    const off = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(res.w, res.h) : Object.assign(document.createElement('canvas'), { width: res.w, height: res.h });
+    off.getContext('2d').putImageData(img, 0, 0);
+    ctx2d.imageSmoothingEnabled = false;
+    ctx2d.drawImage(off, x, y, res.w * size, res.h * size);
+  }
+
+  const api = { render, camera, project, styles, registerStyle, palette, ramp, hsl, vnoise, smin, field, prep, dist, withShadow, blit, creatureScene, eggScene, frameCamera };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.CreatureRender = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/* Creatures prototype: procedural motion, as the video describes it (step 6). Nobody animates the walk:
+   - feet stay planted until the body gets too far ahead, then step (diagonal pairs take turns);
+   - the tail swings on a spring;
+   - wings only lift the body when they are big enough for it; too small and it doesn't fly, it tries anyway.
+   Plus the pet-sim extras: breathing, blinking, looking around, a happy hop. No DOM. */
+(function (root) {
+  'use strict';
+  const B = typeof module !== 'undefined' && module.exports ? require('./body.js') : root.CreatureBody;
+
+  const STRIDE = 0.55;          // a foot steps when it is this far (x leg length) behind/ahead of where it wants to be
+  const STEP_TIME = 0.22;       // seconds per step
+  const STEP_HEIGHT = 0.35;     // foot lift during a step (x foot size x 4)
+  const WALK_SPEED = 0.32;      // body lengths... in world units per second at scale 1
+  const FLY_RATIO = 0.9;        // wing area / body size needed to lift off
+  const TAIL_STIFF = 26, TAIL_DAMP = 4.5;
+
+  // How well the wings could carry this body (the video's "wings only lift a body when they're big enough").
+  function wingLift(ph) {
+    if (!ph.wings || ph.wings.size <= 0) return 0;
+    const wingArea = ph.wings.size * (0.6 + 0.8 * ph.wings.span);
+    const bodySize = Math.max(...ph.torso.rings.map((r) => r.w * r.h)) * 18 * ph.torso.length + 0.3 * Math.max(...ph.head.rings.map((r) => r.w));
+    return wingArea / Math.max(0.05, bodySize);
+  }
+  function canFly(ph) { return wingLift(ph) >= FLY_RATIO; }
+
+  function createWalker(ph, seed, opts) {
+    opts = opts || {};
+    const L = B.layout(ph);
+    const rnd = mulberry(seed >>> 0 || 1);
+    return {
+      L, ph, rnd, time: 0, progress: 0, dir: 1, x: opts.x || 0, walking: false, idleFor: 1 + rnd() * 2, walkFor: 0,
+      feet: L.feet.map((f) => ({ p: f.slice(), from: f.slice(), to: f.slice(), t: 1, stepping: false })),
+      tail: { a: 0, v: 0, lift: 0, lv: 0 }, blinkIn: 1.5 + rnd() * 3, blink: 0, look: 0, lookTo: 0, lookIn: 2,
+      lift: 0, flap: 0, flying: false, tries: 0, hop: 0, hopV: 0,
+    };
+  }
+  function mulberry(a) { return function () { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+  // Advance the walker by dt seconds inside [minX, maxX] (world units). Returns the pose for CreatureBody.build plus
+  // where to draw it: { pose, x, dir, lift }. opts: { reduced: true } stops walking and hopping (Reduced motion).
+  function step(w, dt, minX, maxX, opts) {
+    opts = opts || {};
+    dt = Math.min(0.1, Math.max(0, dt));
+    w.time += dt;
+    const s = w.L.s;
+    const reduced = !!opts.reduced;
+    const moving = !reduced && opts.walk !== false;
+
+    // Decide: idle a while, then walk a while; turn round at the edges.
+    if (w.walking) { w.walkFor -= dt; if (w.walkFor <= 0 || !moving) { w.walking = false; w.idleFor = 1.5 + w.rnd() * 4; } }
+    else { w.idleFor -= dt; if (w.idleFor <= 0 && moving) { w.walking = true; w.walkFor = 2 + w.rnd() * 5; if (w.rnd() < 0.3) turn(w); } }
+    const speed = WALK_SPEED * s * (w.L.feet.length ? 1 : 0.45);
+    const fly = canFly(w.ph);
+    let v = 0;
+    if (w.walking) {
+      v = speed;
+      const nx = w.x + w.dir * v * dt;
+      if (nx < minX || nx > maxX) { turn(w); v = 0; } else { w.x = nx; w.progress += v * dt; }
+    }
+
+    // Feet: planted in the world, so in body space they slide back as the body moves forward.
+    for (const f of w.feet) { if (!f.stepping) f.p[0] -= v * dt; }
+    const reach = STRIDE * w.L.legLen;
+    w.feet.forEach((f, i) => {
+      const rest = w.L.feet[i];
+      if (f.stepping) {
+        f.t += dt / STEP_TIME;
+        const t = Math.min(1, f.t), e = t * t * (3 - 2 * t);
+        f.p = [f.from[0] + (f.to[0] - f.from[0]) * e, rest[1] + Math.sin(Math.PI * t) * STEP_HEIGHT * w.L.footR * 4, f.from[2] + (f.to[2] - f.from[2]) * e];
+        if (t >= 1) { f.stepping = false; f.p = f.to.slice(); }
+        return;
+      }
+      const off = Math.abs(f.p[0] - rest[0]);
+      // Diagonal gait: a foot waits while its neighbours on the same side or across the same pair are stepping.
+      const pair = Math.floor(i / 2), side = i % 2;
+      const busy = w.feet.some((g, j) => g.stepping && j !== i && (Math.floor(j / 2) === pair || (j % 2 === side && Math.abs(Math.floor(j / 2) - pair) === 1)));
+      if ((off > reach || (!w.walking && off > reach * 0.15)) && !busy) {
+        f.stepping = true; f.t = 0; f.from = f.p.slice();
+        // Land a little ahead of rest when walking, so the next step comes at the same rhythm.
+        f.to = [rest[0] + (w.walking ? reach * 0.6 : 0), rest[1], rest[2]];
+      }
+    });
+
+    // Flying or trying: big enough wings lift off now and then; small ones flap hard and hop.
+    let wingFlap = Math.sin(w.time * 1.3) * 0.05;
+    if (w.ph.wings && w.ph.wings.size > 0 && !reduced) {
+      if (!w.flying && !w.tries && w.rnd() < dt * 0.06) { if (fly) w.flying = 3 + w.rnd() * 4; else w.tries = 1.4; }
+      if (w.flying) { w.flying = Math.max(0, w.flying - dt); wingFlap = Math.sin(w.time * 11) * 0.7; }
+      if (w.tries) { w.tries = Math.max(0, w.tries - dt); wingFlap = Math.sin(w.time * 22) * 0.8; if (w.hop === 0 && w.hopV === 0) w.hopV = 0.6 * s; }
+    }
+    const liftTarget = w.flying ? 0.28 * s + Math.sin(w.time * 2.2) * 0.03 * s : 0;
+    w.lift += (liftTarget - w.lift) * Math.min(1, dt * 2.5);
+
+    // A little hop: on request (a level-up), or now and then when happy.
+    if (opts.hop && w.hop === 0 && w.hopV === 0 && !reduced) w.hopV = 0.8 * s;
+    if (w.hopV !== 0 || w.hop > 0) {
+      w.hop += w.hopV * dt; w.hopV -= 6 * s * dt;
+      if (w.hop <= 0) { w.hop = 0; w.hopV = 0; }
+    }
+
+    // Tail on a spring: it lags behind turns and starts/stops, and sways a bit on its own.
+    const tailTarget = Math.sin(w.time * (w.walking ? 5.5 : 1.6)) * (w.walking ? 0.22 : 0.12) * (reduced ? 0.3 : 1);
+    w.tail.v += (TAIL_STIFF * (tailTarget - w.tail.a) - TAIL_DAMP * w.tail.v) * dt;
+    w.tail.a += w.tail.v * dt;
+    const liftT = (w.walking ? 0.12 : 0) + (w.flying ? -0.2 : 0);
+    w.tail.lv += (TAIL_STIFF * 0.6 * (liftT - w.tail.lift) - TAIL_DAMP * w.tail.lv) * dt;
+    w.tail.lift += w.tail.lv * dt;
+
+    // Blink every few seconds; look around now and then.
+    w.blinkIn -= dt;
+    if (w.blinkIn <= 0) { w.blink = 0.13; w.blinkIn = 2 + w.rnd() * 4; }
+    w.blink = Math.max(0, w.blink - dt);
+    w.lookIn -= dt;
+    if (w.lookIn <= 0) { w.lookTo = (w.rnd() - 0.5) * 0.7; w.lookIn = 1.5 + w.rnd() * 3; }
+    w.look += (w.lookTo - w.look) * Math.min(1, dt * (reduced ? 1 : 4));
+
+    // Tuck the feet up while flying.
+    const feet = w.feet.map((f, i) => (w.lift > 0.02 * s ? [w.L.feet[i][0] - 0.03 * s, w.L.feet[i][1] + w.lift * 0.6, w.L.feet[i][2]] : f.p.slice()));
+    const pose = {
+      breathe: Math.sin(w.time * (reduced ? 1.2 : 2.2)), lookYaw: w.look, tailSway: w.tail.a, tailLift: w.tail.lift,
+      wingFlap, feet, blink: w.blink > 0 ? 1 : 0, lift: w.lift + w.hop,
+    };
+    return { pose, x: w.x, dir: w.dir, lift: pose.lift, flying: !!w.flying, trying: !!w.tries };
+  }
+  function turn(w) {
+    w.dir = -w.dir;
+    w.feet.forEach((f, i) => { f.p = w.L.feet[i].slice(); f.stepping = false; });
+  }
+
+  const api = { createWalker, step, wingLift, canFly, STRIDE, STEP_TIME, FLY_RATIO, WALK_SPEED };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.CreatureMotion = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/* Creature Hatchery: the page. Eggs, hatching, the temperament slider, a level preview, gene sliders, the genome as a
+   list of numbers, breeding, and a collection. Rendering and motion live in render.js and motion.js.
+   URL: ?seed=<s> starts from that egg; &level=<1-100> &temperament=<-1..1> &hatched=1 show the creature; &pause=1 holds
+   still (for screenshots); &view=inside|flat|pieces; &back=night|paper|peach|clear; &test=1 runs the self-checks. */
+(function () {
+  'use strict';
+  const G = window.CreatureGenome, R = window.CreatureRender, M = window.CreatureMotion;
+  const $ = (id) => document.getElementById(id);
+  const params = new URLSearchParams(location.search);
+  const TEST = params.get('test') === '1';
+  const PAUSE = params.get('pause') === '1' || TEST;
+  const reducedMotion = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
+
+  const STAGE_W = 240, STAGE_H = 140, GROUND = 118;      // stage grid (logical pixels) and the ground row
+  const SPRITE_W = 150, SPRITE_H = 120, SPRITE_GROUND = 100;
+  const SPRITE_FPS = 12;                                   // the video's creatures animate on a slow pixel-art clock
+  const HATCH = { wobble: 1.2, crack: [0.5, 1.7], open: [1.7, 2.3], baby: 2.1, fade: [2.4, 3.2] };
+  const GALLERY_KEY = 'creature-hatchery-v1', GALLERY_MAX = 40;
+  const BACKS = { night: [42, 38, 56], paper: [240, 232, 216], peach: [251, 214, 190], clear: null };
+  const FACES = ['neutral', 'happy', 'angry', 'sleepy', 'surprised'];
+  const VIEWS = [['gochi', 'Finished'], ['pieces', 'Melted pieces'], ['flat', 'One colour'], ['inside', 'Inside?']];
+  // Gene sliders: [label, gene or special, kind]. Specials scale whole pieces.
+  const SLIDERS = [
+    ['Body size', '*body'], ['Head size', '*head'], ['Head length', 'head.length'], ['Neck', 'neck.length'], ['Tail', 'tail.length'],
+    ['Leg pairs', 'legs.pairs'], ['Leg length', 'legs.length'], ['Eyes', 'eyes.size'], ['Horns', 'horns.count'], ['Horn length', 'horns.length'],
+    ['Wings', 'wings.size'], ['Ears', 'ears.kind'], ['Decor', 'decor.kind'], ['Colour', 'colour.hue'], ['Saturation', 'colour.sat'],
+    ['Pattern', 'pattern.kind'], ['Pattern amount', 'pattern.amount'], ['Melt (fluff)', 'fluff'], ['Gloss', 'gloss'],
+  ];
+  const INTEGER_GENES = new Set(['legs.pairs', 'horns.count', 'ears.kind', 'decor.kind', 'pattern.kind', 'wings.fingers']);
+
+  const S = {
+    creature: null, overrides: {}, special: { body: 1, head: 1 }, temperament: 0, level: 1, expression: 'neutral',
+    repair: true, view: params.get('view') || 'gochi', walk: !PAUSE, back: params.get('back') || 'night',
+    phase: 'egg', hatchT: 0, gallery: [], picks: [], current: -1, reveal: null, cam: null, ph: null, walker: null,
+  };
+
+  // ---------- storage (per-viewer convenience only; the page works without it) ----------
+  function loadGallery() {
+    if (TEST) return [];
+    try { const v = JSON.parse(localStorage.getItem(GALLERY_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+  }
+  function saveGallery() {
+    if (TEST) return;
+    try { localStorage.setItem(GALLERY_KEY, JSON.stringify(S.gallery.slice(-GALLERY_MAX))); } catch (e) { /* storage off */ }
+  }
+
+  // ---------- the creature as shown ----------
+  function overridesFor(c) {
+    const g = G.genotype(c), o = Object.assign({}, S.overrides);
+    for (const [piece, f] of [['torso', S.special.body], ['head', S.special.head]]) {
+      if (f === 1) continue;
+      for (let i = 0; i < G.RINGS[piece]; i++) for (const k of ['width', 'height']) {
+        const n = piece + '.rings[' + i + '].' + k;
+        o[n] = (o[n] != null ? o[n] : g[n]) * f;
+      }
+    }
+    return o;
+  }
+  function phenotypeAt(level) {
+    return G.express(S.creature, { overrides: overridesFor(S.creature), temperament: S.temperament, level, repair: S.repair, expression: S.expression });
+  }
+  // Re-derive the body numbers and the camera. The camera is framed on the adult so growing shows as getting bigger.
+  function refresh() {
+    S.ph = phenotypeAt(S.level);
+    const adult = R.creatureScene(phenotypeAt(G.LEVEL_MAX), {});
+    const fit = R.frameCamera(adult, SPRITE_W, SPRITE_H, { fit: true });
+    const egg = R.eggScene(G.eggLook(S.creature), {});
+    const px = Math.max(fit.px, 0.0125);
+    S.cam = R.frameCamera(adult, SPRITE_W, SPRITE_H, { px, groundRow: SPRITE_GROUND });
+    // Keep the camera's horizontal centre on the body origin so walking doesn't jitter.
+    S.eggCam = R.frameCamera(egg, SPRITE_W, SPRITE_H, { px, groundRow: SPRITE_GROUND });
+    const x0 = S.walker ? S.walker.x : 0, dir = S.walker ? S.walker.dir : 1;
+    S.walker = M.createWalker(S.ph, G.hashSeed(String(S.creature.seed)), { x: x0 });
+    S.walker.dir = dir;
+    S.lastFrame = 0;
+    S.dirty = true;
+    updatePanels();
+  }
+
+  function setCreature(c, opts) {
+    opts = opts || {};
+    S.creature = c;
+    S.overrides = opts.overrides || {};
+    S.special = Object.assign({ body: 1, head: 1 }, opts.special || {});
+    S.temperament = opts.temperament != null ? opts.temperament : G.genotype(c).temperament;
+    S.level = opts.level || 1;
+    S.phase = opts.phase || 'egg';
+    S.hatchT = 0;
+    S.walker = null;
+    $('seed').value = c.parents ? '' : String(c.seed);
+    $('temper').value = S.temperament;
+    $('level').value = S.level;
+    buildGeneSliders();
+    refresh();
+  }
+
+  // ---------- eggs, hatching, collection ----------
+  function newEgg(seed) {
+    if (seed == null || seed === '') seed = Math.floor(Math.random() * 1e9).toString(36);
+    S.current = -1;
+    setCreature(G.randomCreature(seed), { phase: 'egg' });
+  }
+  function hatch() {
+    if (S.phase !== 'egg') return;
+    S.phase = 'hatching'; S.hatchT = 0;
+    if (PAUSE || reducedMotion) finishHatch();
+  }
+  function finishHatch() {
+    S.phase = 'creature'; S.level = 1; $('level').value = 1;
+    S.gallery.push(entryOf());
+    S.current = S.gallery.length - 1;
+    saveGallery();
+    refresh(); renderGallery();
+    if (S.walker) S.walker.hopV = 0.8 * S.ph.scale;
+  }
+  function entryOf() {
+    return { creature: S.creature, overrides: S.overrides, special: S.special, temperament: S.temperament, level: S.level };
+  }
+  function syncEntry() {
+    if (S.current < 0 || !S.gallery[S.current]) return;
+    S.gallery[S.current] = entryOf();
+    saveGallery();
+    renderGallery();
+  }
+  function breedPicks() {
+    if (S.picks.length !== 2) return;
+    const [a, b] = S.picks.map((i) => S.gallery[i].creature);
+    const child = G.breed(a, b, Math.floor(Math.random() * 1e9).toString(36));
+    S.picks = []; S.current = -1;
+    setCreature(child, { phase: 'egg' });
+    renderGallery();
+  }
+
+  // ---------- drawing ----------
+  const stage = $('stage'), sctx = stage.getContext('2d');
+  sctx.imageSmoothingEnabled = false;
+  const sprite = document.createElement('canvas'); sprite.width = SPRITE_W; sprite.height = SPRITE_H;
+  const spctx = sprite.getContext('2d');
+
+  function drawBackdrop() {
+    const b = BACKS[S.back];
+    if (!b) { // a checkerboard shows the sprite really is see-through
+      for (let y = 0; y < STAGE_H; y += 8) for (let x = 0; x < STAGE_W; x += 8) {
+        sctx.fillStyle = ((x + y) / 8) % 2 ? '#d9d4de' : '#f2eef5'; sctx.fillRect(x, y, 8, 8);
+      }
+      return;
+    }
+    sctx.fillStyle = 'rgb(' + b.join(',') + ')'; sctx.fillRect(0, 0, STAGE_W, STAGE_H);
+    // A faint floor band, like the video's flat colour cards
+    sctx.fillStyle = 'rgba(0,0,0,0.06)'; sctx.fillRect(0, GROUND - 4, STAGE_W, STAGE_H - GROUND + 4);
+  }
+  function putSprite(res, worldX, dir, alpha) {
+    const img = spctx.createImageData(res.w, res.h);
+    const rows = S.reveal != null ? Math.floor(S.reveal) : res.h;
+    if (rows >= res.h) img.data.set(res.rgba);
+    else img.data.set(res.rgba.subarray(0, rows * res.w * 4));
+    spctx.clearRect(0, 0, SPRITE_W, SPRITE_H);
+    spctx.putImageData(img, 0, 0);
+    if (S.reveal != null && rows < res.h) { spctx.fillStyle = '#f6d34a'; spctx.fillRect(0, rows, res.w, 1); }
+    const cam = R.camera(res.cam), o = R.project(cam, [0, 0, 0]);
+    const sx = Math.round(STAGE_W / 2 + worldX / res.cam.px), sy = GROUND - Math.round(o.y);
+    sctx.save();
+    sctx.globalAlpha = alpha == null ? 1 : alpha;
+    if (dir < 0) { sctx.translate(sx + Math.round(o.x), sy); sctx.scale(-1, 1); sctx.drawImage(sprite, 0, 0); }
+    else sctx.drawImage(sprite, sx - Math.round(o.x), sy);
+    sctx.restore();
+  }
+  function renderCreature(pose) {
+    const sc = R.creatureScene(S.ph, pose);
+    return R.render(sc, S.cam, { style: S.view });
+  }
+  function renderEgg(pose) {
+    return R.render(R.eggScene(G.eggLook(S.creature), pose), S.eggCam, { style: S.view === 'gochi' ? 'gochi' : S.view });
+  }
+
+  function frame(dt) {
+    drawBackdrop();
+    const half = (STAGE_W / 2 - 34) * S.cam.px;
+    if (S.phase === 'egg') {
+      const t = performance.now() / 1000;
+      const wob = PAUSE ? 0 : Math.sin(t * 2.2) * 0.05 * (Math.sin(t * 0.7) > 0.6 ? 1 : 0.25);
+      putSprite(renderEgg({ wobble: wob }), 0, 1);
+      return;
+    }
+    if (S.phase === 'hatching') {
+      S.hatchT += dt;
+      const T = S.hatchT, ramp = (a, b) => Math.max(0, Math.min(1, (T - a) / (b - a)));
+      const wob = Math.sin(T * 18) * 0.12 * Math.min(1, T / HATCH.wobble) * (1 - ramp(HATCH.open[0], HATCH.open[1]));
+      const eggPose = { wobble: wob, crack: ramp(HATCH.crack[0], HATCH.crack[1]), open: ramp(HATCH.open[0], HATCH.open[1]) };
+      const fade = 1 - ramp(HATCH.fade[0], HATCH.fade[1]);
+      if (T < HATCH.baby) putSprite(renderEgg(eggPose), 0, 1);
+      else {
+        putSprite(renderEgg(eggPose), -0.12, 1, fade);
+        const st = M.step(S.walker, dt, -half, half, { walk: false, hop: T - dt < HATCH.baby });
+        putSprite(renderCreature(st.pose), st.x, st.dir);
+      }
+      if (T >= HATCH.fade[1]) finishHatch();
+      return;
+    }
+    const st = M.step(S.walker, PAUSE ? 0 : dt, -half, half, { walk: S.walk && !PAUSE, reduced: reducedMotion || PAUSE });
+    const pose = PAUSE ? Object.assign({}, st.pose, { breathe: 0, blink: 0, tailSway: 0, lookYaw: 0, wingFlap: 0 }) : st.pose;
+    putSprite(renderCreature(pose), st.x, st.dir);
+  }
+
+  let last = 0, acc = 0;
+  function loop(now) {
+    const dt = last ? (now - last) / 1000 : 0;
+    last = now; acc += dt;
+    if (S.reveal != null) { S.reveal += dt * SPRITE_H / 1.6; if (S.reveal >= SPRITE_H) S.reveal = null; }
+    const animating = !PAUSE && (S.phase !== 'creature' || S.walk || reducedMotion === false) || S.reveal != null;
+    if ((animating && acc >= 1 / SPRITE_FPS) || S.dirty) {
+      frame(Math.min(0.25, acc));
+      acc = 0; S.dirty = false;
+    }
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- panels ----------
+  function updatePanels() {
+    const c = S.creature, tr = G.traits(c);
+    const stg = G.stageOf(S.level);
+    $('name').textContent = S.phase === 'egg' ? 'Egg' : c.name;
+    $('stageName').textContent = S.phase === 'egg' ? (c.parents ? 'from ' + c.parents.join(' × ') : 'seed ' + c.seed) : 'Lv ' + S.level + ' · ' + stg;
+    $('rarity').textContent = S.phase === 'egg' ? '?' : tr.rarity;
+    $('tval').textContent = (S.temperament >= 0 ? '+' : '') + S.temperament.toFixed(2);
+    $('lval').textContent = S.level + ' · ' + stg;
+    const next = S.level < G.LEVEL_MAX ? G.tokensForLevelUp(S.level) : 0;
+    $('tokens').textContent = 'Hatching takes ' + fmt(G.HATCH_TOKENS) + ' tokens of Claude use. ' + (next
+      ? 'Level ' + S.level + '→' + (S.level + 1) + ' needs ' + fmt(next) + '; level ' + S.level + ' is ' + fmt(G.tokensToReach(S.level)) + ' in, level 100 is ' + fmt(G.tokensToReach(G.LEVEL_MAX)) + '.'
+      : 'Fully grown after ' + fmt(G.tokensToReach(G.LEVEL_MAX)) + ' tokens.');
+    $('hatch').disabled = S.phase !== 'egg';
+    // About tab
+    $('aboutName').textContent = c.name + (S.phase === 'egg' ? ' (still an egg)' : '');
+    $('traits').innerHTML = '';
+    const tags = [tr.rarity].concat(tr.traits);
+    tags.forEach((t, i) => { const s = document.createElement('span'); s.textContent = t; if (i === 0 && t !== 'common') s.className = 'rare'; $('traits').appendChild(s); });
+    const lift = M.wingLift(S.ph);
+    $('flight').textContent = S.ph.wings.size <= 0 ? 'No wings.' : M.canFly(S.ph) ? 'Wings big enough to fly (lift ' + lift.toFixed(2) + ').' :
+      'Wings too small to lift this body (lift ' + lift.toFixed(2) + ' of ' + M.FLY_RATIO + '). It tries anyway.';
+    $('repairs').textContent = S.ph.repairs.length ? 'Repair pass: ' + S.ph.repairs.join('; ') : S.repair ? 'Repair pass: nothing to fix.' : 'Repair pass is off.';
+    $('lineage').textContent = c.parents ? 'Generation ' + c.generation + ', parents ' + c.parents.join(' and ') + '.' : 'Wild egg, seed "' + c.seed + '". Same seed, same creature.';
+    $('edited').textContent = Object.keys(S.overrides).length || S.special.body !== 1 || S.special.head !== 1 ? 'Edited: no longer the plain seed.' : '';
+    renderNumbers();
+    for (const b of $('faces').children) b.classList.toggle('on', b.dataset.v === S.expression);
+    for (const b of $('views').children) b.classList.toggle('on', b.dataset.v === S.view);
+    for (const b of $('backs').children) b.classList.toggle('on', b.dataset.v === S.back);
+    $('walk').classList.toggle('on', S.walk); $('repair').classList.toggle('on', S.repair);
+  }
+  function fmt(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n); }
+
+  // The video's step 1: a creature is a list of numbers, alphabetical.
+  function renderNumbers() {
+    const c = S.creature, g = Object.assign(G.genotype(c), overridesFor(c));
+    const lines = ['<span class="a">generation = ' + c.generation + '</span>'];
+    const names = G.GENE_NAMES.filter((n) => !n.endsWith('.dom')).concat(['temperament']).filter((n, i, a) => a.indexOf(n) === i).sort();
+    for (const n of names) {
+      const val = n === 'temperament' ? S.temperament : g[n];
+      const edited = n === 'temperament' ? Math.abs(S.temperament - G.genotype(c).temperament) > 1e-9 : n in overridesFor(c);
+      const cls = edited ? 'e' : G.expressedCopyIndex(c, G.PIECE[n]) ? 'b' : 'a';
+      lines.push('<span class="' + cls + '">' + n + ' = ' + (Math.round(val * 100) / 100) + '</span>');
+    }
+    $('numbers').innerHTML = lines.join('\n');
+  }
+
+  function buildGeneSliders() {
+    const box = $('genes'); box.innerHTML = '';
+    const g = G.genotype(S.creature);
+    for (const [label, gene] of SLIDERS) {
+      const special = gene[0] === '*';
+      const [min, max] = special ? [0.6, 1.6] : G.GENES[gene];
+      const int = INTEGER_GENES.has(gene);
+      const val = special ? S.special[gene.slice(1)] : (S.overrides[gene] != null ? S.overrides[gene] : g[gene]);
+      const lab = document.createElement('label'); lab.textContent = label;
+      const inp = document.createElement('input');
+      Object.assign(inp, { type: 'range', min: int ? 0 : min, max: int ? Math.floor(max) : max, step: int ? 1 : (max - min) / 200, value: int ? Math.round(val) : val });
+      inp.setAttribute('aria-label', label);
+      inp.dataset.gene = gene;
+      const out = document.createElement('output'); out.textContent = show(gene, val);
+      inp.addEventListener('input', () => {
+        const v = Number(inp.value);
+        if (special) S.special[gene.slice(1)] = v; else S.overrides[gene] = v;
+        out.textContent = show(gene, v);
+        refresh(); syncEntry();
+      });
+      box.append(lab, inp, out);
+    }
+  }
+  function show(gene, v) {
+    if (gene === 'ears.kind') return G.EAR_KINDS[Math.round(v)];
+    if (gene === 'decor.kind') return G.DECOR_KINDS[Math.round(v)];
+    if (gene === 'pattern.kind') return G.PATTERN_KINDS[Math.round(v)];
+    if (gene === 'colour.hue') return Math.round(v) + '°';
+    if (INTEGER_GENES.has(gene)) return String(Math.round(v));
+    return (+v).toFixed(2);
+  }
+
+  const thumbCache = new Map();
+  function thumb(entry) {
+    const key = JSON.stringify([entry.creature.seed, entry.creature.parents, entry.overrides, entry.special, entry.temperament, entry.level]);
+    if (thumbCache.has(key)) return thumbCache.get(key);
+    const saved = { creature: S.creature, overrides: S.overrides, special: S.special, temperament: S.temperament };
+    Object.assign(S, { creature: entry.creature, overrides: entry.overrides || {}, special: entry.special || { body: 1, head: 1 }, temperament: entry.temperament });
+    const ph = phenotypeAt(entry.level || 1);
+    Object.assign(S, saved);
+    const sc = R.creatureScene(ph, {});
+    const res = R.render(sc, R.frameCamera(sc, 44, 44, { fit: true }), {});
+    thumbCache.set(key, res);
+    return res;
+  }
+  function renderGallery() {
+    const box = $('gallery'); box.innerHTML = '';
+    if (!S.gallery.length) { box.innerHTML = '<div class="empty">Nothing hatched yet. Make an egg and hatch it.</div>'; }
+    S.gallery.forEach((e, i) => {
+      const card = document.createElement('div'); card.className = 'cardc' + (i === S.current ? ' cur' : '');
+      const cv = document.createElement('canvas'); cv.width = 44; cv.height = 44;
+      const res = thumb(e);
+      const img = cv.getContext('2d').createImageData(44, 44); img.data.set(res.rgba); cv.getContext('2d').putImageData(img, 0, 0);
+      const n = document.createElement('div'); n.className = 'n'; n.textContent = e.creature.name;
+      const l = document.createElement('div'); l.className = 'l'; l.textContent = 'Lv ' + e.level + ' · ' + G.traits(e.creature).rarity;
+      const pick = document.createElement('button'); pick.textContent = S.picks.includes(i) ? 'parent ✓' : 'pick';
+      pick.classList.toggle('on', S.picks.includes(i));
+      pick.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        S.picks = S.picks.includes(i) ? S.picks.filter((j) => j !== i) : S.picks.concat(i).slice(-2);
+        renderGallery();
+      });
+      card.addEventListener('click', () => {
+        S.current = i;
+        setCreature(e.creature, { overrides: e.overrides, special: e.special, temperament: e.temperament, level: e.level, phase: 'creature' });
+        renderGallery();
+      });
+      card.append(cv, n, l, pick);
+      box.appendChild(card);
+    });
+    $('breed').disabled = S.picks.length !== 2;
+    $('pickNote').textContent = S.picks.length === 2 ? S.picks.map((i) => S.gallery[i].creature.name).join(' + ') + ' = ' + G.breedName(S.gallery[S.picks[0]].creature.name, S.gallery[S.picks[1]].creature.name, G.makeRng('name')) + '?' : 'Pick two to breed.';
+  }
+
+  // ---------- wiring ----------
+  function chips(boxId, items, onPick) {
+    const box = $(boxId);
+    for (const [v, label] of items) {
+      const b = document.createElement('button'); b.textContent = label; b.dataset.v = v;
+      b.addEventListener('click', () => onPick(v));
+      box.appendChild(b);
+    }
+  }
+  chips('faces', FACES.map((f) => [f, f]), (v) => { S.expression = v; refresh(); });
+  chips('views', VIEWS, (v) => { S.view = v; S.dirty = true; updatePanels(); });
+  chips('backs', Object.keys(BACKS).map((k) => [k, k]), (v) => { S.back = v; S.dirty = true; updatePanels(); });
+  chips('tabs', [['genes', 'Genes'], ['numbers', 'Numbers'], ['about', 'About']], (v) => {
+    for (const t of ['genes', 'numbers', 'about']) $('tab-' + t).hidden = t !== v;
+    for (const b of $('tabs').children) b.classList.toggle('on', b.dataset.v === v);
+  });
+  $('tabs').children[0].classList.add('on');
+  $('temper').addEventListener('input', () => { S.temperament = Number($('temper').value); refresh(); syncEntry(); });
+  $('level').addEventListener('input', () => { S.level = Number($('level').value); if (S.phase === 'egg') S.phase = 'creature'; refresh(); syncEntry(); });
+  $('newEgg').addEventListener('click', () => newEgg());
+  $('hatch').addEventListener('click', hatch);
+  $('loadSeed').addEventListener('click', () => newEgg($('seed').value.trim()));
+  $('seed').addEventListener('keydown', (e) => { if (e.key === 'Enter') newEgg($('seed').value.trim()); });
+  $('walk').addEventListener('click', () => { S.walk = !S.walk; updatePanels(); });
+  $('repair').addEventListener('click', () => { S.repair = !S.repair; refresh(); });
+  $('askPixels').addEventListener('click', () => { S.reveal = 0; });
+  $('resetGenes').addEventListener('click', () => { S.overrides = {}; S.special = { body: 1, head: 1 }; buildGeneSliders(); refresh(); syncEntry(); });
+  $('breed').addEventListener('click', breedPicks);
+  $('clearGallery').addEventListener('click', () => { S.gallery = []; S.picks = []; S.current = -1; saveGallery(); renderGallery(); });
+
+  // ---------- start ----------
+  S.gallery = loadGallery().filter((e) => e && e.creature && e.creature.copies);
+  newEgg(params.get('seed') || undefined);
+  if (params.get('temperament') != null) { S.temperament = Number(params.get('temperament')); $('temper').value = S.temperament; }
+  if (params.get('level') || params.get('hatched') === '1') {
+    S.phase = 'creature'; S.level = Math.max(1, Math.min(100, Number(params.get('level')) || 1)); $('level').value = S.level;
+  }
+  if (params.get('face')) S.expression = params.get('face');
+  refresh();
+  renderGallery();
+  requestAnimationFrame(loop);
+
+  // ---------- self-checks (?test=1), read by test/e2e.js ----------
+  const api = { S, newEgg, hatch, finishHatch, breedPicks, refresh, renderCreature, frame };
+  window.CreatureHatchery = api;
+  if (TEST) setTimeout(runChecks, 50);
+
+  function runChecks() {
+    const checks = [];
+    const check = (name, pass, info) => checks.push({ name, pass: !!pass, info: info === undefined ? null : info });
+    const hash = (a) => { let h = 2166136261; for (let i = 0; i < a.length; i++) h = Math.imul(h ^ a[i], 16777619); return h >>> 0; };
+    const seed = params.get('seed') || 'test';
+    try {
+      // Same seed, same creature: twice from scratch.
+      newEgg(seed);
+      const fp1 = G.fingerprint(S.creature);
+      S.phase = 'creature'; S.level = 100; refresh();
+      const h1 = hash(renderCreature({}).rgba);
+      newEgg(seed); S.phase = 'creature'; S.level = 100; refresh();
+      check('seed recreates the creature', fp1 === G.fingerprint(S.creature) && h1 === hash(renderCreature({}).rgba));
+      // The seed field loads the same creature.
+      $('seed').value = seed; $('loadSeed').click();
+      check('seed field loads that egg', S.phase === 'egg' && G.fingerprint(S.creature) === fp1);
+      // Egg shows something, then hatches into a baby that joins the collection.
+      const eggPixels = renderEgg({}).mask.reduce((n, m) => n + (m === 1), 0);
+      check('egg is drawn', eggPixels > 200, eggPixels);
+      const before = S.gallery.length;
+      hatch();
+      check('hatch makes a level 1 baby in the collection', S.phase === 'creature' && S.level === 1 && S.gallery.length === before + 1, { phase: S.phase, n: S.gallery.length });
+      // Every level shows a different picture.
+      let prev = null, same = [];
+      for (let l = 1; l <= 100; l++) { S.level = l; S.ph = phenotypeAt(l); const h = hash(renderCreature({}).rgba); if (h === prev) same.push(l); prev = h; }
+      check('every level changes the picture', same.length === 0, same);
+      // The one slider: cute is paler and has bigger eyes than scary.
+      const lum = (res) => { let s = 0, n = 0; for (let i = 0; i < res.mask.length; i++) if (res.mask[i] === 1) { s += res.rgba[i * 4] + res.rgba[i * 4 + 1] + res.rgba[i * 4 + 2]; n++; } return s / Math.max(1, n); };
+      S.level = 100; S.temperament = -1; refresh(); const scary = renderCreature({}); const scaryPh = S.ph;
+      S.temperament = 1; refresh(); const cute = renderCreature({}); const cutePh = S.ph;
+      check('cute is lighter than scary', lum(cute) > lum(scary), [lum(scary), lum(cute)]);
+      check('cute has bigger eyes, scary has fangs', cutePh.eyes.size > scaryPh.eyes.size && scaryPh.fangs > cutePh.fangs);
+      // A different seed is a different creature.
+      newEgg(seed + '-other'); check('different seed, different creature', G.fingerprint(S.creature) !== fp1);
+      hatch();
+      // Breeding two from the collection lays an egg whose parents are those two.
+      S.picks = [S.gallery.length - 2, S.gallery.length - 1];
+      const names = S.picks.map((i) => S.gallery[i].creature.name);
+      breedPicks();
+      check('breeding lays an egg from the two picks', S.phase === 'egg' && S.creature.parents && S.creature.parents.join() === names.join(), S.creature.parents);
+      // The controls exist.
+      check('controls exist', ['temper', 'level', 'newEgg', 'hatch', 'seed', 'genes', 'gallery'].every((id) => $(id)) && $('genes').querySelectorAll('input').length === SLIDERS.length);
+      // A gene slider changes the creature.
+      S.phase = 'creature'; refresh();
+      const h0 = hash(renderCreature({}).rgba);
+      const inp = $('genes').querySelector('input[data-gene="colour.hue"]');
+      inp.value = (Number(inp.value) + 120) % 360; inp.dispatchEvent(new Event('input'));
+      check('colour slider recolours', hash(renderCreature({}).rgba) !== h0);
+      frame(0.1);
+    } catch (e) { check('no errors', false, String(e && e.stack || e)); }
+    const pass = checks.every((c) => c.pass);
+    $('result').textContent = JSON.stringify({ checks, pass, seed });
+  }
+})();
+
+</script>
+</body>
+</html>

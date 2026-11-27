@@ -5,6 +5,8 @@ Idle games that play themselves from the work your AI agent does: every token sp
 Games:
 - Ant farm: seeded maps with food scattered through them, the ants tunnel to find it. A desktop overlay app fed by Claude Code: [ant-farm](ant-farm/) (`npm install && npm start`). Design: [docs/ant-farm-design.md](docs/ant-farm-design.md). Browser prototype: [prototype/ant-farm](prototype/ant-farm/).
 
+- Creatures (Hatchery): a pet that hatches from an egg and grows over 100 levels from Claude usage, made with the generative-creature technique from the GOCHITAMA video. Web model and design: [creatures](creatures/).
+
 Planned:
 - Tower defense: tokens queue enemies, a bucket releases them in waves.
 - A website where people find, upload and link their own agent idle games.

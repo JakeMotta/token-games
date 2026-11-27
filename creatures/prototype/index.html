@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Creature Hatchery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f3ecdf; --panel: #fffaf1; --line: #e2d6c1; --fg: #2a2433; --dim: #8a7f90; --accent: #f2c84b; --accent-ink: #2a2433;
+    --cute: #ef8fb1; --scary: #d9483b; --good: #5f9b62; --stage: #2a2638; --chip: #efe5d4; --copyA: #b8860b; --copyB: #2f8f5b; --edited: #c2417a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1a1826; --panel: #23202f; --line: #353047; --fg: #ece6f2; --dim: #9188a3; --accent: #f6d34a; --accent-ink: #1a1826;
+      --stage: #2a2638; --chip: #2e2a3d; --copyA: #f6d34a; --copyB: #8fe0a8; --edited: #ff8fc0;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1a1826; --panel: #23202f; --line: #353047; --fg: #ece6f2; --dim: #9188a3; --accent: #f6d34a; --accent-ink: #1a1826;
+    --stage: #2a2638; --chip: #2e2a3d; --copyA: #f6d34a; --copyB: #8fe0a8; --edited: #ff8fc0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  h1, h2, .big { font-family: "Lilita One", system-ui, sans-serif; font-weight: 400; letter-spacing: 0.01em; }
+  h1 { font-size: 26px; margin: 0; }
+  h2 { font-size: 17px; margin: 0 0 8px; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  header p { margin: 0; color: var(--dim); }
+  .grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 14px; }
+  @media (max-width: 860px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; min-width: 0; }
+  #stageBox { position: relative; border-radius: 10px; overflow: hidden; background: var(--stage); }
+  #stage { display: block; width: 100%; image-rendering: pixelated; image-rendering: crisp-edges; aspect-ratio: 240 / 140; }
+  #stageBox .who { position: absolute; left: 10px; top: 8px; color: #fff; font-family: "Lilita One", system-ui; font-size: 18px; text-shadow: 0 2px 0 rgba(0,0,0,.35); }
+  #stageBox .who small { font-family: system-ui; font-size: 12px; opacity: .8; margin-left: 6px; }
+  #stageBox .badge { position: absolute; right: 10px; top: 10px; background: var(--accent); color: var(--accent-ink); border-radius: 8px; padding: 2px 8px; font-weight: 700; font-size: 12px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  button, select, input[type=text] { font: inherit; color: var(--fg); background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 700; }
+  button.on { outline: 2px solid var(--accent); outline-offset: -2px; }
+  button:disabled { opacity: .45; cursor: default; }
+  input[type=text] { width: 9em; }
+  .temper { margin-top: 12px; }
+  .temper .ends { display: flex; justify-content: space-between; font-family: "Lilita One", system-ui; font-size: 15px; }
+  .temper .ends .s { color: var(--scary); } .temper .ends .c { color: var(--cute); }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .lvl { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-top: 8px; }
+  .lvl b { min-width: 6.5em; text-align: right; }
+  .note { color: var(--dim); font-size: 12px; margin: 4px 0 0; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .genes { display: grid; grid-template-columns: 7.5em minmax(0, 1fr) 3.2em; gap: 4px 8px; align-items: center; }
+  .genes label { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .genes output { font-variant-numeric: tabular-nums; text-align: right; font-size: 12px; }
+  #numbers { font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--stage); color: #e9e4f0; border-radius: 8px; padding: 10px; height: 360px; overflow: auto; margin: 0; }
+  #numbers .a { color: #f6d34a; } #numbers .b { color: #8fe0a8; } #numbers .e { color: #ff8fc0; }
+  .legend span { margin-right: 10px; font-size: 12px; }
+  .legend .a { color: var(--copyA); } .legend .b { color: var(--copyB); } .legend .e { color: var(--edited); }
+  .traits { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .traits span { background: var(--chip); border-radius: 999px; padding: 2px 9px; font-size: 12px; }
+  .traits span.rare { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+  #repairs { color: var(--edited); font-size: 12px; }
+  #gallery { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; min-height: 120px; }
+  .cardc { flex: 0 0 auto; width: 104px; border: 1px solid var(--line); border-radius: 10px; padding: 6px; background: var(--chip); cursor: pointer; text-align: center; }
+  .cardc.cur { outline: 2px solid var(--accent); }
+  .cardc canvas { width: 88px; height: 88px; image-rendering: pixelated; display: block; margin: 0 auto; }
+  .cardc .n { font-weight: 700; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cardc .l { font-size: 11px; color: var(--dim); }
+  .cardc button { font-size: 11px; padding: 2px 6px; margin-top: 4px; }
+  .cardc button.on { background: var(--accent); color: var(--accent-ink); }
+  .empty { color: var(--dim); padding: 30px 8px; }
+  #result { display: none; }
+  .steps { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tokens { font-size: 12px; color: var(--dim); margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Creature Hatchery</h1>
+    <p>A working model of the GOCHITAMA creature technique: numbers → rings → one melted body → every pixel asks "am I inside?" → light and ink.</p>
+  </header>
+
+  <div class="grid">
+    <section class="card">
+      <div id="stageBox">
+        <canvas id="stage" width="240" height="140"></canvas>
+        <div class="who"><span id="name">…</span><small id="stageName"></small></div>
+        <div class="badge" id="rarity"></div>
+      </div>
+
+      <div class="temper">
+        <div class="ends"><span class="s">SCARY</span><span id="tval" class="big">0.00</span><span class="c">CUTE</span></div>
+        <input id="temper" type="range" min="-1" max="1" step="0.01" value="0" aria-label="Temperament: scary to cute">
+      </div>
+
+      <div class="lvl">
+        <span>Level</span>
+        <input id="level" type="range" min="1" max="100" step="1" value="1" aria-label="Level">
+        <b id="lval">1 · baby</b>
+      </div>
+      <p class="note">Preview only. In the game, levels come only from real Claude Code usage; there are no buttons that add levels.</p>
+      <div class="tokens" id="tokens"></div>
+
+      <div class="row">
+        <button class="primary" id="newEgg">New egg</button>
+        <button class="primary" id="hatch">Hatch</button>
+        <input id="seed" type="text" aria-label="Seed" placeholder="seed">
+        <button id="loadSeed">Load seed</button>
+        <button id="walk" class="on">Walk</button>
+        <button id="repair" class="on">Repair pass</button>
+      </div>
+      <div class="row">
+        <span class="note" style="margin:0">Face:</span>
+        <div class="steps" id="faces"></div>
+      </div>
+      <div class="row">
+        <span class="note" style="margin:0">View:</span>
+        <div class="steps" id="views"></div>
+        <button id="askPixels">Ask every pixel ▶</button>
+      </div>
+      <div class="row">
+        <span class="note" style="margin:0">Backdrop:</span>
+        <div class="steps" id="backs"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="tabs" id="tabs"></div>
+      <div id="tab-genes">
+        <div class="genes" id="genes"></div>
+        <div class="row"><button id="resetGenes">Reset genes</button><span class="note" style="margin:0" id="edited"></span></div>
+      </div>
+      <div id="tab-numbers" hidden>
+        <div class="legend"><span class="a">■ from copy 1</span><span class="b">■ from copy 2</span><span class="e">■ edited</span></div>
+        <pre id="numbers"></pre>
+      </div>
+      <div id="tab-about" hidden>
+        <h2 id="aboutName"></h2>
+        <div class="traits" id="traits"></div>
+        <p id="flight" class="note"></p>
+        <p id="repairs"></p>
+        <p class="note" id="lineage"></p>
+      </div>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top:14px">
+    <div class="row" style="margin-top:0; justify-content: space-between">
+      <h2 style="margin:0">Collection</h2>
+      <div class="row" style="margin-top:0">
+        <span class="note" style="margin:0" id="pickNote">Pick two to breed.</span>
+        <button id="breed" disabled>Breed → egg</button>
+        <button id="clearGallery">Clear</button>
+      </div>
+    </div>
+    <div id="gallery"></div>
+  </section>
+</div>
+<pre id="result"></pre>
+<script src="genome.js"></script>
+<script src="body.js"></script>
+<script src="render.js"></script>
+<script src="motion.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
