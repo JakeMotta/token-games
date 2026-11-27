@@ -46,7 +46,19 @@ node tools/bundle.js           # rebuild creatures-standalone.html after editing
 
 A second, separate prototype in `prototype-v2/` (Version 1 above is unchanged). Same genome, looks, habitats, eggs, food, hunger, mouths and controls; only the body and legs differ. The body is a chain of joints that follows its head, with distance and angle constraints and a radius per joint. The legs are two-bone FABRIK legs that step when they fall a stride behind. It adds a real light-driven shadow: a sun that sweeps from left to right (a slider and an Auto day cycle), dawn and dusk tints, a dim moon, and a shadow projected from the creature's actual pieces.
 
-- Open `prototype-v2/index.html` (or `prototype-v2/creatures-v2-standalone.html`), and `prototype-v2/compare.html` for both versions side by side with the same seed. Every page links to the others.
+- Open `prototype-v2/index.html` (or `prototype-v2/creatures-v2-standalone.html`). Every page links to the others.
 - [docs/argonaut-technique-analysis.md](docs/argonaut-technique-analysis.md): what argonaut's video shows (frames only, no transcript), the method, formulas, pseudo-code, parameters and open questions.
 - [docs/v2-vs-v1.md](docs/v2-vs-v1.md): how each version works, strengths, weaknesses, performance, what to look for, the lighting model and its commands.
 - [docs/shots-v2](docs/shots-v2/): screenshots (light, dark, sun left, noon and right, night, pixel cave, egg, narrow, compare) and proof sheets.
+
+## Version 3: top-down
+
+A third prototype in `prototype-v3/`: version 2's chain walker seen from straight above, where the bending spine and the stepping feet are the whole picture. The body outline is drawn from each joint's width, with a head and eyes, a tail, the mouth kinds, legs solved by two-bone IK in the plane, and a sun-cast shadow. It keeps the hatching, habitats seen from above, the three looks, food, hunger and the "prototype only" labelling.
+
+- Open `prototype-v3/index.html` (or `prototype-v3/creatures-v3-standalone.html`).
+- [docs/v3-topdown.md](docs/v3-topdown.md): how it is drawn, what it shares with version 2, and its commands.
+- [docs/shots-v3](docs/shots-v3/): screenshots of version 3 and of the compare lab.
+
+## Compare lab
+
+`prototype-v2/compare.html` runs all three versions on one clock with the same seed and the same scripted scenario (S-curve, figure eight, U-turn, spin, speed ramp, stops, long and short bodies, 2 to 8 legs, follow a target), with play, pause, frame steps, 0.1× to 2× speed and a scrubber. A *machinery* toggle per version draws how it works (version 1's rings and gait clock; the chain, angle limits, foot targets and step triggers of versions 2 and 3), with trails, live numbers (foot slide, turn radius, leg crossings, wobble, spine bend, ms per frame), a "what is different" panel with a verdict, and a one-click filmstrip. See "How to see the difference" in [docs/v2-vs-v1.md](docs/v2-vs-v1.md).
