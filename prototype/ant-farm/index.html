@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ant Farm (prototype)</title>
+<style>
+  :root {
+    --ink: #12151d; --sky: #1c212d; --panel: rgba(18, 21, 29, 0.78); --line: #343c4e;
+    --dim: #5a6377; --mid: #8890a3; --fg: #cfd3dc; --accent: #d6ad6a; --warn: #c27b6e; --good: #88a982;
+  }
+  html, body { margin: 0; height: 100%; background: var(--ink); color: var(--fg); overflow: hidden;
+    font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab;
+    image-rendering: pixelated; touch-action: none; }
+  canvas#view.drag { cursor: grabbing; }
+  #hud { position: fixed; left: 8px; top: 8px; right: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    pointer-events: none; }
+  #hud > * { pointer-events: auto; }
+  .tag { background: var(--warn); color: var(--ink); font-weight: 700; letter-spacing: 0.08em; padding: 2px 6px; border-radius: 3px; }
+  #stats { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; color: var(--mid); white-space: nowrap; }
+  #stats b { color: var(--fg); font-weight: 600; }
+  #stats .e { color: var(--accent); }
+  #buttons { display: flex; flex-wrap: wrap; gap: 4px; }
+  button { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+    padding: 3px 8px; cursor: pointer; }
+  button:hover { border-color: var(--mid); }
+  button.on { border-color: var(--accent); color: var(--accent); }
+  #toast { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 4px; padding: 3px 10px; color: var(--accent); opacity: 0; transition: opacity 0.4s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+  #help { position: fixed; right: 8px; bottom: 8px; color: var(--mid); background: var(--panel); border-radius: 4px; padding: 2px 8px; }
+  #result { display: none; }
+  /* Small always-on window: just the farm, a tag and one line of numbers. */
+  @media (max-width: 420px), (max-height: 260px) {
+    #buttons, #help { display: none; }
+    #hud { left: 4px; top: 4px; gap: 4px; }
+    #stats { font-size: 10px; padding: 1px 5px; }
+    .tag { font-size: 9px; padding: 1px 4px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="view" aria-label="Ant farm"></canvas>
+<div id="hud">
+  <span class="tag" title="Not the game yet: a feel test for digging, carrying, collapse and camera">PROTOTYPE</span>
+  <span id="stats"></span>
+  <span id="buttons">
+    <button id="feed" title="Pretend an agent just used 5,000 tokens: energy for digging and food crumbs at the entrance">+5k tokens</button>
+    <button id="task" title="Pretend an agent finished a task: the colony digs a new gallery">Task done</button>
+    <button id="wide" title="Order a gallery wider than the soil can hold up, to watch the ceiling fail">Wide room</button>
+    <button id="auto" class="on" title="Camera follows the whole farm (A or double-click)">Auto camera</button>
+    <button id="speed" title="Simulation speed">1×</button>
+    <button id="reseed" title="Start again on a new seeded map">New seed</button>
+  </span>
+</div>
+<div id="toast"></div>
+<div id="help">wheel: zoom · drag: pan · A / double-click: auto camera</div>
+<pre id="result"></pre>
+<script src="sim.js"></script>
+<script src="camera.js"></script>
+<script>
+(function () {
+  'use strict';
+  const errors = [];
+  window.addEventListener('error', (e) => errors.push(String(e.message || e)));
+
+  const q = new URLSearchParams(location.search);
+  const TEST = q.has('test');
+  const view = document.getElementById('view');
+  const ctx = view.getContext('2d');
+  const statsEl = document.getElementById('stats');
+  const toastEl = document.getElementById('toast');
+
+  let sim, buf, bctx, img, px, cam, auto = true, speed = 1, acc = 0, lastT = 0, lastDraw = 0, toastT = 0, warned = 0;
+  const SPEEDS = [1, 4, 16];
+
+  function start(seed) {
+    sim = AntSim.createSim({ seed });
+    buf = document.createElement('canvas'); buf.width = sim.W; buf.height = sim.H;
+    bctx = buf.getContext('2d');
+    img = bctx.createImageData(sim.W, sim.H);
+    px = new Uint32Array(img.data.buffer);
+    cam = null; auto = true; warned = sim.stats.collapses;
+    document.getElementById('auto').classList.add('on');
+    if (!TEST) history.replaceState(null, '', '?seed=' + seed + (speed > 1 ? '&speed=' + speed : ''));
+  }
+
+  const seed0 = q.has('seed') ? (+q.get('seed') >>> 0) : (Math.random() * 1e6) | 0;
+  start(seed0);
+  if (q.has('speed')) setSpeed(+q.get('speed'));
+  if (q.has('warp')) sim.run(Math.min(200000, +q.get('warp') || 0));
+  if (q.get('demo') === 'collapse') {
+    for (let i = 0; i < 40 && !(sim.royal && sim.royal.done); i++) sim.run(500);
+    sim.feed({ type: 'task_done', width: 30 });
+    // stop on the first crack so the moment is on screen; ?then=N plays N more ticks
+    for (let i = 0; i < 20000 && !sim.strains.length && !sim.stats.collapses; i++) sim.step();
+    sim.run(Math.min(5000, +q.get('then') || 0));
+    setSpeed(4);
+  }
+
+  // ---------- view ----------
+  function size() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const w = Math.max(1, Math.round(view.clientWidth * dpr)), h = Math.max(1, Math.round(view.clientHeight * dpr));
+    if (view.width !== w || view.height !== h) { view.width = w; view.height = h; }
+    return { vw: view.clientWidth, vh: view.clientHeight, dpr };
+  }
+  const WHOLE = q.get('view') === 'all';
+  function autoTarget(vw, vh) {
+    const box = WHOLE ? { x: 0, y: 0, w: sim.W, h: sim.H } : sim.interestBox();
+    return AntCamera.fit(box, vw, vh, { pad: 10, min: 0.5, max: 10 });
+  }
+  function draw() {
+    const { vw, vh, dpr } = size();
+    const target = autoTarget(vw, vh);
+    if (!cam) cam = target;
+    else if (auto) cam = AntCamera.near(cam, target) ? target : AntCamera.lerp(cam, target, 0.12, vw, vh);
+    sim.paint(px);
+    bctx.putImageData(img, 0, 0);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#12151d';
+    ctx.fillRect(0, 0, view.width, view.height);
+    ctx.imageSmoothingEnabled = false;
+    const s = cam.s * dpr;
+    ctx.setTransform(s, 0, 0, s, Math.round(-cam.x * s), Math.round(-cam.y * s));
+    ctx.drawImage(buf, 0, 0);
+    hud();
+  }
+  function hud() {
+    const st = sim.stats, workers = sim.ants.length - (sim.ants.some((a) => a.role === 'queen') ? 1 : 0);
+    if (view.clientWidth < 520) {
+      statsEl.innerHTML = '<b>' + workers + '</b> ants · <b>' + sim.brood.length + '</b> brood · <span class="e">⚡' + Math.floor(sim.energy) + '</span>';
+      return notices();
+    }
+    statsEl.innerHTML = 'seed <b>' + sim.seed + '</b> · ants <b>' + workers + '</b>+♛ · brood <b>' + sim.brood.length +
+      '</b> · dug <b>' + st.dug + '</b> · food <b>' + sim.count().crumb + '</b> · <span class="e">energy ' + Math.floor(sim.energy) +
+      '</span> · tokens <b>' + fmt(st.tokens) + '</b>' + (st.collapses ? ' · collapses <b>' + st.collapses + '</b>' : '');
+    notices();
+  }
+  function notices() {
+    const st = sim.stats;
+    if (st.collapses > warned) { warned = st.collapses; toast('A ceiling gave way'); }
+    if (toastT && performance.now() > toastT) { toastEl.classList.remove('show'); toastT = 0; }
+  }
+  const fmt = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(Math.round(n)));
+  function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('show'); toastT = performance.now() + 2500; }
+
+  // ---------- loop: sim at a fixed rate, frames at 30 fps when busy, ~8 fps when calm ----------
+  function frame(t) {
+    requestAnimationFrame(frame);
+    if (document.hidden) { lastT = t; return; }
+    const dt = Math.min(250, t - (lastT || t)); lastT = t;
+    acc += dt * AntSim.TICK_HZ * speed / 1000;
+    let n = 0;
+    while (acc >= 1 && n < 80) { sim.step(); acc -= 1; n++; }
+    if (n >= 80) acc = 0;
+    const moving = sim.isBusy() || (cam && auto && !AntCamera.near(cam, autoTarget(view.clientWidth, view.clientHeight))) || dragging;
+    const gap = moving ? 1000 / 30 : 1000 / 8;
+    if (t - lastDraw >= gap - 2) { lastDraw = t; draw(); }
+  }
+
+  // ---------- input ----------
+  let dragging = false, dragX = 0, dragY = 0;
+  function manual() { auto = false; document.getElementById('auto').classList.remove('on'); }
+  function setAuto() { auto = true; document.getElementById('auto').classList.add('on'); draw(); }
+  view.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const r = view.getBoundingClientRect();
+    manual();
+    cam = AntCamera.zoomAt(cam, e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015), { min: 0.5, max: 24 });
+    cam = AntCamera.clamp(cam, sim.W, sim.H, r.width, r.height, 40);
+    draw();
+  }, { passive: false });
+  view.addEventListener('pointerdown', (e) => { dragging = true; dragX = e.clientX; dragY = e.clientY; view.classList.add('drag'); view.setPointerCapture(e.pointerId); });
+  view.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - dragX, dy = e.clientY - dragY;
+    if (Math.abs(dx) + Math.abs(dy) < 1) return;
+    dragX = e.clientX; dragY = e.clientY; manual();
+    cam = AntCamera.clamp({ x: cam.x - dx / cam.s, y: cam.y - dy / cam.s, s: cam.s }, sim.W, sim.H, view.clientWidth, view.clientHeight, 40);
+    draw();
+  });
+  const endDrag = () => { dragging = false; view.classList.remove('drag'); };
+  view.addEventListener('pointerup', endDrag);
+  view.addEventListener('pointercancel', endDrag);
+  view.addEventListener('dblclick', setAuto);
+  window.addEventListener('keydown', (e) => { if (e.key === 'a' || e.key === 'A') setAuto(); });
+  window.addEventListener('resize', () => draw());
+
+  function setSpeed(v) {
+    speed = SPEEDS.includes(v) ? v : 1;
+    document.getElementById('speed').textContent = speed + '×';
+  }
+  // A token event in the format the real bridge will send (see docs/ant-farm-design.md).
+  function fakeTokens() { sim.feed({ v: 1, source: 'fake', type: 'tokens', input: 3000, output: 2000, ts: Date.now() }); toast('+5k tokens: energy and food'); }
+  document.getElementById('feed').onclick = fakeTokens;
+  document.getElementById('task').onclick = () => { sim.feed({ v: 1, source: 'fake', type: 'task_done' }); toast('Task done: a new gallery is ordered'); };
+  document.getElementById('wide').onclick = () => { sim.feed({ v: 1, source: 'fake', type: 'task_done', width: 30 }); toast('Wide room ordered: too wide to hold'); };
+  document.getElementById('auto').onclick = setAuto;
+  document.getElementById('speed').onclick = () => setSpeed(SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]);
+  document.getElementById('reseed').onclick = () => { start((Math.random() * 1e6) | 0); draw(); };
+  // Hook for a local bridge that relays real agent events into the page.
+  window.antFarmFeed = (ev) => sim.feed(ev);
+
+  // ?pause=1 draws one still frame (for screenshots); the camera still pans and zooms
+  if (TEST) runTest(); else { draw(); if (!q.has('pause')) requestAnimationFrame(frame); }
+
+  // ---------- ?test=1: scripted checks on the live page ----------
+  function runTest() {
+    const checks = [];
+    const ok = (name, pass, info) => checks.push({ name, pass: !!pass, info });
+    const c0 = sim.count();
+    ok('map has dirt, rock and food', c0.dirt > 1000 && c0.rock > 0 && c0.food > 20, c0);
+    ok('colony placed', sim.ants.length >= 5 && sim.ants.some((a) => a.role === 'queen'), sim.ants.length);
+    draw();
+    ok('auto camera fits the farm', cam.s > 0 && cam.x <= sim.interestBox().x + 1 && cam.y <= sim.interestBox().y + 1, cam);
+    let sawGrain = false, sawFood = false;
+    for (let i = 0; i < 60; i++) { sim.run(100); const c = sim.count(); if (c.carriedGrain) sawGrain = true; if (c.carriedFood) sawFood = true; }
+    ok('ants dig and carry grains', sim.stats.dug > 50 && sawGrain, { dug: sim.stats.dug });
+    const soil0 = c0.dirt + c0.loose + c0.rock, c1 = sim.count();
+    ok('every dug grain still exists', c1.dirt + c1.loose + c1.rock + c1.carriedGrain === soil0, { before: soil0, after: c1.dirt + c1.loose + c1.rock + c1.carriedGrain });
+    const e0 = sim.energy, cr0 = sim.stats.crumbsSpawned;
+    fakeTokens(); const e1 = sim.energy; sim.run(400);
+    ok('token feed adds energy and drops food', e1 > e0 && sim.stats.crumbsSpawned > cr0, { e0, e1, crumbs: sim.stats.crumbsSpawned - cr0 });
+    for (let i = 0; i < 40 && !(sim.royal && sim.royal.done); i++) sim.run(500);
+    const coll0 = sim.stats.collapses;
+    sim.feed({ type: 'task_done', width: 30 });
+    for (let i = 0; i < 40 && sim.stats.collapses === coll0; i++) { sim.run(250); if (sim.count().carriedFood) sawFood = true; }
+    ok('a too-wide gallery collapses', sim.stats.collapses > coll0, { collapses: sim.stats.collapses, tick: sim.tick });
+    ok('ants carry food', sawFood || sim.stats.stored > 0, { stored: sim.stats.stored });
+    draw();
+    // camera: wheel zoom leaves auto, keeps the point under the cursor, double-click returns to auto
+    const r = view.getBoundingClientRect(), mx = r.width * 0.3, my = r.height * 0.6;
+    const before = { ...cam }, wx = cam.x + mx / cam.s, wy = cam.y + my / cam.s;
+    view.dispatchEvent(new WheelEvent('wheel', { deltaY: -300, clientX: r.left + mx, clientY: r.top + my, bubbles: true, cancelable: true }));
+    const wx2 = cam.x + mx / cam.s, wy2 = cam.y + my / cam.s;
+    ok('wheel zooms at the cursor', cam.s > before.s && !auto && Math.abs(wx - wx2) < 0.6 && Math.abs(wy - wy2) < 0.6, { before: before.s, after: cam.s });
+    view.dispatchEvent(new PointerEvent('pointerdown', { clientX: 100, clientY: 100, pointerId: 1, bubbles: true }));
+    const panFrom = cam.x;
+    view.dispatchEvent(new PointerEvent('pointermove', { clientX: 60, clientY: 100, pointerId: 1, bubbles: true }));
+    view.dispatchEvent(new PointerEvent('pointerup', { clientX: 60, clientY: 100, pointerId: 1, bubbles: true }));
+    ok('drag pans', cam.x > panFrom, { from: panFrom, to: cam.x });
+    view.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    ok('double-click returns to auto camera', auto === true);
+    // the frame really shows something: many distinct colours on the canvas
+    draw();
+    const d = ctx.getImageData(0, 0, view.width, view.height).data, seen = new Set();
+    for (let i = 0; i < d.length; i += 4 * 97) seen.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+    ok('canvas is drawn', seen.size > 12, { colours: seen.size });
+    ok('no page errors', errors.length === 0, errors);
+    const pass = checks.every((c) => c.pass);
+    document.getElementById('result').textContent = JSON.stringify({ pass, seed: sim.seed, tick: sim.tick, checks }, null, 1);
+    document.title = pass ? 'PASS' : 'FAIL';
+  }
+})();
+</script>
+</body>
+</html>
