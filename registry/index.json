@@ -1,0 +1,28 @@
+{
+  "indexVersion": 1,
+  "generated": "2026-11-27T21:55:18.682Z",
+  "games": [
+    {
+      "id": "ant-farm-web",
+      "name": "Ant Farm (web)",
+      "description": "An ant colony that digs, eats and lives on the real clock, fed only by the tokens your AI agent spends. The Ant Farm as a catalog game, with a colony of its own.",
+      "author": "Jacob Motta",
+      "version": "1.0.0",
+      "tier": "verified",
+      "minShellVersion": "1.3.0",
+      "permissions": [
+        "claude-usage"
+      ],
+      "network": [],
+      "repository": "https://github.com/JakeMotta/token-games",
+      "commit": "eb48d0a959f6648dc617d0c15888d903ffa6348e",
+      "bundle": {
+        "url": "https://github.com/JakeMotta/token-games/releases/download/ant-farm-web-v1.0.0/ant-farm-web-1.0.0.zip",
+        "sha256": "177ddc6cb94e5d85aa8686525f64d2bb1955facd3ecd78e8c393e9bec3db6789",
+        "size": 169043
+      },
+      "license": "MIT"
+    }
+  ],
+  "blocklist": []
+}
