@@ -13,9 +13,49 @@ All three open straight from disk with no build step:
 |---|---|---|
 | Version 1 | `prototype/index.html` | `prototype/creatures-standalone.html` |
 | Version 2 | `prototype-v2/index.html` | `prototype-v2/creatures-v2-standalone.html` |
-| Side by side | `prototype-v2/compare.html` | (uses the two `index.html` pages) |
+| Version 3 (top-down) | `prototype-v3/index.html` | `prototype-v3/creatures-v3-standalone.html` |
+| Compare lab | `prototype-v2/compare.html` | (needs the folders beside it) |
 
-Each page has links to the others. The compare page shows both versions with the same seed, level, look and habitat; change them in the form and press **Show both**. Add `&pause=1` to the compare page's URL to hold both still, or `&sun=left|noon|right` to set version 2's light.
+Each page has links to the others. The compare lab runs all three versions on one clock (below). Version 3 is described in [v3-topdown.md](v3-topdown.md).
+
+## How to see the difference
+
+Side by side in their own hatcheries, the two versions look much alike: same genome, same renderer, same looks, and each creature wanders on its own. The compare lab (`prototype-v2/compare.html`) takes that noise away and shows the machinery.
+
+**One creature, one path, one clock.** All three versions hatch the same seed and are steered along the same scripted path by the same rule (pure pursuit, through the walkers' `drive` hook, which only steers; it never feeds or grows anything). Every step is a fixed 1/60 s, so the run is deterministic: **Play**, **Pause**, one frame back or forward, a **speed** slider from 0.1× to 2×, and a **scrubber** that re-simulates from the start and lands on exactly the same frame.
+
+**Scenarios** (the menu): S-curve, figure eight, a sharp U-turn, a spin in place, a speed ramp, sudden stops, a very long and a very short creature, 2, 4, 6 and 8 legs (8 only here; the genome grows at most 6), and *follow a target* (it jumps every 3.2 s; click a view to place it yourself). Wavy ground is not offered: every version's feet and shadows assume a flat floor.
+
+**Machinery** (a toggle per version, on by default). The legend on the page says what each mark is; in short:
+
+| | Version 1 | Versions 2 and 3 |
+|---|---|---|
+| Body | Blue rings: the cones the body is built from, on one stiff spine | White chain: joints (dots), their widths (blue circles), the head that is steered (cyan arrow) |
+| Limits | None: the body is one rigid piece | Purple wedges: how far each link may bend from the one in front; red at the limit |
+| Legs | Pink hips, white bones; green feet planted, orange swinging to an orange cross | The same, plus a dashed gold circle per foot: its wanted spot and how far it may fall behind |
+| Timing | A **gait clock** dial: one ring per leg, green while that foot is down; the hand sweeps and feet obey | **"How far behind" bars**: each fills as its foot falls behind; at the dashed line it steps, and a gold ring opens on the floor |
+
+**Trails** (toggle): the body's path in yellow, footprints as dots (blue left, pink right). Ragged footprint rows mean uneven steps; a wide yellow loop at a U-turn is the chain's arc.
+
+**Live numbers** under each view (hover for what each measures): foot slide (how far a planted foot drifts before it lifts, % of a body length), tightest and current turn radius (body lengths, over the last 45° of turning), leg crossings (two legs' floor shadows crossing), body wobble (heading jitter around its smooth turn, °/s), spine bend (degrees of curve along the body), distance off the path, and ms per frame (motion and body, plus drawing).
+
+**What is different here**: four to six plain sentences generated from those numbers, then a verdict per scenario in two parts: *by eye* (written down from watching each scenario; it is authored, not measured) and *by the numbers* (whichever version wins more of the measures).
+
+**Record 5 s of each** makes a filmstrip: ten frames half a second apart from the current time, one row per version, with the machinery as shown. It appears on the page with a **Save PNG** link.
+
+What the numbers show (seed `moss`, level 100, the full length of each scenario):
+
+| Scenario | Spine bend v1 / v2 | Tightest turn v1 / v2 (body lengths) | Foot slide v1 / v2 |
+|---|---|---|---|
+| S-curve | 5° / 75° | 0.63 / 0.66 | 0.3% / 0.5% |
+| Figure eight | 5° / 99° | 0.60 / 0.57 | 0.2% / 0.5% |
+| U-turn | 13° / 109° | 0.30 / 0.40 | 0.3% / 0.6% |
+| Long creature | 4° / 106° | 0.23 / 0.25 | 0.3% / 0.7% |
+| Short creature | 7° / 40° | 1.41 / 1.44 | 0.3% / 0.1% |
+
+The clearest difference is the spine: version 2's body bends 10 to 20 times more along its length, and that is what makes it read as a lizard rather than a rod. Turns are close on these paths because both are steered along the same line; in the U-turn and the spin version 1 turns tighter (it pivots; a chain can only loop). Planted feet barely slide in either (under 2% of a body length), so foot sliding is not what tells them apart. Leg crossings show up with many legs on a short body (version 2's neighbour rule lets adjacent feet cross more). Creatures with short legs walk slowly with 6 or 8 legs (seed `moss` covers under a body length in the 8-leg scenario); try seed `g37` or `g12` for those.
+
+The lab's pure part is `prototype-v2/lab.js` (scenarios, steering, measures, the sentences), unit-tested in `test/lab.test.js`; the page is `compare.js`. Query parameters: `seed`, `level`, `scenario`, `style` (gochi, cel, pixel), `speed`, `t` (start paused at that time), `m1` `m2` `m3` (`0` hides a version's machinery), `trails=0`, `film=1` (record the filmstrip on load), `theme`.
 
 ## How each works
 
@@ -101,7 +141,8 @@ Both versions take well under a tenth of a millisecond per frame for motion and 
 ```sh
 cd creatures/prototype-v2
 node --test test/                  # chain, motion and light unit tests, plus the headless page check
-node test/e2e.js [seed] [page]     # headless page checks (no window); page: index.html, creatures-v2-standalone.html, compare.html
+node --test test/lab.test.js      # the compare lab: scenarios, determinism, measures, verdicts
+node test/e2e.js [seed] [page]     # headless page checks (no window); page: index.html, creatures-v2-standalone.html, compare.html (the lab's own checks)
 node tools/shots.js ../docs/shots-v2   # screenshots: light and dark, sun left / noon / right, night, pixel cave, egg, narrow, compare
 node tools/proof.js ../docs/shots-v2   # turn, spin, eating, habitats and sun proof sheets
 node tools/bundle.js               # rebuild creatures-v2-standalone.html after editing the scripts

@@ -2,7 +2,8 @@
 // scripted checks, reads the JSON it writes into <pre id="result">, and fails on any console error or uncaught
 // exception the browser logged.
 // Usage: node test/e2e.js [seed] [page]   page is index.html (default), creatures-v2-standalone.html or compare.html
-//        (compare.html has no checks of its own: it only has to load both versions without errors)
+//        (compare.html, the compare lab, runs its own checks: three versions on one clock, overlays drawn, scrubbing
+//        lands on the same frame, every scenario runs, the filmstrip records)
 //        (CHROME=/path/to/chrome to override the browser)
 'use strict';
 const { spawnSync } = require('child_process');
@@ -22,13 +23,13 @@ if (!chrome) { console.error('No Chrome found; set CHROME=/path/to/chrome'); pro
 const seed = process.argv[2] || 'test';
 const file = process.argv[3] || 'index.html';
 const compare = file === 'compare.html';
-const page = 'file://' + path.join(__dirname, '..', file) + (compare ? '?seed=' + seed + '&level=70' : '?test=1&seed=' + seed);
+const page = 'file://' + path.join(__dirname, '..', file) + '?test=1&seed=' + seed + (compare ? '&level=70' : '');
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'creatures-v2-e2e-'));
 const args = [
   '--headless=new', '--disable-gpu', '--hide-scrollbars', '--window-size=1440,1000',
   '--use-mock-keychain', '--password-store=basic', '--no-first-run', '--no-default-browser-check',
   '--user-data-dir=' + profile, '--allow-file-access-from-files', '--enable-logging=stderr', '--v=0',
-  '--virtual-time-budget=' + (compare ? 8000 : 30000), '--dump-dom', page,
+  '--virtual-time-budget=' + (compare ? 60000 : 30000), '--dump-dom', page,
 ];
 let run;
 try { run = spawnSync(chrome, args, { encoding: 'utf8', timeout: 180000, maxBuffer: 64 << 20 }); }
@@ -40,16 +41,10 @@ const consoleErrors = (run.stderr || '').split('\n').filter((l) => /:CONSOLE[:(]
 for (const l of consoleErrors) console.log('FAIL console: ' + l.trim().slice(0, 300));
 
 let pass = consoleErrors.length === 0;
-if (compare) {
-  const frames = (run.stdout.match(/<iframe/g) || []).length;
-  console.log((frames === 2 ? 'ok   ' : 'FAIL ') + 'compare page shows two versions (' + frames + ' frames)');
-  pass = pass && frames === 2;
-} else {
-  const m = (run.stdout || '').match(/<pre id="result">([\s\S]*?)<\/pre>/);
-  if (!m || !m[1].trim()) { console.error('FAIL: the page wrote no result'); process.exit(1); }
-  const res = JSON.parse(m[1].replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'));
-  for (const c of res.checks) console.log((c.pass ? 'ok   ' : 'FAIL ') + c.name + (c.pass ? '' : '  ' + JSON.stringify(c.info)));
-  pass = pass && res.pass;
-}
+const m = (run.stdout || '').match(/<pre id="result">([\s\S]*?)<\/pre>/);
+if (!m || !m[1].trim()) { console.error('FAIL: the page wrote no result'); process.exit(1); }
+const res = JSON.parse(m[1].replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'));
+for (const c of res.checks) console.log((c.pass ? 'ok   ' : 'FAIL ') + c.name + (c.pass ? '' : '  ' + JSON.stringify(c.info)));
+pass = pass && res.pass;
 console.log(pass ? 'PASS' : 'FAIL', file, 'seed', seed, consoleErrors.length ? consoleErrors.length + ' console errors' : 'no console errors');
 process.exit(pass ? 0 : 1);

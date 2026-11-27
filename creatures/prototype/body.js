@@ -157,7 +157,7 @@
     const tLen = ph.torso.length * s;
     // Torso spine built at height 0 first.
     const tsp0 = spine([-tLen / 2 * Math.cos(ph.torso.angle), -tLen / 2 * Math.sin(ph.torso.angle), 0], ph.torso.angle - ph.torso.curve / 2, tLen, ph.torso.curve, torsoR.length);
-    const legTs = pairs === 1 ? [0.5] : pairs === 2 ? [0.18, 0.82] : pairs === 3 ? [0.12, 0.5, 0.88] : [];
+    const legTs = pairs === 1 ? [0.5] : pairs === 2 ? [0.18, 0.82] : pairs === 3 ? [0.12, 0.5, 0.88] : pairs === 4 ? [0.08, 0.36, 0.64, 0.92] : []; // 4 pairs: compare lab only
     const hips0 = [];
     for (const t of legTs) {
       const q = along(tsp0, torsoR, t);

@@ -47,7 +47,7 @@
   // A walker: the chain in world ground coordinates, the head's speed and turn rate, the feet, and version 1's moods.
   function createWalker(ph, seed, opts) {
     opts = opts || {};
-    const R = C.rig(ph), L = R.L, s = R.s;
+    const R = opts.rig || C.rig(ph), L = R.L, s = R.s; // opts.rig: a ready rig (version 3 splays its feet)
     const rnd = mulberry(seed >>> 0 || 1);
     const gaits = { walk: M1.gaitParams(ph, L, 'walk'), hurry: M1.gaitParams(ph, L, 'hurry') };
     const n = R.joints.length;
@@ -152,6 +152,13 @@
     const wallAhead = (extra) => room(h, ha, Math.cos(h.th), -Math.sin(h.th)) < w.v * w.v / (2 * decel) + EDGE_MARGIN * s + (extra || 0);
     const steer = (om, v) => { const lim = Math.min(TURN_RATE_MAX, Math.max(v, 0.3 * gw.speed) / w.rWalk); return clamp(om, -lim, lim); };
 
+    // A scripted command from the compare lab ({ v: share of the walk speed, om: rad/s }), with the chain's own turn
+    // limit. Turns and spins asked for with turn() still run their course.
+    if (opts.drive && w.mode !== 'turn') {
+      const dv = Math.max(0, opts.drive.v * gw.speed);
+      w.hurry = opts.drive.v > 1.15; w.mode = 'go'; w.goal = null;
+      return { v: dv, om: steer(opts.drive.om || 0, Math.max(w.v, dv)) };
+    }
     if (w.mode === 'turn') {
       if (Math.abs(w.turnLeft) < 0.03) {
         w.turnLeft = 0; w.spinning = false;
@@ -336,7 +343,7 @@
     // Wings and hops: version 1's rules.
     const fly = M1.canFly(w.ph);
     if (w.ph.wings && w.ph.wings.size > 0 && !reduced && w.mode !== 'eat') {
-      if (!w.flying && !w.tries && !force && w.rnd() < dt * 0.06) { if (fly) w.flying = 3 + w.rnd() * 4; else w.tries = 1.4; }
+      if (!w.flying && !w.tries && !force && !opts.drive && w.rnd() < dt * 0.06) { if (fly) w.flying = 3 + w.rnd() * 4; else w.tries = 1.4; }
       if (w.flying) w.flying = Math.max(0, w.flying - dt);
       else if (w.tries) { w.tries = Math.max(0, w.tries - dt); if (w.hop === 0 && w.hopV === 0) w.hopV = 0.6 * s; }
     }

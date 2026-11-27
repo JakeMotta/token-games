@@ -37,9 +37,14 @@
       walk: { name: 'wave', duty: 0.7, offsets: [0, 0.5, 1 / 3, 5 / 6, 2 / 3, 1 / 6] }, // back-to-front ripple, sides half a cycle apart
       hurry: { name: 'tripod', duty: 0.52, offsets: [0, 0.5, 0.5, 0, 0, 0.5] },        // L3 R2 L1 / R3 L2 R1
     },
+    // Eight legs never hatch from the genome (0 to 3 pairs); the compare lab sets four pairs to stress the gaits.
+    octopod: {
+      walk: { name: 'wave', duty: 0.72, offsets: [0, 0.5, 0.25, 0.75, 0.5, 0, 0.75, 0.25] },
+      hurry: { name: 'alternating', duty: 0.52, offsets: [0, 0.5, 0.5, 0, 0, 0.5, 0.5, 0] },
+    },
     legless: { walk: { name: 'scoot', duty: 1, offsets: [] }, hurry: { name: 'scoot', duty: 1, offsets: [] } },
   };
-  const FAMILY = { 0: 'legless', 2: 'biped', 4: 'quadruped', 6: 'hexapod' };
+  const FAMILY = { 0: 'legless', 2: 'biped', 4: 'quadruped', 6: 'hexapod', 8: 'octopod' };
 
   const SPRITE_FPS = 12;           // the sprite clock; a stride takes a whole number of these frames, so walks loop crisply
   const CADENCE_REF = 1.45;        // strides per second for a leg LEG_REF long (shorter legs step faster: sqrt scaling)
@@ -152,7 +157,7 @@
   const PIVOT_ANGLE = 1.75;        // rad (~100°): a heading error beyond this stops it and pivots instead of arcing
   const PIVOT_DONE = 0.35;         // rad: a pivot ends when the error is this small, then it walks off on an arc
   const PIVOT_SPEED = 0.15;        // share of walking speed under which it may pivot
-  const PIVOT_AT = { biped: 'centre', quadruped: 'hind', hexapod: 'centre', legless: 'centre' }; // what it turns about
+  const PIVOT_AT = { biped: 'centre', quadruped: 'hind', hexapod: 'centre', octopod: 'centre', legless: 'centre' }; // what it turns about
   const YAW_ACCEL = 4;             // rad/s²: how quickly a turn starts and stops
   const TURN_STRIDE = 0.8;         // turning steps are this share of a straight stride (keeps the outer legs in reach)
   const SKIP_TOL = 0.08;           // share of leg length: a foot whose next spot is this close stays planted (inner legs pivot)
@@ -289,6 +294,14 @@
       return { v: 0, om: Math.sign(diff) * Math.min(w.pivotRate, Math.sqrt(2 * YAW_ACCEL * Math.abs(diff)) + 0.05, Math.abs(diff) / dt), pivot: true };
     };
 
+    // A scripted command from the compare lab ({ v: share of the walk speed, om: rad/s }), with this body's own turn
+    // limits; stopped with a turn asked for, it pivots. Turns and spins asked for with turn() still run their course.
+    if (opts.drive && w.mode !== 'turn') {
+      const dv = opts.drive.v * gw.speed, dom = opts.drive.om || 0;
+      w.hurry = opts.drive.v > 1.15; w.mode = 'go'; w.goal = null;
+      if (dv <= 0 && dom) return { v: 0, om: clamp(dom, -w.pivotRate, w.pivotRate), pivot: true };
+      return { v: Math.max(0, dv), om: limitTurn(dom, Math.max(w.v, dv), false) };
+    }
     if (w.mode === 'turn') {
       const left = w.turnLeft;
       if (Math.abs(left) < 2e-3) {
@@ -577,7 +590,7 @@
     // Flying or trying: big enough wings lift off now and then; small ones flap hard and hop.
     const fly = canFly(w.ph);
     if (w.ph.wings && w.ph.wings.size > 0 && !reduced && w.mode !== 'eat') {
-      if (!w.flying && !w.tries && !force && w.rnd() < dt * 0.06) { if (fly) w.flying = 3 + w.rnd() * 4; else w.tries = 1.4; }
+      if (!w.flying && !w.tries && !force && !opts.drive && w.rnd() < dt * 0.06) { if (fly) w.flying = 3 + w.rnd() * 4; else w.tries = 1.4; }
       if (w.flying) w.flying = Math.max(0, w.flying - dt);
       else if (w.tries) { w.tries = Math.max(0, w.tries - dt); if (w.hop === 0 && w.hopV === 0) w.hopV = 0.6 * s; }
     }
