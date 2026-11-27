@@ -1,9 +1,12 @@
 // Runs a game's smoke test without ever showing a window: a fresh settings folder and a fake Claude Code folder in a
-// temp directory, a full run, a second launch that checks everything came back, and a third that installs the sample
-// catalog game from a test registry (samples/) and plays it sandboxed. Exits 1 on any failure.
-// Run it from the game's folder, after building it:
-//   node ../shell/scripts/smoke.mjs                 (screenshots go to the temp folder)
-//   node ../shell/scripts/smoke.mjs --shots <dir>   (and are copied to <dir>)
+// temp directory, a full run, a second launch that checks everything came back, a third that installs the sample
+// catalog game from a test registry (samples/) and plays it sandboxed, and, for a game with a catalog bundle
+// (catalog/game.json, built by build-web.mjs), a fourth that installs that bundle the same way and plays it. With
+// TG_REGISTRY_URL and TG_REGISTRY_KEY set, the fourth installs from that registry instead (the real one, for example).
+// Exits 1 on any failure. Run it from the game's folder, after building it:
+//   node ../shell/scripts/smoke.mjs                       (screenshots go to the temp folder)
+//   node ../shell/scripts/smoke.mjs --shots <dir>         (and are copied to <dir>)
+//   node ../shell/scripts/smoke.mjs --only catalog-game   (one run; full, reopen, catalog or catalog-game)
 //   node ../shell/scripts/smoke.mjs --perf [--profile <dir>]
 //     only the game's perf run, which measures its frames; --profile starts it from COPIES of the files in <dir> (a
 //     settings.json and a save), so a real farm can be measured without ever touching it
@@ -16,6 +19,7 @@ import { createRequire } from 'node:module';
 const root = process.cwd();
 const electron = createRequire(path.join(root, 'package.json'))('electron');
 const shotsAt = process.argv.includes('--shots') ? path.resolve(process.argv[process.argv.indexOf('--shots') + 1]) : null;
+const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 const name = path.basename(root);
 const perf = process.argv.includes('--perf');
 const profile = process.argv.includes('--profile') ? path.resolve(process.argv[process.argv.indexOf('--profile') + 1]) : null;
@@ -52,7 +56,9 @@ function run(mode) {
 }
 
 let ok = true;
-for (const mode of perf ? ['perf'] : ['full', 'reopen', 'catalog']) {
+const modes = ['full', 'reopen', 'catalog', ...(fs.existsSync(path.join(root, 'catalog', 'game.json')) ? ['catalog-game'] : [])];
+if (only && !modes.includes(only)) { console.error(`--only: one of ${modes.join(', ')}`); process.exit(1); }
+for (const mode of perf ? ['perf'] : only ? [only] : modes) {
   const { result } = await run(mode);
   console.log(`\n${mode} run`);
   for (const c of result.checks) console.log(`  ${c.ok ? 'ok  ' : 'FAIL'} ${c.name}${c.ok || !c.detail ? '' : '  ' + c.detail}`);

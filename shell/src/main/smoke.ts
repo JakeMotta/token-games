@@ -1,9 +1,10 @@
 // The automated smoke test, run inside the real app (TG_SMOKE=<folder>) with no window ever shown: it drives the
 // shell like a player would (the orb, its hover pill, the open card, dragging it to another corner, popping out and
 // docking back, the window's sizes, full screen, click-through, the tray and the shortcut), hands over to the game's
-// own checks, saves screenshots, writes result-<mode>.json and quits. shell/scripts/smoke.mjs starts it three times: a
-// full run, a 'reopen' run that checks everything survived the restart, and a 'catalog' run (smoke-catalog.ts). With
-// --perf it starts a single 'perf' run instead: the game measures what its frames cost (GameSmoke.perf), still hidden.
+// own checks, saves screenshots, writes result-<mode>.json and quits. shell/scripts/smoke.mjs starts it up to four
+// times: a full run, a 'reopen' run that checks everything survived the restart, a 'catalog' run, and for a game with
+// a catalog/ bundle a 'catalog-game' run (both in smoke-catalog.ts). With --perf it starts a single 'perf' run
+// instead: the game measures what its frames cost (GameSmoke.perf), still hidden.
 import { app, nativeTheme, screen, type BrowserWindow } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,7 +14,7 @@ import { shapeOf, type ShellEvent, type ShellState } from '../modes';
 import { orbCenter, orbWindowBounds, shapeRect, shapeSize, type OrbGeo, type Shape } from '../orb';
 import type { ShellSettings } from '../settings';
 import type { TrayItem } from '../tray';
-import { catalogSmoke, type CatalogSmoke } from './smoke-catalog';
+import { catalogGameSmoke, catalogSmoke, type CatalogSmoke } from './smoke-catalog';
 import type { SettingsStore } from './store';
 
 export interface SmokeContext<S extends ShellSettings> {
@@ -51,7 +52,7 @@ export interface SmokeKit<S extends ShellSettings> extends SmokeContext<S> {
   cpu(ms: number): Promise<CpuUse>; // the app's CPU use over the next `ms`, per kind of process, in % of one core
 }
 
-export type SmokeMode = 'full' | 'reopen' | 'catalog' | 'perf';
+export type SmokeMode = 'full' | 'reopen' | 'catalog' | 'catalog-game' | 'perf';
 export interface CpuUse { main: number; renderer: number; gpu: number; other: number; total: number }
 
 // A game's own checks. full() runs popped out, in the small window at the bottom right; reset() after Reset to
@@ -68,7 +69,8 @@ export interface GameSmoke<S extends ShellSettings> {
 interface Check { name: string; ok: boolean; detail?: string }
 
 export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game: GameSmoke<S> = {}): Promise<void> {
-  const m = process.env.TG_SMOKE_MODE, mode: SmokeMode = m === 'reopen' || m === 'catalog' || m === 'perf' ? m : 'full';
+  const m = process.env.TG_SMOKE_MODE;
+  const mode: SmokeMode = m === 'reopen' || m === 'catalog' || m === 'catalog-game' || m === 'perf' ? m : 'full';
   const checks: Check[] = [], notes: Record<string, unknown> = {};
   const check = (name: string, ok: unknown, detail?: unknown) => { checks.push({ name, ok: !!ok, detail: detail === undefined ? undefined : JSON.stringify(detail) }); };
   const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -148,8 +150,8 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
       return;
     }
 
-    if (mode === 'catalog') {
-      if (c.catalog) await catalogSmoke(k, c.catalog);
+    if (mode === 'catalog' || mode === 'catalog-game') {
+      if (c.catalog) await (mode === 'catalog' ? catalogSmoke : catalogGameSmoke)(k, c.catalog);
       else check('the shell passes the catalog to the smoke test', false);
       return;
     }

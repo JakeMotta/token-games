@@ -291,6 +291,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     }
     feedStatus = { watching: !!feed && feed.watching(), files: feed ? feed.files() : 0, root: CLAUDE_DIR, error };
     send(CH.feed, feedStatus);
+    host?.envChanged();
   }
 
   function forward(raw: UsageEvent): void {
@@ -315,9 +316,13 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     const dir = env.TG_CATALOG_DIR ? path.resolve(env.TG_CATALOG_DIR) : SMOKE ? path.join(app.getPath('userData'), 'catalog') : defaultCatalogDir();
     let keys = [...REGISTRY_KEYS], url = env.TG_REGISTRY_URL || DEFAULT_REGISTRY;
     if (env.TG_REGISTRY_KEY) keys.push(env.TG_REGISTRY_KEY); // a developer's own registry, signed with their own key
-    if (SMOKE && env.TG_SMOKE_MODE === 'catalog') {
-      // the smoke test's registry: the repo's sample game, signed with a key made for this run and never saved
-      const reg = smokeRegistry(path.join(SMOKE, 'registry'), path.join(app.getAppPath(), '..', 'samples'));
+    const smokeMode = SMOKE ? env.TG_SMOKE_MODE : undefined;
+    if (smokeMode === 'catalog' || (smokeMode === 'catalog-game' && !env.TG_REGISTRY_URL)) {
+      // the smoke test's registry: the repo's sample game (or this app's own catalog bundle), signed with a key made
+      // for this run and never saved. The catalog-game run with TG_REGISTRY_URL installs from that registry instead.
+      const reg = smokeMode === 'catalog'
+        ? smokeRegistry(path.join(SMOKE!, 'registry'), path.join(app.getAppPath(), '..', 'samples', 'token-garden'), 'samples/token-garden')
+        : smokeRegistry(path.join(SMOKE!, 'registry'), path.join(app.getAppPath(), 'catalog'), `${path.basename(app.getAppPath())}/catalog`);
       keys = [reg.publicKey]; url = reg.url;
     }
     catalog = new Catalog({ dir, hostApp: builtIn.id, builtIn, trustedKeys: keys, registryUrl: url });
@@ -337,14 +342,17 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     return { id: m.id, name: m.name, version: m.version, tier: row.tier, icon: iconDataUrl(dir, m.icon) };
   }
 
-  const hostedEnv = (): HostedEnv => ({ scale: hostedScale, dark: nativeTheme.shouldUseDarkColors, reducedMotion: store.get().reducedMotion });
+  const hostedEnv = (): HostedEnv => ({
+    scale: hostedScale, dark: nativeTheme.shouldUseDarkColors, reducedMotion: store.get().reducedMotion,
+    feed: { watching: !!feed && feed.watching(), files: feed ? feed.files() : 0 }, // counts only: never the folder
+  });
 
   function openHost(): void {
     if (!win || !hosted || host) return;
     const dir = catalog.gameDir(hosted.id), m = catalog.manifestOf(hosted.id);
     if (!dir || !m) return;
     host = new GameHost({
-      win, preload: path.join(cfg.dir, 'game-preload.js'), smoke: !!SMOKE, env: hostedEnv,
+      win, preload: path.join(cfg.dir, 'game-preload.js'), env: hostedEnv,
       game: { id: hosted.id, dir, page: m.entry.page, network: catalog.approvedHosts(hosted.id), saveDir: catalog.saveDir(hosted.id) },
       onStatus: (st) => send(CH.hostedStatus, st),
       pop: () => { if (!floating()) dispatch('pop'); },
@@ -353,11 +361,17 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     });
   }
 
-  // Another game was chosen (here, or by the CLI): the page starts again around it. The built-in game saves as it goes.
-  function switchGame(): void {
+  // Another game was chosen (here, or by the CLI): the page starts again around it. A hosted game is asked to save
+  // first (its onHide); the built-in game saves as it goes, and on the reload's beforeunload.
+  let switching: Promise<void> = Promise.resolve();
+  function switchGame(): void { switching = switching.then(switchNow, switchNow); }
+  async function switchNow(): Promise<void> {
+    if (catalog.active() === activeId) return; // a switch queued behind another may have nothing left to do
     activeId = catalog.active();
-    host?.close();
+    const old = host;
     host = null;
+    hosted = null; // nothing reopens the old game while it saves
+    await old?.closeAfterSave();
     hostedScale = 'mini';
     hosted = hostedBoot();
     status = { count: '', title: '' };
@@ -624,7 +638,10 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
         win: win!, store, outDir: SMOKE, claudeDir: CLAUDE_DIR, update: (p) => update(p), resize: onResizeDrag, orbDrag: onOrbDrag,
         isFullscreen: () => !!fullPrev, dispatch, displays: onDisplays, state: () => state, geo: () => geo, trayItems, hotkey, status: () => status,
         visible, show: () => showWindow(), hide: hideWindow, ignoresMouse: () => ignoring,
-        catalog: { catalog: () => catalog, host: () => host, socket: () => control?.socket || '', builtIn: () => builtIn, saveFile: () => save.file },
+        catalog: {
+          catalog: () => catalog, host: () => host, socket: () => control?.socket || '', builtIn: () => builtIn, saveFile: () => save.file,
+          bundleDir: () => path.join(app.getAppPath(), 'catalog'),
+        },
       }, cfg.smoke);
       return;
     }
@@ -635,6 +652,18 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     globalShortcut.register(SHORTCUT, hotkey);
   });
   app.on('window-all-closed', () => app.quit());
-  app.on('before-quit', () => { store?.flush(); feed?.stop(); void control?.close(); });
+  // A hosted game saves before the app goes (its onHide): quitting waits for it, briefly (HIDE_WAIT_MS at most).
+  let quitting = false;
+  app.on('before-quit', (e) => {
+    if (host && !quitting) {
+      quitting = true;
+      e.preventDefault();
+      const h = host;
+      host = null;
+      void h.closeAfterSave().finally(() => app.quit());
+      return;
+    }
+    store?.flush(); feed?.stop(); void control?.close();
+  });
   app.on('will-quit', () => globalShortcut.unregisterAll());
 }

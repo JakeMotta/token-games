@@ -140,6 +140,7 @@ Resting in the orb it draws 2 frames a second (4 while tokens arrive, 1 with red
 - `src/main/` the Electron side: `main.ts` starts the shell with the farm's settings, menu-bar ant and save file (`colony.json`); `smoke.ts` adds the farm's checks to the shell's smoke test.
 - `src/shared/settings.ts` the farm's settings (palette, calm, fade, map size, seed), stored beside the shell's.
 - `game.json`, `icon.svg` the manifest ([../docs/manifest.md](../docs/manifest.md)).
+- `src/web/` the farm as a catalog game (`ant-farm-web`): the same `src/game` and `src/sim`, run sandboxed by the shell's hosted adapter. `npm run build:catalog` writes it to `catalog/` (committed; `npm run check:catalog` says when it is out of date). Its save is its own, never `colony.json` ([../docs/first-game-walkthrough.md](../docs/first-game-walkthrough.md)).
 - The window, corner orb, tray, hotkey, settings file and Claude Code feed are the shell's ([../shell](../shell/README.md)).
 
 ## Tests
@@ -149,6 +150,7 @@ npm test            # unit tests: simulation, chunks and culling, life on a fake
 npm run typecheck
 npm run test:smoke  # launches the app hidden and drives it: the orb, its pill and card, dragging to a corner, pop out and back, the big map, camera, settings, sizes, full screen, feed, saving, game over and a new farm, restart
 npm run shots       # the same, and saves screenshots to shots/
+npm run build:catalog   # the catalog bundle in catalog/; npm run check:catalog checks it is up to date
 npm run bench       # frame time and memory at each map size (-- --save <colony.json> for a saved farm, read only)
 npm run perf        # the real app, hidden: frames a second, ms and CPU in the orb, card, window, moving and zoomed out (-- --profile <folder> for a copy of a real profile)
 ```
@@ -161,4 +163,4 @@ The smoke test uses a throwaway settings folder and a fake transcript folder, ne
 - Far chunks sleep rather than being simulated coarsely: nothing happens where no ant is, so only loose soil near the colony keeps settling.
 - A Codex feed.
 - Tested on macOS only; the Windows parts (tray, shortcuts, transparency) are written but not tried on a Windows machine.
-- Packaging as an installable app.
+- Packaging as an installable app (the farm is in the catalog as a sandboxed web game, but the app itself is still run from source).

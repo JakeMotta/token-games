@@ -98,14 +98,14 @@ note removed from the catalog explainer.
 
 For Jake, in GitHub's settings:
 
-1. **Protect `main`**: require a pull request (PR-only), at least one approving review for outside contributors,
-   the `docs-check` and `registry-check` status checks, no force-pushes or deletion. Consider "Require approval for
-   all outside collaborators" for fork workflow runs.
-2. **Turn on** secret scanning, push protection, Dependabot alerts and security updates, and private vulnerability
-   reporting (SECURITY.md points to it).
-3. **Pages**: Settings → Pages → Source: GitHub Actions, so `registry-publish.yml` can deploy the index.
-4. **The signing key**: decide who holds it, make it outside the repo, add the public key to the app and the private
-   key as the `TG_REGISTRY_SIGNING_KEY` secret ([catalog.md](catalog.md)).
+1. **Protect `main`**: done (2026-11-27) against force-pushes and deletion only. Pull requests are not required,
+   because Momo's tasks push to `main` directly; revisit (PR-only, `docs-check` and `registry-check` required) when
+   outside contributors arrive. Consider "Require approval for all outside collaborators" for fork workflow runs.
+2. **Turn on** secret scanning, push protection and Dependabot security updates: done (2026-11-27). Still open:
+   private vulnerability reporting (SECURITY.md points to it).
+3. **Pages**: done (2026-11-27), source GitHub Actions; `registry-publish.yml` deploys the index.
+4. **The signing key**: done (2026-11-27). Jake holds it in his Mac's Keychain, its public key is in the app, and the
+   index is signed on his Mac, never in CI ([first-game-walkthrough.md](first-game-walkthrough.md)).
 5. **CODEOWNERS** (optional): `/shell/`, `/.github/`, `/scripts/`, `/registry/`, `/cli/` owned by the maintainer, with
    "Require review from Code Owners".
 6. **Clean up pushed branches**: delete or rewrite `creatures*` (the transcript), the PixelLab prototype branch (until

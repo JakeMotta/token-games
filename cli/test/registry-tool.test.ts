@@ -7,10 +7,11 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Pointer } from '@token-games/shell/catalog/registry';
 import { generateKeyPair, sha256 } from '@token-games/shell/catalog/signing';
-import { buildIndexFrom, indexBytes, insideGit, keygen, pack, readPointers, signIndex, verifyIndex, verifyPointer } from '../src/registry-tool';
+import { buildIndexFrom, checkCommittedIndex, indexBytes, insideGit, keygen, pack, readPointers, signIndex, verifyIndex, verifyPointer } from '../src/registry-tool';
 
 const repo = path.join(__dirname, '..', '..', '..'); // cli/dist/test → the repo
 const sample = path.join(repo, 'samples', 'token-garden');
+const antFarm = path.join(repo, 'ant-farm', 'catalog'); // the Ant Farm's catalog bundle (npm run build:catalog)
 const tmp = (tag: string) => fs.mkdtempSync(path.join(os.tmpdir(), `tg-reg-${tag}-`));
 const copyDir = (from: string) => { const d = tmp('src'); fs.cpSync(from, path.join(d, 'game'), { recursive: true }); return d; };
 
@@ -109,4 +110,36 @@ test('keygen never writes a key into a git checkout and never overwrites one', (
   assert.equal(Buffer.from(k.publicKey, 'base64').length, 32);
   if (process.platform !== 'win32') assert.equal(fs.statSync(k.file).mode & 0o777, 0o600);
   assert.throws(() => keygen(k.file), /EEXIST/);
+});
+
+test('check-index: the committed index passes only when signed by a trusted key and matching the pointers', async () => {
+  const k = generateKeyPair(), reg = tmp('committed'), bundles = tmp('cbundles');
+  const built = pack(sample, tmp('cp'));
+  fs.copyFileSync(built.file, path.join(bundles, 'token-garden.zip'));
+  fs.mkdirSync(path.join(reg, 'games'));
+  fs.writeFileSync(path.join(reg, 'games', 'token-garden.json'), JSON.stringify(pointerFor(built.sha256, { path: 'samples/token-garden' })));
+  fs.writeFileSync(path.join(reg, 'blocklist.json'), '[]');
+  assert.match((await checkCommittedIndex(reg, [k.publicKey], bundles)).error!, /index.json is missing/);
+
+  const file = path.join(reg, 'index.json');
+  fs.writeFileSync(file, indexBytes(await buildIndexFrom(reg, bundles, '2026-11-27T00:00:00.000Z')));
+  assert.match((await checkCommittedIndex(reg, [k.publicKey], bundles)).error!, /\.sig is missing/);
+  signIndex(file, k.privateKeyPem);
+  assert.deepEqual(await checkCommittedIndex(reg, [k.publicKey], bundles), { ok: true, games: 1 });
+  assert.match((await checkCommittedIndex(reg, [generateKeyPair().publicKey], bundles)).error!, /signature does not match/);
+
+  // a pointer change merged without a new signed index
+  fs.writeFileSync(path.join(reg, 'blocklist.json'), JSON.stringify([{ id: 'token-garden', versions: ['0.1.0'], reason: 'test' }]));
+  assert.match((await checkCommittedIndex(reg, [k.publicKey], bundles)).error!, /not what the pointers and blocklist.json give/);
+});
+
+test('the Ant Farm\'s catalog bundle packs to the same bytes every time and is a valid web game', () => {
+  if (!fs.existsSync(path.join(antFarm, 'game.json'))) return; // a checkout without the bundle built
+  const a = pack(antFarm, tmp('af-a')), b = pack(antFarm, tmp('af-b'));
+  assert.equal(a.sha256, b.sha256, 'reproducible');
+  assert.deepEqual([a.id, path.basename(a.file)], ['ant-farm-web', `ant-farm-web-${a.version}.zip`]);
+  const files = fs.readdirSync(antFarm).sort();
+  assert.deepEqual(files, ['app.js', 'game.json', 'hosted-shell.css', 'icon.svg', 'index.html', 'shell.css', 'style.css']);
+  const app = fs.readFileSync(path.join(antFarm, 'app.js'), 'utf8');
+  assert.ok(!/\brequire\(|\/Users\/|ipcRenderer/.test(app), 'no Node, no local paths, no Electron in the page');
 });

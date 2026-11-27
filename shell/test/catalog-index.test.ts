@@ -30,8 +30,9 @@ test('any change to the index or the signature is rejected', () => {
   assert.ok(!verify(data, sig, ['short']), 'a malformed key is skipped, not trusted');
 });
 
-test('the app ships no signing key until the production key is made', () => {
-  assert.deepEqual([...REGISTRY_KEYS], []);
+test('the app trusts the catalog\'s public key, and only well-formed raw ed25519 keys', () => {
+  assert.ok(REGISTRY_KEYS.length >= 1);
+  for (const k of REGISTRY_KEYS) assert.equal(rawFromPublicKey(publicKeyFromRaw(k)), k);
 });
 
 const pointer = (): Pointer => ({

@@ -1,8 +1,10 @@
 # The Token Games registry
 
 The list of catalog games the app can install. One **pointer** per game in `games/<id>.json`, added or changed by
-pull request; a **blocklist** in `blocklist.json`. CI turns them into one signed `index.json` and publishes it on
-GitHub Pages at `https://jakemotta.github.io/token-games/registry/index.json`, the only file the app reads.
+pull request; a **blocklist** in `blocklist.json`. The key holder turns them into one `index.json`, signs it on
+their Mac (`index.json.sig`) and commits both; CI checks them and publishes them on GitHub Pages at
+`https://jakemotta.github.io/token-games/registry/index.json`, the only file the app reads. No private key is ever
+in GitHub.
 How the app uses it: [docs/catalog.md](../docs/catalog.md). Writing a game: [docs/publishing-a-game.md](../docs/publishing-a-game.md).
 
 ## A pointer
@@ -45,11 +47,14 @@ index, and an installed copy stops running.
   pinned commit, **rebuilds the zip** with `tg-registry pack` (deterministic: sorted entries, fixed dates and modes),
   and checks that its sha256 equals the pointer's and the released zip's; it **rejects executables** (by extension and
   by MZ / ELF / Mach-O / `#!` magic) and any game that isn't `"kind": "web"`. Nothing from a game is ever run.
-- **On main** (`registry-publish.yml`): builds `index.json` from all pointers, signs it with the
-  `TG_REGISTRY_SIGNING_KEY` secret, verifies it against the key built into the app, and deploys it to Pages. Until the
-  secret is set it stops with a warning and publishes nothing.
-- **A tag `<id>-v<version>`** (`release-bundle.yml`): packs a game in this repo (`samples/<id>` or `<id>`) and
-  attaches the zip to a GitHub Release, never replacing one; the job summary prints the pointer to add here.
+- **On main** (`registry-publish.yml`, no secrets): `tg-registry check-index registry` checks that the committed
+  `index.json.sig` is by a key built into the app (`REGISTRY_KEYS`) and that `index.json` is byte for byte what the
+  pointers and the blocklist give (it downloads every bundle and checks its sha256); then it deploys `index.json`, its
+  signature and a small landing page to Pages. A pointer merged without a newly signed index fails here and publishes
+  nothing, so the live index stays the last good one.
+- **A tag `<id>-v<version>`** (`release-bundle.yml`): packs a game in this repo (`samples/<id>`, `<id>`, or a shell
+  game's built `<game>/catalog` folder whose `game.json` has that id) and attaches the zip to a GitHub Release, never
+  replacing one; the job summary prints the pointer to add here.
 
 ## Doing it by hand
 
@@ -58,10 +63,14 @@ cd cli && npm install && npm run build
 node dist/tg-registry.js pack ../samples/token-garden --out /tmp/bundles     # the zip and its sha256
 node dist/tg-registry.js check ../registry                                   # every pointer and the blocklist
 node dist/tg-registry.js verify-pointer ../registry/games/<id>.json --source <checkout> [--zip <file>]
-node dist/tg-registry.js build-index ../registry [--bundles <dir>] --out index.json
-node dist/tg-registry.js sign index.json --key <private key file>            # or env TG_REGISTRY_SIGNING_KEY
+node dist/tg-registry.js build-index ../registry                             # writes ../registry/index.json
+node dist/tg-registry.js sign ../registry/index.json --keychain              # the catalog key, on the key holder's Mac
+node dist/tg-registry.js check-index ../registry                             # what CI checks before it publishes
 node dist/tg-registry.js verify index.json [--public-key <base64>]
 ```
+
+`sign` also takes `--key <private key file>` (or env `TG_REGISTRY_SIGNING_KEY`) for a developer's own registry.
+The real key, its backup and rotation: [docs/first-game-walkthrough.md](../docs/first-game-walkthrough.md).
 
 A developer's own registry: serve a folder with `index.json`, `index.json.sig` and the zips, sign it with your own
 key (`tg-registry keygen`, outside any git checkout), and start the app with `TG_REGISTRY_URL=<url of index.json>`

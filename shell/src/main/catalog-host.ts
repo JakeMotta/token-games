@@ -11,7 +11,7 @@ import { ipcMain, protocol, session, WebContentsView, type BrowserWindow, type I
 import fs from 'node:fs';
 import path from 'node:path';
 import type { UsageEvent } from '../events';
-import { checkGameData, cleanStatus, forHostedGame, GAME_CH, MAX_SAVE_BYTES, MAX_SETTINGS_BYTES, type HostedEnv, type HostedStatus } from '../hosted';
+import { checkGameData, cleanStatus, forHostedGame, GAME_CH, HIDE_WAIT_MS, MAX_SAVE_BYTES, MAX_SETTINGS_BYTES, type HostedEnv, type HostedStatus } from '../hosted';
 import { allowRequest, cspFor, GAME_SCHEME } from '../catalog/permissions';
 import { safeRelPath } from '../catalog/zip';
 
@@ -33,7 +33,6 @@ export interface GameHostOptions {
   win: BrowserWindow; // the shell's window
   game: HostedGame;
   preload: string; // the built game-preload.js
-  smoke: boolean;
   env(): HostedEnv;
   onStatus(s: HostedStatus): void;
   pop(): void;
@@ -47,6 +46,7 @@ export class GameHost {
   private rect: Rect | null = null;
   private radius = 0;
   private readonly disposers: (() => void)[] = [];
+  private closed = false;
 
   constructor(private readonly o: GameHostOptions) {
     const { id, network } = o.game;
@@ -69,7 +69,9 @@ export class GameHost {
       webPreferences: {
         partition: `persist:tg-game-${id}`, preload: o.preload, sandbox: true, contextIsolation: true, nodeIntegration: false,
         nodeIntegrationInSubFrames: false, webSecurity: true, allowRunningInsecureContent: false, webviewTag: false,
-        devTools: false, spellcheck: false, navigateOnDragDrop: false, safeDialogs: true, backgroundThrottling: !o.smoke,
+        devTools: false, spellcheck: false, navigateOnDragDrop: false, safeDialogs: true,
+        // the game keeps real time while its view is hidden in the orb; it draws little there (env.scale 'mini')
+        backgroundThrottling: false,
       },
     });
     const wc = this.view.webContents;
@@ -102,7 +104,25 @@ export class GameHost {
   usage(ev: UsageEvent): void { this.send(GAME_CH.usage, forHostedGame(ev)); }
   envChanged(): void { this.send(GAME_CH.envChanged, this.o.env()); }
 
+  // Close it once it has saved: the game's onHide handlers run and answer, or HIDE_WAIT_MS passes (a game that never
+  // answers, or one written for bridge version 1, is closed all the same).
+  async closeAfterSave(): Promise<void> {
+    const wc = this.view.webContents;
+    if (!wc.isDestroyed() && !wc.isLoading()) {
+      await new Promise<void>((done) => {
+        const t = setTimeout(finish, HIDE_WAIT_MS);
+        const l = (e: IpcMainEvent) => { if (e.sender === wc) finish(); };
+        function finish(): void { clearTimeout(t); ipcMain.off(GAME_CH.hidden, l); done(); }
+        ipcMain.on(GAME_CH.hidden, l);
+        wc.send(GAME_CH.hide);
+      });
+    }
+    this.close();
+  }
+
   close(): void {
+    if (this.closed) return;
+    this.closed = true;
     for (const d of this.disposers.splice(0)) d();
     try { this.o.win.contentView.removeChildView(this.view); } catch { /* the window is gone */ }
     if (!this.view.webContents.isDestroyed()) this.view.webContents.close();

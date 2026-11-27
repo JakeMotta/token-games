@@ -26,8 +26,11 @@ jobs:
           set -euo pipefail
           id="${TAG%-v*}"; version="${TAG##*-v}"
           dir=""
-          for d in "samples/$id" "$id"; do [ -f "$d/game.json" ] && dir="$d" && break; done
-          [ -n "$dir" ] || { echo "::error::no game folder for $id (looked in samples/$id and $id)"; exit 1; }
+          # a web game's folder, or a shell game's built catalog bundle (<game>/catalog, npm run build:catalog)
+          for d in "samples/$id" "$id" */catalog; do
+            [ -f "$d/game.json" ] && [ "$(jq -r .id "$d/game.json")" = "$id" ] && dir="$d" && break
+          done
+          [ -n "$dir" ] || { echo "::error::no game folder for $id (looked in samples/$id, $id and */catalog)"; exit 1; }
           [ "$(jq -r .version "$dir/game.json")" = "$version" ] || { echo "::error::$dir/game.json is not version $version"; exit 1; }
           node cli/dist/tg-registry.js pack "$dir" --out dist-bundles
           zip="dist-bundles/$id-$version.zip"; sha=$(sha256sum "$zip" | cut -d' ' -f1)

@@ -15,6 +15,10 @@ It copies [`templates/web-game`](../templates/web-game): `game.json`, `index.htm
 `icon.svg`. There is no build step. Use one if you like (Vite, esbuild…), as long as the folder you publish holds
 only the built files and `game.json`. [samples/token-garden](../samples/token-garden) is a complete example.
 
+Already have a game written for the shell (a `Game`, like the Ant Farm)? Don't rewrite it: bundle it with the hosted
+adapter (`shell/scripts/build-web.mjs`, [catalog.md](catalog.md), "A shell game in the catalog"). The Ant Farm did
+exactly that; every step from package to rollback is in [first-game-walkthrough.md](first-game-walkthrough.md).
+
 ## 2. Try it
 
 Open Token Games (`cd ant-farm && npm start` from this repo), then **Settings → Games → Add local folder…**, pick
@@ -44,8 +48,9 @@ tg.onUsage((ev) => {                       // { type: 'tokens', source, input, o
 const saved = await tg.load();             // your save (JSON, ≤ 1 MB), or null
 await tg.save(state);                      // save every few seconds when something changed, not every frame
 const s = await tg.getSettings();          // your settings (JSON, ≤ 64 KB); await tg.setSettings(s)
-const env = await tg.env();                // { scale: 'mini' | 'expanded' | 'window', dark, reducedMotion }
-tg.onEnv((e) => restyle(e));
+const env = await tg.env();                // { scale: 'mini' | 'expanded' | 'window', dark, reducedMotion, feed }
+tg.onEnv((e) => restyle(e));               // env.feed: { watching, files }, so you can say "waiting for usage"
+tg.onHide(() => tg.save(state));           // before it is closed; return the promise and the shell waits (≤ 1 s)
 tg.setStatus({ count: '12', title: 'Sand Clock', line: '12 jars · 300 grains' });  // the orb and its pill
 tg.popOut(); tg.dock();                    // ask to open in the window, or dock back
 ```
@@ -70,7 +75,7 @@ and approved by the player.
   "kind": "web",
   "entry": { "page": "index.html" },
   "icon": "icon.svg",
-  "minShellVersion": "1.2.0",
+  "minShellVersion": "1.3.0",
   "permissions": ["claude-usage"],
   "license": "MIT",
   "repository": "https://github.com/you/sand-clock"
@@ -78,7 +83,8 @@ and approved by the player.
 ```
 
 Every field: [manifest.md](manifest.md). A web game has no `entry.main`. Optional: `network` (up to 8 host names),
-`license` (an SPDX id), `repository`, `screenshots` (up to 6 `.png` files in the folder).
+`license` (an SPDX id), `repository`, `screenshots` (up to 6 `.png` files in the folder). Use `"minShellVersion":
+"1.2.0"` only if you don't call `onHide` or read `env.feed` (bridge version 2 came with shell 1.3.0).
 
 ## 6. Publish
 
@@ -97,8 +103,8 @@ Every field: [manifest.md](manifest.md). A web game has no `entry.main`. Optiona
    (`.exe`, `.dll`, `.so`, `.sh`, `.node`, … or files that start like one).
 4. Open a pull request here adding `registry/games/<id>.json` (format: [registry/README.md](../registry/README.md))
    with `tier: "community"`, or `"verified"` if you'd like a maintainer to read it. CI rebuilds your bundle from the
-   commit and compares. Once it is merged, the signed index is republished and players see your game after "Check
-   for games".
+   commit and compares. Once it is merged, the key holder rebuilds and signs the index on their Mac and commits it
+   (CI never holds the key); Pages republishes it and players see your game after "Check for games".
 
 To update, release a new version and change `commit`, `tag` and `bundle` in your pointer. Released bundles are never
 replaced, and the app never installs an older version over a newer one.

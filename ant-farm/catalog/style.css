@@ -1,0 +1,56 @@
+/* The farm's own styles. The corner orb, the window frame, the title bar and the Settings sheet are the shell's
+   (shell/src/page/shell.css); their colours (--g-*) come from the farm's palette (palettes.ts) through setTheme. */
+
+.af { background: var(--g-back); color: var(--g-ink); }
+#view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; cursor: grab; touch-action: none; }
+#view:active { cursor: grabbing; }
+.af.mini #view { cursor: inherit; pointer-events: none; }
+
+.floater { position: absolute; left: 10px; bottom: 8px; font: 600 11px ui-monospace, Menlo, monospace; color: var(--g-hot); pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); animation: floatup 1.6s ease-out forwards; z-index: 1; }
+@keyframes floatup { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-26px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .floater { animation-duration: 0.01s; } }
+
+/* the palettes in Settings, each a live thumbnail of the farm */
+.pals { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 5px; }
+.pal { display: flex; flex-direction: column; gap: 2px; padding: 2px; border: 1px solid var(--g-line); border-radius: 5px; background: transparent;
+  color: var(--g-ink); font: inherit; font-size: 10px; text-align: left; cursor: pointer; }
+.pal canvas { width: 100%; aspect-ratio: 16 / 9; display: block; border-radius: 3px; image-rendering: pixelated; }
+.pal span { padding: 0 2px 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pal:hover { border-color: var(--g-dim); }
+.pal.on { border-color: var(--g-hot); color: var(--g-hot); }
+
+/* the colony's health, in Settings */
+.health { display: grid; gap: 2px; }
+.hrow { display: flex; justify-content: space-between; gap: 8px; }
+.hrow span:first-child { color: var(--g-dim); }
+
+/* the stats overlay (I): frame cost and what is in memory */
+.stats { position: absolute; left: 6px; bottom: 6px; margin: 0; padding: 4px 6px; font: 9.5px/1.35 ui-monospace, Menlo, monospace;
+  color: var(--g-ink); background: var(--g-panel); border: 1px solid var(--g-line); border-radius: 4px; pointer-events: none; white-space: pre; }
+.stats[hidden] { display: none; }
+/* Settings → Show performance: one quiet line in the bottom right */
+.perf { position: absolute; right: 6px; bottom: 6px; padding: 2px 5px; font: 9.5px/1.3 ui-monospace, Menlo, monospace; color: var(--g-dim);
+  background: var(--g-panel); border: 1px solid var(--g-line); border-radius: 4px; pointer-events: none; white-space: nowrap; }
+.perf[hidden] { display: none; }
+
+/* game over: over the farm, quiet; scrolls when the view is small */
+.over { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center; padding: 10px;
+  background: color-mix(in srgb, var(--g-back) 78%, transparent); overflow: auto; font-size: 11px; }
+.over[hidden] { display: none; }
+.over-card { width: min(100%, 360px); margin: auto; padding: 12px 14px; border: 1px solid var(--g-line); border-radius: 10px;
+  background: var(--g-panel, var(--g-bar)); color: var(--g-ink); }
+.over h3 { margin: 0; font-size: 14px; font-weight: 650; }
+.over h4 { margin: 0 0 3px; font-size: 10px; font-weight: 600; color: var(--g-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+.over-sub, .over-note, .over-small { margin: 2px 0 0; color: var(--g-dim); }
+.over-score { margin-top: 8px; font-size: 26px; line-height: 1; font-variant-numeric: tabular-nums; }
+.over-score span { color: var(--g-hot); font-size: 18px; }
+.over-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+.over .runs { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--g-line); }
+.over .hrow { font-variant-numeric: tabular-nums; }
+.over .hrow.now span { color: var(--g-hot); }
+.over-go { margin-top: 12px; width: 100%; padding: 6px 10px; border: 1px solid var(--g-hot); border-radius: 7px; background: transparent;
+  color: var(--g-hot); font: inherit; font-weight: 600; cursor: pointer; }
+.over-go:hover { background: color-mix(in srgb, var(--g-hot) 14%, transparent); }
+.over-small { margin-top: 6px; font-size: 10px; text-align: center; }
+@media (max-width: 300px) { .over-cols { grid-template-columns: 1fr; } }

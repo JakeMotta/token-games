@@ -1,28 +1,50 @@
 // The `tg-registry` command (registry-tool.ts does the work).
 import fs from 'node:fs';
 import path from 'node:path';
-import { buildIndexFrom, indexBytes, keygen, pack, readPointers, RegistryError, signIndex, verifyIndex, verifyPointer } from './registry-tool';
+import { buildIndexFrom, checkCommittedIndex, indexBytes, keygen, pack, readPointers, RegistryError, signIndex, verifyIndex, verifyPointer } from './registry-tool';
+import { KEYCHAIN_ACCOUNT, KEYCHAIN_SERVICE, keygenKeychain, publicKeyOf, readKey, storeKey } from './keychain';
 import { checkPointer, type Pointer } from '@token-games/shell/catalog/registry';
 
 const USAGE = `tg-registry: build and check the Token Games catalog.
 
-  tg-registry keygen <file>                          a new signing key, written outside any git checkout; prints the public key
+  tg-registry keygen --keychain [--account <name>]   a new signing key, kept in the macOS Keychain; prints the public key
+  tg-registry keygen <file>                          a new signing key in a file outside any git checkout (tests, other systems)
+  tg-registry public-key --keychain [--account <name>]           the public key of the Keychain's signing key
+  tg-registry import-key <file> --keychain [--account <name>]    put a backed-up key (PEM) into the Keychain
   tg-registry pack <game-folder> [--out <dir>]       the release bundle <id>-<version>.zip and its sha256
   tg-registry check <registry-folder>                every pointer in games/ and blocklist.json
   tg-registry verify-pointer <pointer.json> --source <checkout> [--zip <released.zip>]
                                                      rebuild from the pinned commit and compare sha256
   tg-registry build-index <registry-folder> [--bundles <dir>] [--out <index.json>]
-  tg-registry sign <index.json> [--key <file>]       writes index.json.sig (or TG_REGISTRY_SIGNING_KEY holds the key)
-  tg-registry verify <index.json> [--public-key <base64>]`;
+  tg-registry sign <index.json> --keychain [--account <name>]    writes index.json.sig with the Keychain's key (how the catalog is signed)
+  tg-registry sign <index.json> [--key <file>]       the same with a key file (or TG_REGISTRY_SIGNING_KEY holds the key)
+  tg-registry verify <index.json> [--public-key <base64>]
+  tg-registry check-index <registry-folder> [--bundles <dir>] [--public-key <base64>]
+                                                     the committed index.json: signed by a trusted key and matching the pointers`;
 
 const args = process.argv.slice(2);
 const opt = (f: string): string | undefined => { const i = args.indexOf(f); if (i < 0) return undefined; const v = args[i + 1]; args.splice(i, 2); return v; };
 const out = opt('--out'), source = opt('--source'), zip = opt('--zip'), bundles = opt('--bundles'), keyFile = opt('--key'), pub = opt('--public-key');
+const acct = opt('--account') || KEYCHAIN_ACCOUNT;
+const keychain = args.includes('--keychain');
+if (keychain) args.splice(args.indexOf('--keychain'), 1);
 const [cmd, target] = args;
 
 async function main(): Promise<number> {
+  if (keychain && process.platform !== 'darwin') { console.error('--keychain needs macOS; use --key <file> elsewhere'); return 2; }
+  if (cmd === 'keygen' && keychain) {
+    const publicKey = keygenKeychain(acct);
+    console.log(`Private key stored in the Keychain (service ${KEYCHAIN_SERVICE}, account ${acct}); it is never printed.\nPublic key, for shell/src/catalog/keys.ts:\n${publicKey}`);
+    return 0;
+  }
+  if (cmd === 'public-key' && keychain) { console.log(publicKeyOf(readKey(acct))); return 0; }
   if (!cmd || !target) { console.error(USAGE); return 2; }
   switch (cmd) {
+    case 'import-key': {
+      if (!keychain) { console.error('import-key puts a key into the Keychain: add --keychain'); return 2; }
+      console.log(`Stored in the Keychain (account ${acct}). Public key:\n${storeKey(fs.readFileSync(target, 'utf8'), acct)}`);
+      return 0;
+    }
     case 'keygen': {
       const k = keygen(target);
       console.log(`Private key written to ${k.file} (keep it offline; never commit it).\nPublic key, for shell/src/catalog/keys.ts:\n${k.publicKey}`);
@@ -56,9 +78,15 @@ async function main(): Promise<number> {
       return 0;
     }
     case 'sign': {
-      const pem = keyFile ? fs.readFileSync(keyFile, 'utf8') : process.env.TG_REGISTRY_SIGNING_KEY;
-      if (!pem) { console.error('no signing key: pass --key <file> or set TG_REGISTRY_SIGNING_KEY'); return 2; }
+      const pem = keychain ? readKey(acct) : keyFile ? fs.readFileSync(keyFile, 'utf8') : process.env.TG_REGISTRY_SIGNING_KEY;
+      if (!pem) { console.error('no signing key: pass --keychain, --key <file>, or set TG_REGISTRY_SIGNING_KEY'); return 2; }
       console.log(`signed: ${signIndex(target, pem)}`);
+      return 0;
+    }
+    case 'check-index': {
+      const r = await checkCommittedIndex(target, pub ? [pub] : undefined, bundles);
+      if (!r.ok) { console.error(r.error); return 1; }
+      console.log(`${path.join(target, 'index.json')}: signed by a trusted key and matches the pointers, ${r.games} game(s)`);
       return 0;
     }
     case 'verify': {

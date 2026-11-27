@@ -1,13 +1,14 @@
 name: registry-publish
-# After a pointer change lands on main: build registry/index.json from every pointer, sign it with the catalog's
-# private key (the repository secret TG_REGISTRY_SIGNING_KEY, which only the key holder sets), check the signature
-# against the public key built into the app (shell/src/catalog/keys.ts), and publish both files on GitHub Pages at
-# https://jakemotta.github.io/token-games/registry/index.json. Needs Pages turned on with "GitHub Actions" as source.
-# Until the secret is set it builds and checks the index, then stops with a warning instead of publishing.
+# After a registry change lands on main: check the committed, signed registry/index.json and publish it with its
+# signature on GitHub Pages at https://jakemotta.github.io/token-games/registry/index.json. The index is signed on the
+# key holder's Mac (`tg-registry sign --keychain`); no private key is ever in GitHub. CI only checks that the
+# signature is by a key built into the app (shell/src/catalog/keys.ts) and that the index is exactly what the
+# pointers and the blocklist give (it downloads each released bundle and checks its sha256), and publishes nothing
+# otherwise. Needs Pages turned on with "GitHub Actions" as source.
 on:
   push:
     branches: [main]
-    paths: ['registry/**']
+    paths: ['registry/**', '.github/workflows/registry-publish.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -30,28 +31,26 @@ jobs:
       - name: Build the CLI
         working-directory: cli
         run: npm ci && npm run build
-      - name: Build, sign and verify the index
-        id: build
-        env:
-          TG_REGISTRY_SIGNING_KEY: ${{ secrets.TG_REGISTRY_SIGNING_KEY }}
+      - name: Check the signed index
+        id: check
         run: |
           set -euo pipefail
-          if [ -z "$TG_REGISTRY_SIGNING_KEY" ]; then
-            echo "::warning::Not published: the TG_REGISTRY_SIGNING_KEY secret is not set yet (docs/catalog.md, Who holds the signing key)"
+          node cli/dist/tg-registry.js check registry
+          if [ ! -f registry/index.json ]; then
+            echo "::warning::Not published: registry/index.json is not committed yet (docs/first-game-walkthrough.md, Publish)"
             echo "ready=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
+          node cli/dist/tg-registry.js check-index registry
           mkdir -p _site/registry
-          node cli/dist/tg-registry.js check registry
-          node cli/dist/tg-registry.js build-index registry --out _site/registry/index.json
-          node cli/dist/tg-registry.js sign _site/registry/index.json
-          node cli/dist/tg-registry.js verify _site/registry/index.json
+          cp registry/index.json registry/index.json.sig _site/registry/
+          printf '<!doctype html><meta charset="utf-8"><title>Token Games catalog</title><p>The Token Games catalog: <a href="registry/index.json">registry/index.json</a> (signed: <a href="registry/index.json.sig">index.json.sig</a>). <a href="https://github.com/JakeMotta/token-games">Source</a>.</p>\n' > _site/index.html
           echo "ready=true" >> "$GITHUB_OUTPUT"
-      - if: steps.build.outputs.ready == 'true'
+      - if: steps.check.outputs.ready == 'true'
         uses: actions/configure-pages@v5
-      - if: steps.build.outputs.ready == 'true'
+      - if: steps.check.outputs.ready == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
       - id: deploy
-        if: steps.build.outputs.ready == 'true'
+        if: steps.check.outputs.ready == 'true'
         uses: actions/deploy-pages@v4

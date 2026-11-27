@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "id": "ant-farm-web",
+  "name": "Ant Farm (web)",
+  "description": "An ant colony that digs, eats and lives on the real clock, fed only by the tokens your AI agent spends. The Ant Farm as a catalog game, with a colony of its own.",
+  "author": "Jacob Motta",
+  "version": "1.0.0",
+  "kind": "web",
+  "entry": { "page": "index.html" },
+  "icon": "icon.svg",
+  "minShellVersion": "1.3.0",
+  "permissions": ["claude-usage"],
+  "license": "MIT",
+  "repository": "https://github.com/JakeMotta/token-games"
+}

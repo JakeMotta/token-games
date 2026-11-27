@@ -5,7 +5,7 @@ card, the popped-out window), the menu-bar icon and its menu, the global hotkey,
 Display settings, the save file, the Claude Code usage feed, the game catalog, the build and the hidden smoke test. A
 game hands it a view and reacts to usage. How it looks and behaves: [docs/presentation.md](../docs/presentation.md).
 
-Version `1.2.0` (`package.json`, and `SHELL_VERSION` in `src/manifest.ts`; keep them equal). Games use it from
+Version `1.3.0` (`package.json`, and `SHELL_VERSION` in `src/manifest.ts`; keep them equal). Games use it from
 source: their tsconfig maps `@token-games/shell/*` to `../shell/src/*`, and `scripts/build-game.mjs` does the same
 for esbuild.
 
@@ -43,6 +43,9 @@ only bridge is `window.tokenGame`. The built-in game (the one whose app this is)
 is active at a time. While the app runs it also listens on a local control socket for the `tokengames` CLI and the
 `token-games-mcp` server, which can ask but never approve. All of it: [docs/catalog.md](../docs/catalog.md).
 
+A game written for the shell can ship as a catalog game too, without a fork: `scripts/build-web.mjs` bundles it with
+the hosted adapter (`src/page/hosted-shell.ts`), which runs the same `mountShell(game)` page over `window.tokenGame`.
+
 ## Files
 
 | File | What |
@@ -68,19 +71,23 @@ is active at a time. While the app runs it also listens on a local control socke
 | `src/catalog/control.ts`, `commands.ts` | The local control socket and the commands it accepts (no approve) |
 | `src/main/catalog-host.ts`, `game-preload.ts`, `src/hosted.ts` | Runs a catalog game sandboxed; `window.tokenGame`; what of the feed, save and status it gets |
 | `src/page/games-panel.ts` | Settings → Games |
-| `src/main/smoke-catalog.ts`, `smoke-registry.ts` | The smoke test's `catalog` run and its signed test registry |
+| `src/page/hosted-shell.ts`, `hosted-shell.css`, `src/hosted-game.ts` | The hosted adapter: a shell game run as a sandboxed catalog game |
+| `scripts/build-web.mjs` | Builds a game's catalog bundle (`<game>/catalog/`), or `--check`s the committed one matches its source |
+| `src/main/smoke-catalog.ts`, `smoke-registry.ts` | The smoke test's `catalog` and `catalog-game` runs and their signed test registry |
 
 ## Testing
 
 `test/*.test.ts` runs with every game's `npm test`. `npm run test:smoke` in a game runs the shell's checks (the orb's
 corner, the pill, the card, dragging, hiding and the hotkey, pop out, docking, sizes, tray, hotkey, display changes, Settings, Reset, restart) and then the
 game's. Settings' closing is checked with real mouse input: its ×, Esc, a click outside, and a slider dragged past
-the sheet's edge (which must not close it). A third run, `catalog`, installs the sample Token Garden from a signed test registry, proves it has no Node,
-files or network, feeds it a transcript line, switches back and removes it. Windows are never shown in the smoke test:
-showing and hiding only flip a flag there. `npm run perf` (`smoke.mjs --perf [--profile <folder>]`) is a single hidden
-run that measures what frames cost in each mode (`GameSmoke.perf`, `k.note`, `k.cpu`) and writes `perf.json`;
-`--profile` copies a profile's `*.json` (settings and save) into the temp profile first, so a real save can be
-measured without touching it.
+the sheet's edge (which must not close it). A third run, `catalog`, installs the sample Token Garden from a signed test
+registry, proves it has no Node, files or network, feeds it a transcript line, switches back and removes it. A
+fourth, `catalog-game` (when the game has a `catalog/` bundle), does the same for the game's own bundle through the
+real `tokengames` CLI and checks it saves in its own slot. `node ../shell/scripts/smoke.mjs --only <run>` runs one.
+Windows are never shown in the smoke test: showing and hiding only flip a flag there. `npm run perf` (`smoke.mjs
+--perf [--profile <folder>]`) is a single hidden run that measures what frames cost in each mode (`GameSmoke.perf`,
+`k.note`, `k.cpu`) and writes `perf.json`; `--profile` copies a profile's `*.json` (settings and save) into the temp
+profile first, so a real save can be measured without touching it.
 
 Changing anything here is a wrapper change: update `CLAUDE.md`, `README.md` and the docs it affects in the same
 change (`npm run docs-check`).

@@ -30,7 +30,8 @@ the **shell** (`shell/`); a game only draws itself and reacts to usage.
 6. **Counts only.** The feed reads token counts and timestamps from `~/.claude/projects/**/*.jsonl`; a game never
    sees prompts, code or file contents, and never sends anything over the network.
 7. **Never commit keys or personal data.** API keys (PixelLab and the like) stay in your environment. The repo is
-   **public**. The catalog's private signing key is held by Jake, outside the repo; tests make a throwaway key in
+   **public**. The catalog's private signing key is held by Jake, in his Mac's Keychain, never in the repo or in
+   GitHub secrets; the index is signed on his Mac (`tg-registry sign --keychain`). Tests make a throwaway key in
    memory. Agents may only *request* installs and removals; approval happens in the app's UI and nowhere else.
 
 ## Layout
@@ -45,16 +46,17 @@ the **shell** (`shell/`); a game only draws itself and reacts to usage.
 | `shell/src/settings.ts` | Shared settings and `settingsKit` for a game's own settings schema |
 | `shell/src/manifest.ts` | `game.json` checker ([docs/manifest.md](docs/manifest.md)) |
 | `shell/src/catalog/` | The catalog: index, signatures and keys, zip and bundle checks, installer, permissions, control socket ([docs/catalog.md](docs/catalog.md)) |
-| `shell/src/main/catalog-host.ts`, `game-preload.ts`, `shell/src/hosted.ts` | Runs a catalog game sandboxed in a `WebContentsView`; `window.tokenGame`, its only bridge |
+| `shell/src/main/catalog-host.ts`, `game-preload.ts`, `shell/src/hosted.ts` | Runs a catalog game sandboxed in a `WebContentsView`; `window.tokenGame` (version 2), its only bridge |
+| `shell/src/page/hosted-shell.ts`, `shell/src/hosted-game.ts`, `shell/scripts/build-web.mjs` | The hosted adapter and its build: a shell game shipped as a sandboxed catalog game, no fork ([docs/catalog.md](docs/catalog.md)) |
 | `shell/src/page/games-panel.ts` | Settings → Games: the picker, permission sheets, Add local folder, the Community switch |
 | `shell/scripts/build-game.mjs`, `smoke.mjs` | Build any game; run its hidden end-to-end smoke test |
-| `ant-farm/` | The first game ([ant-farm/README.md](ant-farm/README.md)) |
+| `ant-farm/` | The first game ([ant-farm/README.md](ant-farm/README.md)); `ant-farm/catalog/` is its built catalog bundle, `ant-farm-web` ([docs/first-game-walkthrough.md](docs/first-game-walkthrough.md)) |
 | `samples/token-garden/` | The sample catalog (web) game |
 | `templates/game/`, `templates/web-game/` | The starter games; `npm run new-game -- <id>` copies the first to `<id>/`, `--web` the second to `samples/<id>/` |
-| `cli/` | `tokengames` (CLI), `token-games-mcp` (MCP server), `tg-registry` (pack, check, build and sign the index) |
-| `registry/` | Catalog pointers (`games/<id>.json`) and `blocklist.json`; CI builds, signs and publishes `index.json` on Pages ([registry/README.md](registry/README.md)) |
+| `cli/` | `tokengames` (CLI), `token-games-mcp` (MCP server), `tg-registry` (pack, check, build and sign the index; `src/keychain.ts` keeps the key in the macOS Keychain) |
+| `registry/` | Catalog pointers (`games/<id>.json`), `blocklist.json`, and the committed `index.json` + `index.json.sig` (signed on Jake's Mac); CI checks them and publishes them on Pages ([registry/README.md](registry/README.md)) |
 | `scripts/` | Repo scripts: `new-game.mjs`, `check-docs.mjs` (+ their tests) |
-| `docs/` | `presentation.md` (a corner orb, pop out), `manifest.md`, `catalog.md`, `publishing-a-game.md`, `pre-public-audit.md`, `ant-farm-design.md` |
+| `docs/` | `presentation.md` (a corner orb, pop out), `manifest.md`, `catalog.md`, `publishing-a-game.md`, `first-game-walkthrough.md` (package, sign, release, install, rollback; the signing key; go-live), `pre-public-audit.md`, `ant-farm-design.md` |
 | `prototype/` | Browser prototypes and mock-ups; not shipped |
 
 Each game is a folder at the root beside `shell/`, with `game.json`, its own `package.json` (Electron, esbuild,
@@ -71,9 +73,10 @@ From a game folder (`cd ant-farm`):
 | `npm start` | Build and run it (in a corner of the screen) |
 | `npm run typecheck` | `tsc --noEmit`, the game and the shell |
 | `npm test` | Build, then the game's and the shell's unit tests (`node --test`) |
-| `npm run test:smoke` | Hidden end-to-end test: real Electron, windows never shown, a temp profile and a fake transcript folder. Three runs: `full`, `reopen`, and `catalog` (installs Token Garden from a local signed test registry, proves its sandbox, switches and removes it) |
+| `npm run test:smoke` | Hidden end-to-end test: real Electron, windows never shown, a temp profile and a fake transcript folder. Four runs: `full`, `reopen`, `catalog` (installs Token Garden from a local signed test registry, proves its sandbox, switches and removes it) and, for a game with a `catalog/` bundle, `catalog-game` (the same for that bundle, driven by the real `tokengames` CLI, checking its own save). `node ../shell/scripts/smoke.mjs --only <run>` runs one |
 | `npm run shots` | The same, saving screenshots of every mode to `shots/` |
 | `npm run perf [-- --profile <folder>]` | Hidden frame-cost benchmark in every mode (fps, ms, CPU) into `perf.json`; `--profile` measures a copy of a real profile's settings and save |
+| `npm run build:catalog`, `npm run check:catalog` | The Ant Farm only: build its catalog bundle into `catalog/`, or check the committed one matches the source |
 
 From the root: `npm run new-game -- <id> ["Name"] [--web] [--into <folder>]`, `npm run docs-check`, `npm run test:scripts`.
 
@@ -95,7 +98,8 @@ catalog and a test registry), `npm run build` (`dist/tokengames.js`, `dist/token
 - Code: TypeScript, strict; small pure modules with tests; comments say why, in plain words.
 - Env vars the shell reads: `TG_SMOKE`, `TG_SMOKE_MODE`, `TG_USER_DATA` (a temp profile), `TG_CLAUDE_DIR` (transcripts),
   `TG_CATALOG_DIR` (the catalog folder; the CLI reads it too), `TG_REGISTRY_URL` and `TG_REGISTRY_KEY` (a developer's
-  own registry and its public key). CI's signing secret: `TG_REGISTRY_SIGNING_KEY`.
+  own registry and its public key; the `catalog-game` smoke run installs from it when set). `TG_REGISTRY_SIGNING_KEY`
+  signs a developer's own index with `tg-registry sign`; the real catalog key is only in Jake's Keychain.
 - A game's settings live in the app's data folder (`~/Library/Application Support/<id>/settings.json`), its save in
   `save.json` (or the `saveFile` it names; the Ant Farm uses `colony.json`). The catalog (installed games, their saves,
   the active game, `control.json`) lives in `~/Library/Application Support/Token Games/`.

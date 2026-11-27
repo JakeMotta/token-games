@@ -23,8 +23,10 @@ Anyone can write a game for Token Games, and players install them inside the app
 game is a small web page the app runs sandboxed (no Node, no files, no network unless you approve its hosts); it sees
 usage counts and its own save, nothing else. Check for games, read the permission sheet, approve, press Play. One game
 is active at a time; the Ant Farm stays built in. The Community tier (games only CI has checked) is off until you
-turn it on. Sample: [Token Garden](samples/token-garden/). How it works: [docs/catalog.md](docs/catalog.md). Write
-one: [docs/publishing-a-game.md](docs/publishing-a-game.md).
+turn it on. The first published game is the Ant Farm itself, as **Ant Farm (web)** (`ant-farm-web`): the same farm,
+sandboxed, with its own save. Sample: [Token Garden](samples/token-garden/). How it works:
+[docs/catalog.md](docs/catalog.md). Write one: [docs/publishing-a-game.md](docs/publishing-a-game.md). Every step of
+publishing the Ant Farm, from package to rollback: [docs/first-game-walkthrough.md](docs/first-game-walkthrough.md).
 
 Agents can ask too, never approve: the `tokengames` CLI (`list`, `install`, `use`, `remove`, `status`) and the
 `token-games-mcp` server for Claude Code or Cursor, both in [cli/](cli/):
@@ -70,9 +72,11 @@ the jar with your game. For a catalog game anyone can install, add `--web`: it c
   the build and the hidden smoke test ([shell/README.md](shell/README.md)).
 - `<game>/`: one folder per game, each with a `game.json` manifest ([docs/manifest.md](docs/manifest.md)).
 - `samples/`: catalog (web) games, like Token Garden.
-- `registry/`: the catalog's game pointers and blocklist; CI builds and signs `index.json` and serves it on GitHub
-  Pages ([registry/README.md](registry/README.md)). Bundles are attached to this repo's GitHub Releases.
-- `cli/`: `tokengames`, `token-games-mcp` and `tg-registry` (the registry tool CI uses).
+- `<game>/catalog/`: a shell game bundled as a catalog game (`npm run build:catalog`), like `ant-farm/catalog/`.
+- `registry/`: the catalog's game pointers, blocklist and signed `index.json` (signed on the key holder's Mac, never in
+  CI); CI checks it and serves it on GitHub Pages ([registry/README.md](registry/README.md)). Bundles are attached to
+  this repo's GitHub Releases.
+- `cli/`: `tokengames`, `token-games-mcp` and `tg-registry` (pack, check, build and sign the index).
 - `templates/game/`, `templates/web-game/`, `scripts/`: the starter games, `npm run new-game`, `npm run docs-check`.
 - `docs/`, `prototype/`: design docs, mock-ups.
 

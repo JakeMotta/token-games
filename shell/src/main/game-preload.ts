@@ -7,6 +7,14 @@ import { GAME_CH, HOSTED_API_VERSION, type HostedEnv, type TokenGameApi } from '
 const envFns: ((e: HostedEnv) => void)[] = [];
 ipcRenderer.on(GAME_CH.envChanged, (_e, v: HostedEnv) => { for (const fn of envFns) { try { fn(v); } catch { /* the game's */ } } });
 
+// The shell is about to close the game: run its handlers, wait for what they started (saves), then say so. Messages
+// from one page arrive in order, so a save sent before 'hidden' is written before the shell closes the game.
+const hideFns: (() => unknown)[] = [];
+ipcRenderer.on(GAME_CH.hide, async () => {
+  await Promise.allSettled(hideFns.map(async (fn) => fn()));
+  ipcRenderer.send(GAME_CH.hidden);
+});
+
 const api: TokenGameApi = {
   version: HOSTED_API_VERSION,
   onUsage: (fn) => { ipcRenderer.on(GAME_CH.usage, (_e, ev) => fn(ev)); },
@@ -19,6 +27,7 @@ const api: TokenGameApi = {
   setStatus: (s) => ipcRenderer.send(GAME_CH.status, s),
   popOut: () => ipcRenderer.send(GAME_CH.pop),
   dock: () => ipcRenderer.send(GAME_CH.dock),
+  onHide: (fn) => { hideFns.push(fn); },
 };
 contextBridge.exposeInMainWorld('tokenGame', api);
 

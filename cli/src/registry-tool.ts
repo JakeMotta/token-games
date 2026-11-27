@@ -2,9 +2,11 @@
 // release bundle, check pointers, rebuild a bundle from its pinned commit and compare it, build index.json from the
 // pointers, sign it, and verify a signature. CI runs the same commands (.github/workflows/registry-*.yml).
 //
-// The signing key: `keygen` writes a new private key to a file outside any git checkout and prints the public key
-// (which goes in shell/src/catalog/keys.ts). `sign` reads the private key from --key <file> or from the
-// TG_REGISTRY_SIGNING_KEY environment variable (a CI secret). The key is never printed and never written to the repo.
+// The signing key: the catalog's lives in the key holder's macOS Keychain (keychain.ts, `--keychain`); the index is
+// signed on that Mac and committed as registry/index.json and index.json.sig, and CI only checks and publishes them
+// (`check-index`). `keygen <file>` writes a key to a file outside any git checkout instead (a developer's own
+// registry, tests), and `sign` also takes --key <file> or TG_REGISTRY_SIGNING_KEY. The key is never printed and never
+// written to the repo.
 import fs from 'node:fs';
 import path from 'node:path';
 import { checkBundleFiles, readBundleDir } from '@token-games/shell/catalog/bundle';
@@ -111,6 +113,21 @@ export async function buildIndexFrom(registryDir: string, bundlesDir?: string, g
 }
 
 export const indexBytes = (idx: CatalogIndex): Buffer => Buffer.from(JSON.stringify(idx, null, 2) + '\n');
+
+// CI's check of the committed registry/index.json before it is published: signed by a key the app trusts, and exactly
+// what the pointers and the blocklist give today (rebuilt with the same `generated` time). A pointer merged without a
+// new signed index, or an index edited by hand, fails here and nothing is published.
+export async function checkCommittedIndex(registryDir: string, keys: readonly string[] = REGISTRY_KEYS, bundlesDir?: string): Promise<{ ok: boolean; error?: string; games?: number }> {
+  const file = path.join(registryDir, 'index.json');
+  if (!fs.existsSync(file)) return { ok: false, error: `${file} is missing: build and sign it (tg-registry build-index, then sign --keychain)` };
+  const v = verifyIndex(file, keys);
+  if (!v.ok) return v;
+  const committed = fs.readFileSync(file);
+  const generated = (JSON.parse(committed.toString('utf8')) as CatalogIndex).generated;
+  const rebuilt = indexBytes(await buildIndexFrom(registryDir, bundlesDir, generated));
+  if (!rebuilt.equals(committed)) return { ok: false, error: `${file} is not what the pointers and blocklist.json give: rebuild it and sign it again on the key holder's Mac` };
+  return v;
+}
 
 export function signIndex(indexFile: string, privateKeyPem: string): string {
   const bytes = fs.readFileSync(indexFile);

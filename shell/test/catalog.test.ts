@@ -182,7 +182,7 @@ test('the control socket offers no way to approve, and its commands only ask', a
     const sock = findSocket(dir);
     assert.equal(sock, srv.socket);
     if (process.platform !== 'win32') assert.equal(fs.statSync(sock).mode & 0o777, 0o600, 'only this user can connect');
-    assert.deepEqual(await callControl(sock, 'ping'), { app: 'token-games', shell: '1.2.0' });
+    assert.deepEqual(await callControl(sock, 'ping'), { app: 'token-games', shell: '1.3.0' });
     assert.equal(((await callControl(sock, 'refresh')) as { ok: boolean }).ok, true);
     const res = (await callControl(sock, 'install', { id: 'token-garden' })) as { requested: { from: string }; message: string };
     assert.equal(res.requested.from, 'agent');

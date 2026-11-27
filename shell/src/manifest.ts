@@ -9,7 +9,7 @@
 //   "web": a sandboxed web bundle the catalog installs and the shell hosts (docs/catalog.md). Plain files only:
 //          entry.page and what it loads. It never has main-process code, so entry.main is refused.
 
-export const SHELL_VERSION = '1.2.0'; // the shell's own version (shell/package.json); a game asks for at least minShellVersion
+export const SHELL_VERSION = '1.3.0'; // the shell's own version (shell/package.json); a game asks for at least minShellVersion
 export const MANIFEST_VERSION = 1;
 
 // What a game may ask the shell for. 'claude-usage': token counts and timestamps from Claude Code's transcripts.

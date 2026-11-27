@@ -3,6 +3,7 @@
 // Settings → Games, switch to the game and prove it runs sandboxed (no Node, no file or network access, only
 // window.tokenGame), that it gets the usage feed and its own save, that the built-in game's save is left alone, and
 // that removing it brings the built-in game back. Screenshots: the picker and the permission sheet, dark and light.
+import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Catalog, BuiltIn } from '../catalog/catalog';
@@ -17,10 +18,11 @@ export interface CatalogSmoke {
   socket(): string;
   builtIn(): BuiltIn;
   saveFile(): string; // the built-in game's save
+  bundleDir(): string; // the app's own catalog bundle (catalog/, built by build-web.mjs), for the catalog-game run
 }
 
 const GAME = 'token-garden';
-const API_KEYS = ['dock', 'env', 'getSettings', 'load', 'onEnv', 'onUsage', 'popOut', 'save', 'setSettings', 'setStatus', 'version'];
+const API_KEYS = ['dock', 'env', 'getSettings', 'load', 'onEnv', 'onHide', 'onUsage', 'popOut', 'save', 'setSettings', 'setStatus', 'version'];
 
 export async function catalogSmoke<S extends ShellSettings>(k: SmokeKit<S>, c: CatalogSmoke): Promise<void> {
   const { check, until, wait } = k;
@@ -108,6 +110,140 @@ export async function catalogSmoke<S extends ShellSettings>(k: SmokeKit<S>, c: C
   check('catalog: removing it brings the built-in game back', await until(async () => !!(await sj('!!window.gameTest')) && (await games())?.hosted === null, 8000)
     && c.catalog().active() === c.builtIn().id && !c.host());
   check('catalog: its files are gone and its save is kept', !fs.existsSync(gameDir) && fs.existsSync(path.join(c.catalog().saveDir(GAME), 'save.json')));
+  await wait(300);
+  if (k.state() !== 'orb') { k.dispatch('escape'); await settled('orb'); }
+}
+
+// The catalog-game run (TG_SMOKE_MODE=catalog-game): the app's own game packed as a catalog game (catalog/, built by
+// build-web.mjs) and installed like any other. The registry is one made for this run from catalog/, or the real one
+// when TG_REGISTRY_URL is set (installing from the public index proves its signature and checksum). It proves the
+// bundle runs sandboxed through the hosted adapter, reads the feed, saves in its own slot when the shell closes it,
+// loads that save again, and never touches the built-in game's save.
+export async function catalogGameSmoke<S extends ShellSettings>(k: SmokeKit<S>, c: CatalogSmoke): Promise<void> {
+  const { check, until, wait } = k;
+  const sj = <T = any>(code: string): Promise<T | null> => k.js<T>(code).catch(() => null);
+  const games = () => sj<{ view: any; text: string; hosted: string | null; icon: boolean }>('shellTest.games()');
+  const click = (name: string) => sj<boolean>(`shellTest.gamesClick(${JSON.stringify(name)})`);
+  const page = () => sj<any>('shellTest.state()');
+  const settled = (st: string) => until(() => k.state() === st, 3000);
+  const inGame = <T = any>(code: string): Promise<T> => c.host()!.view.webContents.executeJavaScript(code);
+  const GAME = (JSON.parse(fs.readFileSync(path.join(c.bundleDir(), 'game.json'), 'utf8')) as { id: string }).id;
+  const row = async (id: string) => ((await games())?.view?.rows || []).find((r: any) => r.id === id);
+  const gameDir = path.join(c.catalog().gamesDir, GAME), saveFile = path.join(c.catalog().saveDir(GAME), 'save.json');
+  const showGames = () => sj('document.getElementById("tg-games").scrollIntoView({ block: "start" })');
+  const openPanel = async () => { if (!(await page())?.panelOpen) await sj('shellTest.key(",")'); return until(async () => !!(await page())?.panelOpen); };
+  const readSave = () => { try { return JSON.parse(fs.readFileSync(saveFile, 'utf8')); } catch { return null; } };
+  const colonyBytes = () => (fs.existsSync(c.saveFile()) ? fs.readFileSync(c.saveFile(), 'utf8') : null);
+  // the game's own view: a window capture holds only the shell's page, not the view laid over it
+  const viewShot = async (name: string) => {
+    let img = null;
+    for (let i = 0; i < 10 && (!img || img.isEmpty()); i++) { await wait(200); img = await c.host()!.view.webContents.capturePage().catch(() => null); }
+    if (img && !img.isEmpty() && process.env.TG_SMOKE) fs.writeFileSync(path.join(process.env.TG_SMOKE, name + '.png'), img.toPNG());
+  };
+  // the real tokengames CLI (cli/dist, after `npm run build` in cli/), run with this app's Electron as Node against
+  // this run's catalog folder; without it the run asks over the control socket the same way the CLI does
+  const cliJs = path.resolve(c.bundleDir(), '..', '..', 'cli', 'dist', 'tokengames.js'), hasCli = fs.existsSync(cliJs);
+  const cli = (...args: string[]) => new Promise<{ code: number; out: string }>((resolve) => {
+    execFile(process.execPath, [cliJs, ...args], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', TG_CATALOG_DIR: path.dirname(c.catalog().gamesDir) }, timeout: 30000 },
+      (e, out, err) => resolve({ code: e ? (typeof e.code === 'number' ? e.code : 1) : 0, out: String(out) + String(err) }));
+  });
+  const play = async (id: string) => {
+    await openPanel();
+    await click('use:' + id);
+    return until(async () => (await games())?.hosted === (id === c.builtIn().id ? null : id) && c.catalog().active() === id, 8000);
+  };
+
+  k.update({ size: 'large', dock: 'br', corner: 'br' } as Partial<S>);
+  if (k.state() !== 'popped') { k.dispatch('pop'); await settled('popped'); }
+  check('catalog-game: Settings → Games opens in the window', await openPanel());
+  if (hasCli) {
+    const l = await cli('list', '--refresh');
+    check(`catalog-game: \`tokengames list --refresh\` lists ${GAME} as available`, l.code === 0 && new RegExp(`^${GAME}\\s.*available$`, 'm').test(l.out), l.out);
+  } else await click('refresh');
+  check(`catalog-game: "Check for games" lists ${GAME} from the signed index`, await until(async () => {
+    const v = (await games())?.view;
+    return !!v?.catalog.signed && !!v.rows.find((r: any) => r.id === GAME && !r.installed);
+  }, 15000), (await games())?.view?.catalog);
+
+  // an agent asks; the player approves in the app
+  check('catalog-game: the control socket is up', await until(() => !!c.socket()), c.socket());
+  const asked = hasCli
+    ? await cli('install', GAME, '--json').then((r) => ({ requested: JSON.parse(r.out) as { from: string; requestId: string } }))
+    : (await callControl(c.socket(), 'install', { id: GAME })) as { requested: { from: string; requestId: string } };
+  check(`catalog-game: an agent's install${hasCli ? ' (`tokengames install`)' : ''} is only a request`, asked.requested.from === 'agent' && !fs.existsSync(gameDir), asked);
+  check('catalog-game: the permission sheet names the game and the usage permission', await until(async () => {
+    const t = (await games())?.text || '';
+    return /Requested by an agent/.test(t) && /Install Ant Farm/.test(t) && /tokens your Claude Code sessions use/.test(t);
+  }), (await games())?.text);
+  await showGames();
+  await k.shots('catalog-game-sheet');
+  await click('approve:' + asked.requested.requestId);
+  check('catalog-game: approving downloads it, checks its sha256 and installs it', await until(async () => !!(await row(GAME))?.installed, 20000)
+    && fs.existsSync(path.join(gameDir, 'index.html')) && fs.existsSync(path.join(gameDir, 'app.js')));
+  await showGames();
+  await k.shots('catalog-game-picker');
+
+  if (hasCli) {
+    const st = await cli('status', '--json');
+    const j = (() => { try { return JSON.parse(st.out); } catch { return null; } })();
+    check('catalog-game: `tokengames status` shows it installed and nothing waiting', st.code === 0 && j?.games?.some((g: any) => g.id === GAME && g.installed) && j.pending.length === 0, st.out.slice(0, 400));
+  }
+
+  const colony = colonyBytes();
+  if (hasCli) {
+    const u = await cli('use', GAME);
+    check('catalog-game: `tokengames use` switches to the packaged farm', u.code === 0 && await until(async () => (await games())?.hosted === GAME && c.catalog().active() === GAME, 8000), u.out);
+  } else check('catalog-game: Play switches to the packaged farm', await play(GAME));
+  check('catalog-game: the farm is shown in the window', await until(() => !!c.host()?.shown(), 5000));
+  check('catalog-game: the farm page loads, with its tools corner', await until(() => inGame<boolean>('document.readyState === "complete" && !!document.getElementById("view") && !!document.getElementById("tgh-gear")').catch(() => false), 8000));
+  const env = await inGame<Record<string, string>>(`({ require: typeof require, process: typeof process, shell: typeof window.tokenShell,
+    test: typeof window.gameTest, api: Object.keys(window.tokenGame).sort().join(','), version: String(window.tokenGame.version), hidden: String(document.hidden) })`);
+  check('catalog-game: sandboxed: no Node, no shell API, no test hooks, only window.tokenGame v2', env.require === 'undefined' && env.process === 'undefined'
+    && env.shell === 'undefined' && env.test === 'undefined' && env.api === API_KEYS.join(',') && env.version === '2', env);
+  const net = await inGame<string>(`fetch('https://example.com/').then(() => 'reached', () => 'blocked')`);
+  check('catalog-game: no network', net === 'blocked', net);
+  check('catalog-game: the farm draws and its status reaches the orb and the card', await until(async () => /ants/.test((await page())?.line || ''), 10000), { line: (await page())?.line, hidden: env.hidden });
+  const painted = await inGame<number>(`(() => { const v = document.getElementById('view'); const d = v.getContext('2d').getImageData(0, 0, v.width, v.height).data; const s = new Set(); for (let i = 0; i < d.length; i += 4 * 97) s.add(d[i] << 16 | d[i + 1] << 8 | d[i + 2]); return s.size; })()`).catch(() => 0);
+  check('catalog-game: the canvas shows the farm', painted > 3, painted);
+  await k.shot('catalog-game-window');
+  await viewShot('catalog-game-playing');
+
+  // its own Settings sheet, inside the sandbox
+  await inGame('document.getElementById("tgh-gear").click()');
+  check('catalog-game: the gear opens the farm\'s own settings in the view', await until(() => inGame<boolean>('!document.getElementById("tgh-panel").hidden && !!document.getElementById("pals").children.length'), 3000));
+  await wait(1200); // the palette previews draw on the next frames
+  await viewShot('catalog-game-settings');
+  await inGame('document.getElementById("tgh-close").click()');
+
+  // the feed: a real transcript line, then the shell closes the game and it saves
+  k.transcript({ input_tokens: 40000, output_tokens: 9000 }, 'msg_catalog_game_1');
+  check('catalog-game: the farm shows the tokens arriving', await until(() => inGame<boolean>('/tokens/.test(document.body.innerText)').catch(() => false), 8000));
+  await wait(500);
+  check('catalog-game: Play on the built-in farm switches back', await play(c.builtIn().id) && !c.host());
+  const saved = readSave();
+  check('catalog-game: closing it saves the colony with the fed tokens in its own slot', saved?.v === 1 && saved?.stats?.tokens >= 49000, saved && { tokens: saved.stats?.tokens, tick: saved.tick });
+  check('catalog-game: the built-in farm\'s save is left alone', colonyBytes() === colony);
+
+  // again: the same colony comes back
+  check('catalog-game: Play again', await play(GAME) && await until(() => !!c.host()?.shown(), 5000));
+  await wait(1500);
+  check('catalog-game: Play on the built-in farm switches back again', await play(c.builtIn().id));
+  const again = readSave();
+  check('catalog-game: it loads its save: the same colony, not a new one', !!saved && again?.seed === saved.seed && again?.stats?.tokens >= saved.stats.tokens,
+    again && { seed: again.seed, was: saved?.seed, tokens: again.stats?.tokens });
+
+  // remove, approved in the app; the save stays
+  await openPanel();
+  if (hasCli) {
+    const r = await cli('remove', GAME);
+    check('catalog-game: `tokengames remove` only asks', r.code === 0 && fs.existsSync(gameDir), r.out);
+  } else await click('remove:' + GAME);
+  const asks = await until(async () => ((await games())?.view?.pending || []).some((r: any) => r.action === 'remove'));
+  const rid = asks ? ((await games())?.view?.pending || []).find((r: any) => r.action === 'remove')?.requestId : null;
+  check('catalog-game: Remove asks first', !!rid && fs.existsSync(gameDir));
+  await click('approve:' + rid);
+  check('catalog-game: removing it deletes its files and keeps its save', await until(() => !fs.existsSync(gameDir), 8000) && fs.existsSync(saveFile));
+  check('catalog-game: the built-in farm\'s save is still left alone', colonyBytes() === colony);
   await wait(300);
   if (k.state() !== 'orb') { k.dispatch('escape'); await settled('orb'); }
 }

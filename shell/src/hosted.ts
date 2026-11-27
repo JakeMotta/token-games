@@ -1,10 +1,13 @@
 // The bridge a hosted catalog game gets (window.tokenGame), and the rules for what crosses it. A catalog game is a
 // sandboxed web page with no Node and no Electron (docs/catalog.md); this small API is all it can ask the shell for.
-// Change it with care: it is a promise to every published game. Its version is HOSTED_API_VERSION.
+// Change it with care: it is a promise to every published game. Its version is HOSTED_API_VERSION; a change only ever
+// adds, so a game written for version 1 runs unchanged.
+//   1  usage, env, load/save, settings, status, pop out and dock
+//   2  onHide (save before the game is closed: switched away from, removed or the app quits) and env.feed
 import type { UsageEvent } from './events';
 import type { Scale } from './modes';
 
-export const HOSTED_API_VERSION = 1;
+export const HOSTED_API_VERSION = 2;
 export const MAX_SAVE_BYTES = 1024 * 1024;
 export const MAX_SETTINGS_BYTES = 64 * 1024;
 
@@ -15,7 +18,10 @@ export type HostedUsage =
   | { type: 'session_start' | 'agent_waiting'; source: string; ts: number };
 
 // Presentation hints: where the game is shown and how. A game should draw less in 'mini' and honour reducedMotion.
-export interface HostedEnv { scale: Scale; dark: boolean; reducedMotion: boolean }
+// feed says whether usage can arrive at all: whether Claude Code's transcripts are being watched, and how many (a count;
+// never a path).
+export interface HostedEnv { scale: Scale; dark: boolean; reducedMotion: boolean; feed: HostedFeed }
+export interface HostedFeed { watching: boolean; files: number }
 
 export interface HostedStatus { count: string; title: string; line?: string; warm?: boolean }
 
@@ -31,12 +37,17 @@ export interface TokenGameApi {
   setStatus(s: HostedStatus): void; // the number on the orb and the line in its pill
   popOut(): void;
   dock(): void;
+  // The game is about to be closed: save now. The shell waits for the handlers (and the saves they start) for up to
+  // HIDE_WAIT_MS, then closes the game anyway.
+  onHide(fn: () => void | Promise<unknown>): void;
 }
+
+export const HIDE_WAIT_MS = 1000;
 
 export const GAME_CH = {
   env: 'game:env', load: 'game:load', save: 'game:save', getSettings: 'game:get-settings', setSettings: 'game:set-settings',
   status: 'game:status', pop: 'game:pop', dock: 'game:dock', usage: 'game:usage', envChanged: 'game:env-changed',
-  key: 'game:key',
+  key: 'game:key', hide: 'game:hide', hidden: 'game:hidden',
 } as const;
 
 export function forHostedGame(ev: UsageEvent): HostedUsage {

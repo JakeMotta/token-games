@@ -40,7 +40,9 @@ attached to its GitHub Releases. Anything committed here is visible to everyone,
 - a Content-Security-Policy on every response: scripts, styles, images and fetches only from `tg-game://<id>`, plus
   `https://` and `wss://` for approved hosts; no `eval` (`shell/src/catalog/permissions.ts`, `cspFor`);
 - every other request is cancelled (`onBeforeRequest`), every permission prompt (camera, microphone, notifications,
-  location) is denied, new windows are refused and navigation off its own origin is stopped.
+  location) is denied, new windows are refused and navigation off its own origin is stopped;
+- `backgroundThrottling: false`: the game keeps real time while its view is hidden in the orb, where it is told to
+  draw little (`env().scale === 'mini'`).
 
 The only bridge is `shell/src/main/game-preload.ts`, `window.tokenGame`:
 
@@ -49,12 +51,28 @@ The only bridge is `shell/src/main/game-preload.ts`, `window.tokenGame`:
 | `onUsage(fn)` | Usage counts: `{ type: 'tokens', source, input, output, cache_read, cache_write, ts }`, or `{ type: 'task_done' \| 'session_start' \| 'agent_waiting', source, ts }`. No session ids, model names, prompts or code |
 | `load()`, `save(data)` | The game's own save, JSON, at most 1 MB |
 | `getSettings()`, `setSettings(data)` | Its own settings, JSON, at most 64 KB |
-| `env()`, `onEnv(fn)` | `{ scale: 'mini' \| 'expanded' \| 'window', dark, reducedMotion }` |
+| `env()`, `onEnv(fn)` | `{ scale: 'mini' \| 'expanded' \| 'window', dark, reducedMotion, feed }`; `feed` is `{ watching, files }`: whether Claude Code's transcripts are watched and how many (version 2) |
 | `setStatus({ count, title, line?, warm? })` | The orb's number (8 chars), the pill's title (24) and line (80) |
 | `popOut()`, `dock()` | Ask the shell to pop the game out into its window, or dock it back |
-| `version` | The bridge's version |
+| `onHide(fn)` | Called before the game is closed (switched away from, removed, or the app quits); return a promise to finish a save first. The shell waits up to 1 s (`HIDE_WAIT_MS`), then closes it anyway (version 2) |
+| `version` | The bridge's version: `2`. A change only ever adds, so a game written for version 1 runs unchanged |
 
 The shell's `hosted.ts` turns usage events into these counts, checks save and settings sizes and trims statuses.
+
+## A shell game in the catalog
+
+A game written for the shell's page (a `Game`, `shell/src/game.ts`, like the Ant Farm) can also ship as a catalog
+web game without a fork. `shell/scripts/build-web.mjs` bundles the game's own source with the **hosted adapter**
+(`shell/src/page/hosted-shell.ts`, its pure parts in `shell/src/hosted-game.ts`) into a folder of plain files:
+`index.html`, `app.js`, the shell's and the game's CSS, `game.json` and `icon.svg`. The adapter runs the same
+`mountShell(game)` page over `window.tokenGame`: usage, status, settings (its own only, never the shell's), its save,
+pop out and dock, a gear for the game's own Settings, and `onHide` to save before it is closed. It tells the game the
+page is always visible, because shell games assume that and the view is hidden in the orb, not unloaded.
+
+The Ant Farm's bundle is `ant-farm/catalog/` (id `ant-farm-web`, since a catalog game can't take a built-in id; its
+own save slot, so it never touches the built-in farm's `colony.json`). `npm run build:catalog` makes it from
+`ant-farm/src/web/` and `npm run check:catalog` fails when the committed folder no longer matches the source. The
+whole path, from package to rollback: [first-game-walkthrough.md](first-game-walkthrough.md).
 
 ## Installing
 
@@ -77,24 +95,28 @@ wait for the player's Approve. Updates appear in the Games list when the index h
 The app reads one file, `index.json`, and its signature `index.json.sig` (ed25519, base64), from
 `DEFAULT_REGISTRY` (`shell/src/catalog/keys.ts`). It refuses an index that doesn't verify against a key in
 `REGISTRY_KEYS`, and applies the index's **blocklist**: a blocked game or version can't be installed, and an installed
-one stops running (the player can still remove it). `REGISTRY_KEYS` is empty until the real key is made, so no index
-verifies yet: no Verified games are listed, and local folders and zip files still work.
+one stops running (the player can still remove it). `index.json` is signed on the key holder's Mac and committed;
+CI only checks it and publishes it on Pages.
 
 How the registry, CI and Pages fit together: [registry/README.md](../registry/README.md).
 
 ### Who holds the signing key
 
-**Jake holds the real signing key.** It is never committed. To make it:
+**Jake holds the real signing key**, in his Mac's login Keychain (service `token-games-registry-signing-key`,
+account `registry`). It is never committed, never in GitHub secrets and never printed. Its public key,
+`Fswexp3LDILw4Chds9pjXqg/YziOv9duTD5iLzOy1aY=`, is pinned in `REGISTRY_KEYS` (`shell/src/catalog/keys.ts`).
 
 ```sh
 cd cli && npm install && npm run build
-node dist/tg-registry.js keygen ~/token-games-registry.key   # refuses to write inside a git checkout; mode 600
+node dist/tg-registry.js keygen --keychain          # once: makes the key in the Keychain; refuses to replace one
+node dist/tg-registry.js public-key --keychain      # prints the public key
+node dist/tg-registry.js sign ../registry/index.json --keychain
 ```
 
-It prints the public key. Then: put the public key in `REGISTRY_KEYS` (`shell/src/catalog/keys.ts`) in a pull
-request; add the private key file's contents as the repository secret `TG_REGISTRY_SIGNING_KEY`; keep a backup
-offline. To rotate: add the new public key next to the old one, release the app, switch the secret, then remove the
-old key in a later release. Tests make a fresh **test key** in memory for every run and never write one.
+Backing it up, restoring it on a new Mac (`import-key --keychain`) and rotating it:
+[first-game-walkthrough.md](first-game-walkthrough.md), "The signing key". `keygen <file>` (a key file, mode 600,
+refused inside a git checkout) is still there for a developer's own registry. Tests make a fresh **test key** in
+memory for every run and never write one.
 
 ## Agents: the control socket, the CLI and the MCP server
 
@@ -170,3 +192,8 @@ radius (a pointer PR can never touch app code). The signing key and `REGISTRY_KE
   Electron, hidden. Installs Token Garden from a local registry after approving the sheet, runs it sandboxed and
   checks it has no `require`, `process`, file access or network; feeds it a transcript line and checks its count;
   switches back to the Ant Farm and removes Token Garden. Screenshots: `catalog-*.png` in `shots/`.
+- The packaged Ant Farm (the `catalog-game` run): the same, but driven by the real `tokengames` CLI (list, install,
+  use, status, remove) against the built `ant-farm/catalog` bundle, or a real registry with `TG_REGISTRY_URL`. It
+  checks the permission sheet, the sandbox, the farm drawing, the fed tokens reaching its own `save.json` (and the
+  built-in `colony.json` left alone), that it loads that save again, and that removing it keeps the save.
+  Screenshots: `catalog-game-*.png`.
