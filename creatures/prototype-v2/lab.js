@@ -424,11 +424,15 @@
     const scores = { v1: 0, v2: 0 };
     for (const l of lines) if (l.win) scores[l.win]++;
     const best = scores.v2 > scores.v1 ? 'v2' : scores.v1 > scores.v2 ? 'v1' : null;
-    const why = lines.filter((l) => l.win === best).map((l) => ({ slide: 'feet that stay planted', cross: 'fewer crossed legs', wobble: 'a steadier heading', path: 'closer to the path' })[l.key]);
+    const WHY = { slide: 'feet that stay planted', cross: 'fewer crossed legs', wobble: 'a steadier heading', path: 'closer to the path' };
+    const winsOf = (k) => lines.filter((l) => l.win === k).map((l) => WHY[l.key]);
+    const why = winsOf(best);
     // The verdict: what the eye sees in this scenario (written down from watching it), then what the numbers say.
     const eye = run.scn.eye, byEye = !eye || eye.win === 'draw' ? 'By eye: a draw, ' + (eye ? eye.why : 'judge for yourself') + '.' :
       'By eye: ' + NAMES[eye.win].toLowerCase() + ', because ' + eye.why + '.';
-    const byNumbers = !best ? 'By the numbers: level.' : 'By the numbers: ' + NAMES[best].toLowerCase() + ' (' + why.join(', ') + ').';
+    // A tie with wins on both sides says what each one wins, rather than calling it level.
+    const byNumbers = !best ? (scores.v1 ? 'By the numbers: split (' + NAMES.v1.toLowerCase() + ': ' + winsOf('v1').join(', ') +
+      '; ' + NAMES.v2.toLowerCase() + ': ' + winsOf('v2').join(', ') + ').' : 'By the numbers: level.') :'By the numbers: ' + NAMES[best].toLowerCase() + ' (' + why.join(', ') + ').';
     const verdict = byEye + ' ' + byNumbers;
     return { lines: lines.slice(0, 6), verdict, byEye, byNumbers, eye: eye ? eye.win : null, best, scores, summaries: S };
   }

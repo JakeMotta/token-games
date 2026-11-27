@@ -39,9 +39,11 @@ Side by side in their own hatcheries, the two versions look much alike: same gen
 
 **Live numbers** under each view (hover for what each measures): foot slide (how far a planted foot drifts before it lifts, % of a body length), tightest and current turn radius (body lengths, over the last 45° of turning), leg crossings (two legs' floor shadows crossing), body wobble (heading jitter around its smooth turn, °/s), spine bend (degrees of curve along the body), distance off the path, and ms per frame (motion and body, plus drawing).
 
-**What is different here**: four to six plain sentences generated from those numbers, then a verdict per scenario in two parts: *by eye* (written down from watching each scenario; it is authored, not measured) and *by the numbers* (whichever version wins more of the measures).
+**What is different here**: four to six plain sentences generated from those numbers, then a verdict per scenario in two parts: *by eye* (written down from watching each scenario; it is authored, not measured) and *by the numbers* (whichever version wins more of the measures; a tie with wins on both sides is a *split* that names what each wins).
 
 **Record 5 s of each** makes a filmstrip: ten frames half a second apart from the current time, one row per version, with the machinery as shown. It appears on the page with a **Save PNG** link.
+
+Pictures of the lab (machinery on): [shots-v3/compare-scurve.png](shots-v3/compare-scurve.png), [compare-uturn-dark.png](shots-v3/compare-uturn-dark.png), [compare-legs6.png](shots-v3/compare-legs6.png), and filmstrips [compare-uturn-film.png](shots-v3/compare-uturn-film.png) and [compare-scurve-film.png](shots-v3/compare-scurve-film.png).
 
 What the numbers show (seed `moss`, level 100, the full length of each scenario):
 

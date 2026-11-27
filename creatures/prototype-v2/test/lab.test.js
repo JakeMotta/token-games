@@ -122,5 +122,7 @@ test('the what-is-different panel: 4 to 6 lines and a two-part verdict for every
     assert.ok(d.lines.length >= 4 && d.lines.length <= 6, s.id + ' ' + d.lines.length);
     assert.match(d.verdict, /^By eye: .+ By the numbers: /);
     assert.ok(['v1', 'v2', 'draw'].includes(d.eye), s.id);
+    // a one-all tie is a split that names each side's win, never "level"
+    if (d.scores.v1 && d.scores.v1 === d.scores.v2) assert.match(d.byNumbers, /split \(version 1: .+; version 2: .+\)/, s.id);
   }
 });
