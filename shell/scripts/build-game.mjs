@@ -2,7 +2,8 @@
 //   node ../shell/scripts/build-game.mjs
 // It expects the layout every game has (see templates/game): game.json (checked first, see docs/manifest.md),
 // src/main/main.ts (calls startShell), src/game/app.ts
-// (calls mountShell), src/game/index.html and style.css, and test/*.test.ts. The shell's own tests run with every
+// (calls mountShell), src/game/index.html and style.css, and test/*.test.ts. It also builds game-preload.js, the bridge
+// the shell gives a hosted catalog game (docs/catalog.md). The shell's own tests run with every
 // game's tests, so the wrapper is checked wherever it is used. Extra entry points: --extra <src.ts>:<out.js> (node).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -40,7 +41,7 @@ const tests = [...testsIn(path.join(root, 'test')), ...testsIn(path.join(shell, 
 const extra = process.argv.flatMap((a, i) => process.argv[i - 1] === '--extra' ? [a.split(':')] : []);
 
 await Promise.all([
-  build({ ...common, entryPoints: { main: 'src/main/main.ts', preload: path.join(shell, 'src/main/preload.ts') }, outdir: 'dist', platform: 'node', format: 'cjs', external: ['electron'] }),
+  build({ ...common, entryPoints: { main: 'src/main/main.ts', preload: path.join(shell, 'src/main/preload.ts'), 'game-preload': path.join(shell, 'src/main/game-preload.ts') }, outdir: 'dist', platform: 'node', format: 'cjs', external: ['electron'] }),
   build({ ...common, entryPoints: ['src/game/app.ts'], outfile: 'dist/app.js', platform: 'browser', format: 'iife' }),
   tests.length && build({ ...common, entryPoints: tests, outdir: 'dist/test', outbase: path.dirname(root), platform: 'node', format: 'cjs', external: ['electron'] }),
   ...extra.map(([src, out]) => build({ ...common, entryPoints: [src], outfile: path.join('dist', out), platform: 'node', format: 'cjs' })),

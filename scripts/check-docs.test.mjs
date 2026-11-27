@@ -13,13 +13,13 @@ test('a shell change with CLAUDE.md and README.md passes', () => {
 });
 
 test('the template, the repo scripts and the root package.json count as the wrapper', () => {
-  for (const f of ['templates/game/src/game/app.ts', 'scripts/new-game.mjs', 'package.json', 'shell/scripts/build-game.mjs', 'shell/package.json']) {
+  for (const f of ['templates/game/src/game/app.ts', 'scripts/new-game.mjs', 'package.json', 'shell/scripts/build-game.mjs', 'shell/package.json', 'templates/web-game/game.js', 'cli/src/mcp.ts']) {
     assert.equal(missingDocs([f]).missing.length, 2, f);
   }
 });
 
 test('gameplay inside one game, tests and docs alone need nothing', () => {
-  for (const f of ['ant-farm/src/sim/sim.ts', 'ant-farm/package.json', 'shell/test/orb.test.ts', 'scripts/check-docs.test.mjs', 'docs/presentation.md', 'prototype/ant-farm/index.html']) {
+  for (const f of ['ant-farm/src/sim/sim.ts', 'ant-farm/package.json', 'shell/test/orb.test.ts', 'scripts/check-docs.test.mjs', 'docs/presentation.md', 'prototype/ant-farm/index.html', 'cli/test/cli.test.ts', 'samples/token-garden/game.js', 'registry/games/token-garden.json']) {
     assert.deepEqual(missingDocs([f]).missing, [], f);
   }
 });

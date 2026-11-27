@@ -2,6 +2,7 @@
   "name": "ant-farm",
   "version": "0.2.0",
   "private": true,
+  "license": "MIT",
   "description": "Token Games: an ant farm that digs itself while your AI agent works. It lives in an orb in a corner of the screen and pops out into a window.",
   "main": "dist/main.js",
   "scripts": {

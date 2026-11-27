@@ -1,12 +1,12 @@
-// "Docs must match the shell": a change to the wrapper (the shell, the game template, the repo scripts, the root
-// package.json) must update CLAUDE.md and README.md in the same change. Pure gameplay changes inside one game don't.
+// "Docs must match the shell": a change to the wrapper (the shell, the game templates, the repo scripts, the root
+// package.json, the catalog CLI) must update CLAUDE.md and README.md in the same change. Pure gameplay changes inside one game don't.
 //   npm run docs-check                      compares with the merge base of origin/main (and counts uncommitted work)
 //   node scripts/check-docs.mjs --base <ref>
 // The rule is in CLAUDE.md ("Hard rules"); CI runs this on every pull request (.github/workflows/docs-check.yml).
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-export const WRAPPER = [/^shell\/(?!test\/)/, /^templates\//, /^scripts\/(?!.*\.test\.mjs$)/, /^package\.json$/];
+export const WRAPPER = [/^shell\/(?!test\/)/, /^templates\//, /^scripts\/(?!.*\.test\.mjs$)/, /^package\.json$/, /^cli\/(?!test\/)/];
 export const REQUIRED = ['CLAUDE.md', 'README.md'];
 
 // Which required docs are missing from a change, given the files it touches. Empty: fine.

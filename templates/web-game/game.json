@@ -1,0 +1,14 @@
+{
+  "manifestVersion": 1,
+  "id": "__GAME_ID__",
+  "name": "__GAME_NAME__",
+  "description": "A jar that fills with sand, one grain for every thousand tokens your AI agent spends.",
+  "author": "__GAME_AUTHOR__",
+  "version": "0.1.0",
+  "kind": "web",
+  "entry": { "page": "index.html" },
+  "icon": "icon.svg",
+  "minShellVersion": "1.2.0",
+  "permissions": ["claude-usage"],
+  "license": "MIT"
+}

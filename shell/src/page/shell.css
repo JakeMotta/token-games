@@ -156,3 +156,29 @@ body:not([data-state="popped"]) .tg-floatset { opacity: 0.6; }
 /* reduced motion: nothing grows, slides or fades */
 body.tg-rm, body.tg-rm * { transition: none !important; animation: none !important; }
 @media (prefers-reduced-motion: reduce) { body.tg, body.tg * { transition-duration: 0.01s !important; } }
+
+/* ---------- a hosted catalog game: a placeholder the game's own view is laid over; in the orb, its icon ---------- */
+.tg-hosted { background: var(--g-back); }
+.tg-hicon { display: none; }
+.tg-eye .tg-hicon { display: block; width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
+
+/* ---------- Settings → Games: the game picker and the permission sheet ---------- */
+.tg-glist { display: flex; flex-direction: column; gap: 4px; }
+.tg-game { display: flex; align-items: flex-start; gap: 6px; padding: 5px 6px; border: 1px solid var(--g-line); border-radius: 5px; }
+.tg-game.on { border-color: var(--g-hot); }
+.tg-gi { flex: 1; min-width: 0; }
+.tg-gt b, .tg-sheet-t b { font-weight: 600; }
+.tg-ver { color: var(--g-dim); font-variant-numeric: tabular-nums; }
+.tg-tier { margin-left: 6px; font-size: 9px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--g-dim); border: 1px solid var(--g-line); border-radius: 3px; padding: 0 3px; }
+.tg-gd { color: var(--g-dim); font-size: 10px; margin-top: 2px; overflow-wrap: anywhere; }
+.tg-game .tg-chips { flex: none; justify-content: flex-end; max-width: 50%; }
+.tg-playing { color: var(--g-hot); font-size: 10px; padding: 2px 0; }
+.tg-err { color: var(--g-hot); }
+.tg-games > .tg-chips { margin-top: 4px; }
+.tg-sheet { margin: 0 0 8px; padding: 7px 8px; border: 1px solid var(--g-hot); border-radius: 6px; background: var(--g-line); }
+.tg-sheet ul { margin: 5px 0 6px; padding-left: 14px; }
+.tg-sheet li { margin: 2px 0; font-size: 10.5px; }
+.tg-sheet li.tg-l-ok { color: var(--g-dim); }
+.tg-sheet li.tg-l-warn { color: var(--g-hot); }
+.tg-agent { margin-top: 3px; font-size: 10px; color: var(--g-hot); }
+.tg-chips button.tg-yes { border-color: var(--g-hot); color: var(--g-hot); }

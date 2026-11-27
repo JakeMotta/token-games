@@ -1,0 +1,57 @@
+name: registry-publish
+# After a pointer change lands on main: build registry/index.json from every pointer, sign it with the catalog's
+# private key (the repository secret TG_REGISTRY_SIGNING_KEY, which only the key holder sets), check the signature
+# against the public key built into the app (shell/src/catalog/keys.ts), and publish both files on GitHub Pages at
+# https://jakemotta.github.io/token-games/registry/index.json. Needs Pages turned on with "GitHub Actions" as source.
+# Until the secret is set it builds and checks the index, then stops with a warning instead of publishing.
+on:
+  push:
+    branches: [main]
+    paths: ['registry/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: registry-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build the CLI
+        working-directory: cli
+        run: npm ci && npm run build
+      - name: Build, sign and verify the index
+        id: build
+        env:
+          TG_REGISTRY_SIGNING_KEY: ${{ secrets.TG_REGISTRY_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TG_REGISTRY_SIGNING_KEY" ]; then
+            echo "::warning::Not published: the TG_REGISTRY_SIGNING_KEY secret is not set yet (docs/catalog.md, Who holds the signing key)"
+            echo "ready=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          mkdir -p _site/registry
+          node cli/dist/tg-registry.js check registry
+          node cli/dist/tg-registry.js build-index registry --out _site/registry/index.json
+          node cli/dist/tg-registry.js sign _site/registry/index.json
+          node cli/dist/tg-registry.js verify _site/registry/index.json
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+      - if: steps.build.outputs.ready == 'true'
+        uses: actions/configure-pages@v5
+      - if: steps.build.outputs.ready == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        if: steps.build.outputs.ready == 'true'
+        uses: actions/deploy-pages@v4

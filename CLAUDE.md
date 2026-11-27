@@ -9,16 +9,18 @@ the **shell** (`shell/`); a game only draws itself and reacts to usage.
 
 1. **Docs must match the shell.** Any change to how the wrapper works must update `CLAUDE.md`, `README.md` and the
    docs it affects **in the same change or PR**. The wrapper is: the shell (`shell/`: window modes, the corner orb,
-   pop out and dock back, the tray, the usage feed, settings, the smoke test, the build), the manifest format
-   (`game.json`, `docs/manifest.md`), the template and generator (`templates/game`, `scripts/`), the root
-   `package.json`, install and run commands, and anything about how the app behaves on a user's computer. Pure
-   gameplay changes inside one game are exempt. `npm run docs-check` fails when wrapper files changed but
-   `CLAUDE.md` or `README.md` did not; CI runs it on every pull request.
+   pop out and dock back, the tray, the usage feed, settings, the catalog, the smoke test, the build), the manifest
+   format (`game.json`, `docs/manifest.md`), the templates and generator (`templates/`, `scripts/`), the catalog CLI
+   (`cli/`), the root `package.json`, install and run commands, and anything about how the app behaves on a user's
+   computer. Pure gameplay changes inside one game are exempt. `npm run docs-check` fails when wrapper files changed
+   but `CLAUDE.md` or `README.md` did not; CI runs it on every pull request.
 2. **Usage is the only input.** Progress comes from `UsageEvent`s (`shell/src/events.ts`) and nothing else: no
    cheat, feed, test or "add tokens" buttons, keys, menu items or hidden shortcuts, not even for debugging. Tests
    feed a game by writing a real transcript line (`k.transcript()` in the smoke test).
 3. **Every game uses the shell.** A corner orb first, pop out on demand ([docs/presentation.md](docs/presentation.md)). A
    game never creates its own windows, tray, settings file or feed, and never changes the shell's behaviour for itself.
+   Catalog (third-party) games are `"kind": "web"`: sandboxed pages with no main-process code
+   ([docs/catalog.md](docs/catalog.md)); keep the sandbox, the CSP and `window.tokenGame` that narrow.
 4. **One instance, cheap when collapsed.** One app per game (the shell holds the single-instance lock), one game
    view moved between the orb, its card and the window. In the orb (`scale === 'mini'`) draw at 1–4 fps and
    skip work nobody sees; the simulation keeps real time.
@@ -26,7 +28,9 @@ the **shell** (`shell/`); a game only draws itself and reacts to usage.
    labels, fewer frames). Fade or dim when idle where it fits.
 6. **Counts only.** The feed reads token counts and timestamps from `~/.claude/projects/**/*.jsonl`; a game never
    sees prompts, code or file contents, and never sends anything over the network.
-7. **Never commit keys or personal data.** API keys (PixelLab and the like) stay in your environment.
+7. **Never commit keys or personal data.** API keys (PixelLab and the like) stay in your environment. The repo is
+   **public**. The catalog's private signing key is held by Jake, outside the repo; tests make a throwaway key in
+   memory. Agents may only *request* installs and removals; approval happens in the app's UI and nowhere else.
 
 ## Layout
 
@@ -39,11 +43,17 @@ the **shell** (`shell/`); a game only draws itself and reacts to usage.
 | `shell/src/orb.ts`, `modes.ts` | Orb corners, display choice and shapes; the mode state machine (pure, unit-tested) |
 | `shell/src/settings.ts` | Shared settings and `settingsKit` for a game's own settings schema |
 | `shell/src/manifest.ts` | `game.json` checker ([docs/manifest.md](docs/manifest.md)) |
+| `shell/src/catalog/` | The catalog: index, signatures and keys, zip and bundle checks, installer, permissions, control socket ([docs/catalog.md](docs/catalog.md)) |
+| `shell/src/main/catalog-host.ts`, `game-preload.ts`, `shell/src/hosted.ts` | Runs a catalog game sandboxed in a `WebContentsView`; `window.tokenGame`, its only bridge |
+| `shell/src/page/games-panel.ts` | Settings → Games: the picker, permission sheets, Add local folder, the Community switch |
 | `shell/scripts/build-game.mjs`, `smoke.mjs` | Build any game; run its hidden end-to-end smoke test |
 | `ant-farm/` | The first game ([ant-farm/README.md](ant-farm/README.md)) |
-| `templates/game/` | The starter game; `npm run new-game -- <id>` copies it to `<id>/` |
-| `scripts/` | Repo scripts: `new-game.mjs`, `check-docs.mjs` (+ its test) |
-| `docs/` | `presentation.md` (a corner orb, pop out), `manifest.md`, `ant-farm-design.md` |
+| `samples/token-garden/` | The sample catalog (web) game |
+| `templates/game/`, `templates/web-game/` | The starter games; `npm run new-game -- <id>` copies the first to `<id>/`, `--web` the second to `samples/<id>/` |
+| `cli/` | `tokengames` (CLI), `token-games-mcp` (MCP server), `tg-registry` (pack, check, build and sign the index) |
+| `registry/` | Catalog pointers (`games/<id>.json`) and `blocklist.json`; CI builds, signs and publishes `index.json` on Pages ([registry/README.md](registry/README.md)) |
+| `scripts/` | Repo scripts: `new-game.mjs`, `check-docs.mjs` (+ their tests) |
+| `docs/` | `presentation.md` (a corner orb, pop out), `manifest.md`, `catalog.md`, `publishing-a-game.md`, `pre-public-audit.md`, `ant-farm-design.md` |
 | `prototype/` | Browser prototypes and mock-ups; not shipped |
 
 Each game is a folder at the root beside `shell/`, with `game.json`, its own `package.json` (Electron, esbuild,
@@ -60,10 +70,13 @@ From a game folder (`cd ant-farm`):
 | `npm start` | Build and run it (in a corner of the screen) |
 | `npm run typecheck` | `tsc --noEmit`, the game and the shell |
 | `npm test` | Build, then the game's and the shell's unit tests (`node --test`) |
-| `npm run test:smoke` | Hidden end-to-end test: real Electron, windows never shown, a temp profile and a fake transcript folder |
+| `npm run test:smoke` | Hidden end-to-end test: real Electron, windows never shown, a temp profile and a fake transcript folder. Three runs: `full`, `reopen`, and `catalog` (installs Token Garden from a local signed test registry, proves its sandbox, switches and removes it) |
 | `npm run shots` | The same, saving screenshots of every mode to `shots/` |
 
-From the root: `npm run new-game -- <id> ["Name"]`, `npm run docs-check`, `npm run test:scripts`.
+From the root: `npm run new-game -- <id> ["Name"] [--web] [--into <folder>]`, `npm run docs-check`, `npm run test:scripts`.
+
+From `cli/`: `npm install`, `npm run typecheck`, `npm test` (the CLI, the MCP server and `tg-registry` against a real
+catalog and a test registry), `npm run build` (`dist/tokengames.js`, `dist/token-games-mcp.js`, `dist/tg-registry.js`).
 
 ## Proof loop
 
@@ -78,6 +91,9 @@ From the root: `npm run new-game -- <id> ["Name"]`, `npm run docs-check`, `npm r
 - Branches `feature/<short-name>` or `fix/<short-name>`; pull requests use `.github/pull_request_template.md`.
 - Commit messages: one plain line saying what changed for the player or contributor.
 - Code: TypeScript, strict; small pure modules with tests; comments say why, in plain words.
-- Env vars the shell reads: `TG_SMOKE`, `TG_SMOKE_MODE`, `TG_USER_DATA` (a temp profile), `TG_CLAUDE_DIR` (transcripts).
+- Env vars the shell reads: `TG_SMOKE`, `TG_SMOKE_MODE`, `TG_USER_DATA` (a temp profile), `TG_CLAUDE_DIR` (transcripts),
+  `TG_CATALOG_DIR` (the catalog folder; the CLI reads it too), `TG_REGISTRY_URL` and `TG_REGISTRY_KEY` (a developer's
+  own registry and its public key). CI's signing secret: `TG_REGISTRY_SIGNING_KEY`.
 - A game's settings live in the app's data folder (`~/Library/Application Support/<id>/settings.json`), its save in
-  `save.json` (or the `saveFile` it names; the Ant Farm uses `colony.json`).
+  `save.json` (or the `saveFile` it names; the Ant Farm uses `colony.json`). The catalog (installed games, their saves,
+  the active game, `control.json`) lives in `~/Library/Application Support/Token Games/`.

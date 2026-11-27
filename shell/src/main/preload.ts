@@ -25,6 +25,12 @@ const api: ShellApi = {
   onFeed: on(CH.feed),
   onCommand: on(CH.command),
   onMode: on(CH.mode),
+  games: () => ipcRenderer.invoke(CH.games),
+  gamesDo: (op) => ipcRenderer.invoke(CH.gamesDo, op),
+  onGames: on(CH.gamesChanged),
+  hostedRect: (r, scale) => ipcRenderer.send(CH.hostedRect, r, scale),
+  onHostedStatus: on(CH.hostedStatus),
+  onHostedKey: on(CH.hostedKey),
 };
 
 contextBridge.exposeInMainWorld('tokenShell', api);

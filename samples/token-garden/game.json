@@ -1,0 +1,14 @@
+{
+  "manifestVersion": 1,
+  "id": "token-garden",
+  "name": "Token Garden",
+  "description": "A small garden: a seed for every thousand tokens your AI agent spends, a flower for every finished turn.",
+  "author": "Jacob Motta",
+  "version": "0.1.0",
+  "kind": "web",
+  "entry": { "page": "index.html" },
+  "icon": "icon.svg",
+  "minShellVersion": "1.2.0",
+  "permissions": ["claude-usage"],
+  "license": "MIT"
+}

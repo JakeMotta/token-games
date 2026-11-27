@@ -2,6 +2,7 @@
   "name": "token-games",
   "version": "0.0.0",
   "private": true,
+  "license": "MIT",
   "description": "Idle games that live in a corner of the screen and move forward only when your AI agent really works.",
   "scripts": {
     "new-game": "node scripts/new-game.mjs",

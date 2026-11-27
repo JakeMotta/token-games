@@ -25,15 +25,19 @@ Rejected: git clone or sparse checkout, and npm (both run or fetch code with no 
 | 3 | Control socket, CLI, MCP server | ~3 days |
 | 4 | Template + `npm create token-game`, full CI, verified badge, blocklist, contributor docs | ~2 weeks, then review time |
 
-## Open decisions for Jake
+## As built
 
-- Create the public registry repo (the token-games repo is private, so it cannot serve downloads) and pick maintainers.
-- Confirm that third-party games get no main-process code.
-- Community tier off by default?
-- One active game at first, or several from the start?
-- Who holds the index signing key?
+Phases 1–3 are built; this note is kept as the original proposal. What changed on the way, and the current state:
+[catalog.md](catalog.md).
 
-## Caveats
-
-- The manifest field names are a proposal. Task 479's shell (branch `worktree-momo-task-479`) had no manifest file when this was written; reconcile with it before building phase 1.
-- The interactive mock is simulated; games, authors and numbers are examples.
+- **Registry**: the token-games repo is public, so the registry is its `registry/` folder (not a separate repo), the
+  index is published by its own Pages, and bundles are attached to its own GitHub Releases. The layout can still move
+  to a separate repo unchanged ([registry/README.md](../registry/README.md), "Splitting it out").
+- **Manifest**: the shell's real `game.json`, extended with `"kind": "web"`, `network`, `license`, `repository` and
+  `screenshots` (shell 1.2.0), instead of a second format.
+- **Presentation**: games live in the shell's corner orb, card and pop-out window, not a notch.
+- **Decisions taken**: third-party games get no main-process code; the Community tier is off by default; one active
+  game; Jake holds the signing key (not made yet, so no index verifies until it is).
+- **Phase 4** (template, CI, verified review, blocklist, docs) is partly done: `templates/web-game` and `npm run
+  new-game -- --web`, the registry CI, the blocklist and [publishing-a-game.md](publishing-a-game.md). Not done: an
+  `npm create token-game` package (nothing is published to npm) and a verified badge beyond the tier label.

@@ -1,0 +1,43 @@
+name: registry-check
+# Every pull request that touches the catalog: the CLI's tests, every pointer's format, and for each pointer the PR
+# adds or changes, the bundle rebuilt from the pinned commit must have the sha256 the pointer says, the released zip
+# must match it, and neither may hold a program. Nothing from a game is ever run here: packing only reads its files.
+# Runs on pull_request (not pull_request_target), so a fork's PR gets no secrets and a read-only token.
+on:
+  pull_request:
+    paths: ['registry/**', 'cli/**', 'shell/src/catalog/**', 'shell/src/manifest.ts', 'samples/**', '.github/workflows/registry-*.yml']
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build and test the CLI
+        working-directory: cli
+        run: npm ci && npm test
+      - name: Check every pointer and the blocklist
+        run: node cli/dist/tg-registry.js check registry
+      - name: Rebuild each changed pointer from its pinned commit and compare
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-only --diff-filter=AM "origin/${{ github.base_ref }}...HEAD" -- 'registry/games/*.json')
+          for f in $changed; do
+            id=$(basename "$f" .json)
+            repo=$(jq -r .repository "$f"); commit=$(jq -r .commit "$f"); url=$(jq -r .bundle.url "$f")
+            echo "::group::$id ($repo@$commit)"
+            git init -q "$RUNNER_TEMP/src/$id"
+            git -C "$RUNNER_TEMP/src/$id" fetch -q --depth 1 "https://github.com/$repo" "$commit"
+            git -C "$RUNNER_TEMP/src/$id" -c advice.detachedHead=false checkout -q FETCH_HEAD
+            mkdir -p "$RUNNER_TEMP/zips"
+            curl -fsSL --proto '=https' --max-filesize 26214400 -o "$RUNNER_TEMP/zips/$id.zip" "$url"
+            node cli/dist/tg-registry.js verify-pointer "$f" --source "$RUNNER_TEMP/src/$id" --zip "$RUNNER_TEMP/zips/$id.zip"
+            echo "::endgroup::"
+          done
+      - name: The whole index still builds
+        run: node cli/dist/tg-registry.js build-index registry --out "$RUNNER_TEMP/index.json"

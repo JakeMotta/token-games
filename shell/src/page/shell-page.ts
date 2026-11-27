@@ -5,16 +5,21 @@
 //
 // The main process decides the state (modes.ts); this page only shows it and sends intents (click, Esc, Pop out, …)
 // and, while the orb is dragged, the pointer in screen coordinates.
-import type { FeedStatus, ModeInfo, ShellApi, ShellBoot, ShellCommand } from '../api';
+//
+// When the player chose a catalog game (docs/catalog.md), the page hosts it instead of its own game: the built-in game
+// never starts (its save stays as it is), the orb shows the catalog game's icon and count, and in the card and the
+// window the main process lays the game's sandboxed view over a placeholder here (hostedRect).
+import type { FeedStatus, HostedBoot, ModeInfo, ShellApi, ShellBoot, ShellCommand } from '../api';
 import type { Game, GameContext, GameStatusLine, Theme } from '../game';
 import { gripCorner } from '../geometry';
+import { gamesPanel } from './games-panel';
 import { scaleOf, shapeOf, type Scale, type ShellEvent, type ShellState } from '../modes';
 import { CARD, shapeSize } from '../orb';
 import { DOCKS, type ShellSettings } from '../settings';
 
 declare global { interface Window { tokenShell: ShellApi<any>; shellTest?: Record<string, unknown>; gameTest?: Record<string, unknown> } }
 
-const BAR = 20, BAR_FULL = 26;
+const BAR = 20, BAR_FULL = 26, GRIP = 14;
 const FADE_MS = 130; // the page fades out this long before the window flies (main waits a little longer)
 const DRAG_PX = 4; // the orb follows the pointer only once it has moved this far, so a click stays a click
 const SHELL_KEYS = 'Esc closes · , settings · O pop out / back to the corner · H hide · popped out: 1 small · 2 large · F full screen · T click-through · D dock';
@@ -43,8 +48,9 @@ const DISPLAY_HTML = `
 </div>
 <label class="tg-row"><input type="checkbox" id="tg-reducedMotion"> Reduced motion</label>`;
 
-export function mountShell<S extends ShellSettings>(game: Game<S>): void {
+export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   const api = window.tokenShell as ShellApi<S>;
+  let game = builtIn; // or a stand-in for a hosted catalog game (hostIn)
   const el = <T extends HTMLElement = HTMLElement>(tag: string, cls = '', html = ''): T => {
     const e = document.createElement(tag) as T;
     if (cls) e.className = cls;
@@ -96,10 +102,12 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
   const panel = el('div', 'tg-panel');
   panel.id = 'tg-panel';
   panel.hidden = true;
-  if (game.settingsPanel) { game.settingsPanel.hidden = false; panel.append(...Array.from(game.settingsPanel.children)); }
+  const ownSettings = game.settingsPanel ? Array.from(game.settingsPanel.children) : [];
+  if (game.settingsPanel) { game.settingsPanel.hidden = false; panel.append(...ownSettings); }
+  const games = gamesPanel(api, (r) => pulse(`${r.action === 'remove' ? 'Remove' : 'Install'} ${r.name}? An agent asked: see Settings → Games`, 'task'));
   const display = el('section', 'tg-display', DISPLAY_HTML);
   const foot = el('section', '', '<div class="tg-chips"><button id="tg-reset">Reset to defaults</button><button id="tg-close">Close</button></div><p class="tg-note tg-keys" id="tg-keys"></p>');
-  panel.append(display, foot);
+  panel.append(games.el, display, foot);
   body.append(shape, win);
   body.classList.add('tg');
   game.root.classList.add('tg-root');
@@ -113,6 +121,7 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
   let mode: ModeInfo = { state: 'orb', geo: { corner: 'br', area: { x: 0, y: 0, width: 1440, height: 900 }, card: { ...CARD } }, visible: true };
   let shown: ShellState = 'orb'; // the layout on screen (lags the state by the fade while flying)
   let scale: Scale = 'mini', flyT = 0, evtT = 0, sizeT = 0, grab = false, started = false;
+  let hosted: HostedBoot | null = null, placeRaf = 0;
   const status = { count: '', title: '', lead: '', line: '', warm: false };
 
   const topInset = (): number => (scale === 'window' ? (full ? BAR_FULL : BAR) : 0);
@@ -160,6 +169,7 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
     body.dataset.corner = mode.geo.corner;
     body.classList.toggle('tg-flying', st === 'popping' || st === 'docking');
     clearTimeout(flyT);
+    placeHosted();
     // flying: fade out, then swap the layout while the window moves (with reduced motion there is no flight)
     if ((st === 'popping' || st === 'docking') && !S?.reducedMotion) flyT = window.setTimeout(() => layout(st), FADE_MS);
     else layout(st);
@@ -184,6 +194,49 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
     if (sc !== 'window' && full) setFull(false);
     if (sc !== scale) { scale = sc; game.onScale?.(sc); }
     renderPanel();
+    placeHosted();
+  }
+
+  // ---------- a hosted catalog game ----------
+
+  // The built-in game steps aside: it never starts, so it never loads or saves. A placeholder takes its place in the
+  // orb (with the game's icon), the card and the window, and the sandboxed view is laid over it by the main process.
+  function hostIn(h: HostedBoot): void {
+    hosted = h;
+    builtIn.root.remove();
+    for (const n of ownSettings) n.remove();
+    for (const b of builtIn.barButtons || []) b.remove();
+    pillTitle.textContent = name.textContent = h.name;
+    (pillName.querySelector('.tg-icon') as HTMLElement).textContent = '';
+    $('tg-keys').textContent = 'Keys: ' + SHELL_KEYS;
+    const root = el('div', 'tg-hosted');
+    if (h.icon) { const img = el<HTMLImageElement>('img', 'tg-hicon'); img.src = h.icon; img.alt = ''; root.append(img); }
+    game = { name: h.name, root, start: () => {}, onEvent: () => {} };
+    root.classList.add('tg-root');
+    body.classList.add('tg-hosting');
+    new ResizeObserver(placeHosted).observe(root);
+    api.onHostedStatus((s) => setStatus({ count: s.count, title: s.title, line: s.line, warm: s.warm }));
+    // a shell key pressed while the game had focus (Esc, Settings, Pop out, …)
+    api.onHostedKey((k) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k.key, metaKey: k.meta, ctrlKey: k.ctrl })));
+  }
+
+  // Where the hosted view goes: over the placeholder in the card or the window, below the title bar and clear of the
+  // resize grip. Hidden in the orb, while Settings is open (it would cover the sheet) and while the window flies.
+  function placeHosted(): void {
+    if (!hosted || placeRaf) return;
+    placeRaf = requestAnimationFrame(() => {
+      placeRaf = 0;
+      if (scale === 'mini' || !panel.hidden || body.classList.contains('tg-flying') || !S) { api.hostedRect(null, scale); return; }
+      const r = game.root.getBoundingClientRect();
+      let y = r.top, height = r.height, radius = 17;
+      if (scale === 'window') {
+        const top = topInset(), gripAtBottom = gripCorner(S.dock).startsWith('b');
+        y += top; height -= top;
+        if (!full) { height -= GRIP; if (!gripAtBottom) y += GRIP; }
+        radius = full || gripAtBottom ? 0 : 10;
+      }
+      api.hostedRect({ x: r.left, y, width: r.width, height, radius }, scale);
+    });
   }
 
   // ---------- status, pulse, theme ----------
@@ -244,6 +297,7 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
     body.classList.toggle('tg-rm', S.reducedMotion);
     grip.className = 'tg-grip ' + gripCorner(S.dock);
     renderPanel();
+    placeHosted();
     if (started) game.onSettings?.(S);
   }
 
@@ -288,6 +342,8 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
     panel.hidden = !open;
     body.classList.toggle('tg-open', open);
     renderPanel();
+    if (open) { games.refresh(); if (games.view()?.pending.length) games.el.scrollIntoView({ block: 'start' }); } // a request waits: show it
+    placeHosted();
     game.onPanel?.(open);
   }
 
@@ -300,6 +356,7 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
     full = on;
     body.classList.toggle('tg-full', on);
     renderPanel();
+    placeHosted();
     game.onFullscreen?.(on);
   }
 
@@ -373,6 +430,7 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
   grip.addEventListener('pointerup', endResize);
   grip.addEventListener('pointercancel', endResize);
   window.addEventListener('resize', () => {
+    placeHosted();
     if (scale !== 'window') return;
     sizetag.textContent = window.innerWidth + ' × ' + window.innerHeight;
     sizetag.classList.add('show');
@@ -393,6 +451,7 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
   buildPanel();
   api.getState().then(async (st: ShellBoot<S>) => {
     S = st.settings; dark = st.dark; feed = st.feed; smoke = st.smoke; mode = st.mode;
+    if (st.hosted) hostIn(st.hosted);
     body.classList.toggle('tg-dark', dark);
     applySettings();
     showMode();
@@ -435,6 +494,14 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
         ptr('pointerup', x + dx, y + dy);
       },
       text: () => panel.innerText + '\n' + bar.innerText,
+      // Settings → Games: what it shows, and its buttons by their data-games name ("refresh", "approve:<request>", …)
+      games: () => ({ view: games.view(), text: games.el.innerText, hosted: hosted?.id || null, icon: !!game.root.querySelector('.tg-hicon') }),
+      gamesClick: (name: string) => {
+        const b = games.el.querySelector<HTMLButtonElement>(`[data-games="${CSS.escape(name)}"]`);
+        if (!b || b.disabled) return false;
+        b.click();
+        return true;
+      },
     };
     if (game.testHooks) window.gameTest = game.testHooks();
   }

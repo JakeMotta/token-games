@@ -2,6 +2,7 @@
   "name": "__GAME_ID__",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Token Games: __GAME_NAME__. It lives in an orb in a corner of the screen and pops out into a window.",
   "main": "dist/main.js",
   "scripts": {

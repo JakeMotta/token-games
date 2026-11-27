@@ -1,8 +1,8 @@
 // The automated smoke test, run inside the real app (TG_SMOKE=<folder>) with no window ever shown: it drives the
 // shell like a player would (the orb, its hover pill, the open card, dragging it to another corner, popping out and
 // docking back, the window's sizes, full screen, click-through, the tray and the shortcut), hands over to the game's
-// own checks, saves screenshots, writes result-<mode>.json and quits. shell/scripts/smoke.mjs starts it twice: a full
-// run, then a 'reopen' run that checks everything survived the restart.
+// own checks, saves screenshots, writes result-<mode>.json and quits. shell/scripts/smoke.mjs starts it three times: a
+// full run, a 'reopen' run that checks everything survived the restart, and a 'catalog' run (smoke-catalog.ts).
 import { app, nativeTheme, screen, type BrowserWindow } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,6 +12,7 @@ import { shapeOf, type ShellEvent, type ShellState } from '../modes';
 import { orbCenter, orbWindowBounds, shapeRect, shapeSize, type OrbGeo, type Shape } from '../orb';
 import type { ShellSettings } from '../settings';
 import type { TrayItem } from '../tray';
+import { catalogSmoke, type CatalogSmoke } from './smoke-catalog';
 import type { SettingsStore } from './store';
 
 export interface SmokeContext<S extends ShellSettings> {
@@ -31,11 +32,12 @@ export interface SmokeContext<S extends ShellSettings> {
   show(): void;
   hide(): void;
   ignoresMouse(): boolean; // clicks pass through the window
+  catalog?: CatalogSmoke; // for the catalog run
 }
 
 // What the game's checks get: the same tools the shell's checks use.
 export interface SmokeKit<S extends ShellSettings> extends SmokeContext<S> {
-  mode: 'full' | 'reopen';
+  mode: 'full' | 'reopen' | 'catalog';
   check(name: string, ok: unknown, detail?: unknown): void;
   wait(ms: number): Promise<void>;
   until(fn: () => Promise<boolean> | boolean, ms?: number): Promise<boolean>;
@@ -59,7 +61,7 @@ export interface GameSmoke<S extends ShellSettings> {
 interface Check { name: string; ok: boolean; detail?: string }
 
 export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game: GameSmoke<S> = {}): Promise<void> {
-  const mode = process.env.TG_SMOKE_MODE === 'reopen' ? 'reopen' : 'full';
+  const m = process.env.TG_SMOKE_MODE, mode = m === 'reopen' || m === 'catalog' ? m : 'full';
   const checks: Check[] = [];
   const check = (name: string, ok: unknown, detail?: unknown) => { checks.push({ name, ok: !!ok, detail: detail === undefined ? undefined : JSON.stringify(detail) }); };
   const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -120,6 +122,12 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     nativeTheme.themeSource = 'dark';
     if (c.win.webContents.isLoading()) await new Promise<void>((r) => { c.win.webContents.once('did-finish-load', () => r()); });
     check('the page loads with its test hooks', await until(() => js('!!window.shellTest && !!window.gameTest')));
+
+    if (mode === 'catalog') {
+      if (c.catalog) await catalogSmoke(k, c.catalog);
+      else check('the shell passes the catalog to the smoke test', false);
+      return;
+    }
 
     if (mode === 'reopen') {
       const s = c.store.get();

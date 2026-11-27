@@ -1,5 +1,6 @@
 // Runs a game's smoke test without ever showing a window: a fresh settings folder and a fake Claude Code folder in a
-// temp directory, a full run, then a second launch that checks everything came back. Exits 1 on any failure.
+// temp directory, a full run, a second launch that checks everything came back, and a third that installs the sample
+// catalog game from a test registry (samples/) and plays it sandboxed. Exits 1 on any failure.
 // Run it from the game's folder, after building it:
 //   node ../shell/scripts/smoke.mjs                 (screenshots go to the temp folder)
 //   node ../shell/scripts/smoke.mjs --shots <dir>   (and are copied to <dir>)
@@ -42,7 +43,7 @@ function run(mode) {
 }
 
 let ok = true;
-for (const mode of ['full', 'reopen']) {
+for (const mode of ['full', 'reopen', 'catalog']) {
   const { result } = await run(mode);
   console.log(`\n${mode} run`);
   for (const c of result.checks) console.log(`  ${c.ok ? 'ok  ' : 'FAIL'} ${c.name}${c.ok || !c.detail ? '' : '  ' + c.detail}`);

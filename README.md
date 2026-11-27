@@ -15,7 +15,25 @@ it stays there. See [docs/presentation.md](docs/presentation.md).
 |---|---|
 | [Ant Farm](ant-farm/) | A colony that digs, eats and lives on the real clock, fed only by your tokens. Design: [docs/ant-farm-design.md](docs/ant-farm-design.md) |
 
-Planned: a tower defense where tokens queue the waves; a site where people find, share and install agent idle games.
+Planned: a tower defense where tokens queue the waves.
+
+## More games: the catalog
+
+Anyone can write a game for Token Games, and players install them inside the app: **Settings → Games**. A catalog
+game is a small web page the app runs sandboxed (no Node, no files, no network unless you approve its hosts); it sees
+usage counts and its own save, nothing else. Check for games, read the permission sheet, approve, press Play. One game
+is active at a time; the Ant Farm stays built in. The Community tier (games only CI has checked) is off until you
+turn it on. Sample: [Token Garden](samples/token-garden/). How it works: [docs/catalog.md](docs/catalog.md). Write
+one: [docs/publishing-a-game.md](docs/publishing-a-game.md).
+
+Agents can ask too, never approve: the `tokengames` CLI (`list`, `install`, `use`, `remove`, `status`) and the
+`token-games-mcp` server for Claude Code or Cursor, both in [cli/](cli/):
+
+```sh
+cd cli && npm install && npm run build
+node dist/tokengames.js list --refresh
+claude mcp add token-games -- node "$PWD/dist/token-games-mcp.js"
+```
 
 ## Run a game
 
@@ -42,14 +60,19 @@ cd tower-defense && npm install && npm start
 ```
 
 That copies [templates/game](templates/game) (a jar that fills with sand) with the shell already around it. Replace
-the jar with your game. Read [CONTRIBUTING.md](CONTRIBUTING.md) first; it has the rules and a 10-minute walkthrough.
+the jar with your game. For a catalog game anyone can install, add `--web`: it copies
+[templates/web-game](templates/web-game), plain HTML and JS with no build step. Read [CONTRIBUTING.md](CONTRIBUTING.md) first; it has the rules and a 10-minute walkthrough.
 
 ## The repo
 
 - `shell/`: the wrapper every game runs in: the corner orb and window modes, tray, hotkey, settings, the Claude Code feed,
   the build and the hidden smoke test ([shell/README.md](shell/README.md)).
 - `<game>/`: one folder per game, each with a `game.json` manifest ([docs/manifest.md](docs/manifest.md)).
-- `templates/game/`, `scripts/`: the starter game, `npm run new-game`, `npm run docs-check`.
+- `samples/`: catalog (web) games, like Token Garden.
+- `registry/`: the catalog's game pointers and blocklist; CI builds and signs `index.json` and serves it on GitHub
+  Pages ([registry/README.md](registry/README.md)). Bundles are attached to this repo's GitHub Releases.
+- `cli/`: `tokengames`, `token-games-mcp` and `tg-registry` (the registry tool CI uses).
+- `templates/game/`, `templates/web-game/`, `scripts/`: the starter games, `npm run new-game`, `npm run docs-check`.
 - `docs/`, `prototype/`: design docs, mock-ups.
 
 AI agents working here: start with [CLAUDE.md](CLAUDE.md). Changes to the shell, the template, the manifest or the
@@ -58,4 +81,10 @@ run commands must update `CLAUDE.md` and this README in the same change (`npm ru
 ## Privacy
 
 Games read only token counts and timestamps from Claude Code's local transcripts (`~/.claude/projects`). Nothing
-leaves your computer.
+leaves your computer. The app goes online only when you press "Check for games" or install one; a catalog game can
+reach only the hosts its sheet lists, after you approve them.
+
+## Licence, security, public repo
+
+This repo is public. Code is [MIT](LICENSE). Report security problems privately: [SECURITY.md](SECURITY.md). What
+the history held when it went public: [docs/pre-public-audit.md](docs/pre-public-audit.md).

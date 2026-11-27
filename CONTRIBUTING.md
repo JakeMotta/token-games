@@ -40,6 +40,12 @@ inside your game is up to you, as long as only real agent usage moves it forward
    and look at `npm run shots`.
 9. **List it** in the Games table in `README.md`, and open a PR.
 
+## A catalog game (no build, any repo)
+
+A game for the catalog is a sandboxed web page, not an Electron app: `npm run new-game -- my-game "My Game" --web`
+(or `--into <folder>` for your own repo). Same rules as above; it talks to the app through `window.tokenGame`. How to
+write, try and publish one: [docs/publishing-a-game.md](docs/publishing-a-game.md).
+
 ## Art
 
 Pixel art fits the orb. [PixelLab](https://pixellab.ai) is fine for sprites but optional; hand-made art is just as
@@ -62,3 +68,15 @@ under your game's folder.
 - One plain-line commit message per change, saying what changed.
 - Fill in the PR template; tick the docs box honestly. CI runs `npm run docs-check`.
 - Keep PRs to one game or one shell change where you can.
+
+## From outside
+
+The repo is public; contributions are welcome by pull request from a fork.
+
+- By contributing you agree your work is under the repo's licence ([MIT](LICENSE)). Art you add must be yours or
+  under a licence that allows it here; say which in the PR. Generated art: say the tool and that its terms allow it.
+- CI runs `docs-check` on every PR and `registry-check` on catalog changes. A maintainer reviews before merge; `main`
+  takes changes through pull requests only.
+- Never commit keys, tokens, `.env` files or personal data. Security problems: [SECURITY.md](SECURITY.md), not an
+  issue.
+- Be kind. Reviews are about the change, not the person.

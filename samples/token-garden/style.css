@@ -1,0 +1,7 @@
+:root { --bg: #f3efe6; --ink: #4a4438; --soil: #8a7558; color-scheme: light; }
+:root.dark { --bg: #1d1c1a; --ink: #cfc6b4; --soil: #5a4c3a; color-scheme: dark; }
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; background: var(--bg); color: var(--ink); font: 12px/1.4 -apple-system, system-ui, sans-serif; overflow: hidden; }
+#garden { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px; }
+#bed { width: 100%; max-width: 480px; flex: 1; min-height: 0; image-rendering: pixelated; object-fit: contain; }
+.line { opacity: 0.8; font-variant-numeric: tabular-nums; }

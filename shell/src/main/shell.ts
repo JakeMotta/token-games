@@ -6,17 +6,31 @@
 // the popped-out window are the same page moving its game between places. In the corner the window is as big as the
 // open card and lets every click through except over the orb (or the pill, or the open card).
 //
+// It also hosts the game catalog (docs/catalog.md): the shell's own game is the built-in one, and a catalog game the
+// player installed and chose runs in its place, sandboxed (catalog-host.ts). The control socket lets the tokengames
+// CLI and agents list games and ask for installs, which only the player can approve, in Settings → Games.
+//
 // Environment (for the automated smoke test): TG_SMOKE=<folder> runs the smoke test and quits without ever showing a
 // window; TG_SMOKE_MODE picks the run; TG_USER_DATA moves the settings and save files; TG_CLAUDE_DIR points the feed
-// somewhere else.
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, Tray, type MenuItemConstructorOptions } from 'electron';
+// somewhere else. For the catalog: TG_CATALOG_DIR moves the catalog folder; TG_REGISTRY_URL and TG_REGISTRY_KEY point
+// it at a developer's own signed registry.
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, Tray, type IpcMainEvent, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { CH, type FeedStatus, type GameStatus, type ModeInfo, type OrbDrag, type ResizeDrag, type ShellBoot, type ShellCommand } from '../api';
+import { CH, type FeedStatus, type GameRect, type GamesOp, type GamesResult, type GamesView, type GameStatus, type HostedBoot, type ModeInfo, type OrbDrag, type ResizeDrag, type ShellBoot, type ShellCommand } from '../api';
+import { Catalog, type BuiltIn } from '../catalog/catalog';
+import { catalogCommands } from '../catalog/commands';
+import { defaultCatalogDir, serveControl, type ControlServer } from '../catalog/control';
+import { DEFAULT_REGISTRY, REGISTRY_KEYS } from '../catalog/keys';
+import type { HostedEnv } from '../hosted';
+import { isGameId } from '../manifest';
+import { GameHost, iconDataUrl, registerGameScheme } from './catalog-host';
+import { smokeRegistry } from './smoke-registry';
 import { normalizeEvent, type UsageEvent } from '../events';
 import { watchClaudeCode, type Feed } from '../feed/claude-code';
 import { boundsFor, clampToArea, gripCorner, nearestDock, resizeFromGrip, type Area } from '../geometry';
-import { initialState, next, PAGE_EVENTS, presentationOf, type ShellEvent, type ShellState } from '../modes';
+import { initialState, next, PAGE_EVENTS, presentationOf, type Scale, type ShellEvent, type ShellState } from '../modes';
 import { contains, nearestCorner, onOrb, orbCenter, orbGeo, orbWindowBounds, pickDisplay, shapeRect, type Corner, type OrbGeo } from '../orb';
 import { settingsKit, type Bounds, type GameSettingsSchema, type ShellSettings } from '../settings';
 import { trayMenu, type TrayAction, type TrayItem } from '../tray';
@@ -40,6 +54,7 @@ const FLY = { fade: 140, settle: 420 }; // popping out and docking: the page fad
 export function startShell<G extends object>(cfg: ShellConfig<G>): void {
   type S = ShellSettings & G;
   const env = process.env;
+  registerGameScheme(); // before the app is ready
   const SMOKE = env.TG_SMOKE || '';
   const CLAUDE_DIR = env.TG_CLAUDE_DIR || path.join(os.homedir(), '.claude', 'projects');
   if (env.TG_USER_DATA) app.setPath('userData', env.TG_USER_DATA);
@@ -61,6 +76,13 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
   let drag: { start: Bounds; x: number; y: number; grip: Corner; area: Area; last: Bounds } | null = null;
   let orbDrag: { start: Bounds; x: number; y: number } | null = null;
   let ignoring = false; // clicks pass through the window
+  let catalog: Catalog;
+  let builtIn: BuiltIn;
+  let control: ControlServer | null = null;
+  let activeId = ''; // the game the page runs: the built-in one, or a catalog game hosted in its place
+  let hosted: HostedBoot | null = null;
+  let host: GameHost | null = null;
+  let hostedScale: Scale = 'mini';
 
   function ignore(on: boolean): void {
     ignoring = on;
@@ -180,6 +202,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
       if (prev.opacity !== nextS.opacity) win?.setOpacity(nextS.opacity);
       if (prev.alwaysOnTop !== nextS.alwaysOnTop && !fullPrev) applyOnTop(nextS.alwaysOnTop);
     }
+    if (prev.reducedMotion !== nextS.reducedMotion) host?.envChanged();
     if (prev.corner !== nextS.corner || prev.display !== nextS.display) {
       geo = home();
       if (!floating() && !flyTimer) { if (state !== 'orb') dispatch('drag'); place(orbWindowBounds(geo), true); }
@@ -272,7 +295,104 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
 
   function forward(raw: UsageEvent): void {
     const ev = normalizeEvent(raw);
-    if (ev) send(CH.event, ev);
+    if (!ev) return;
+    send(CH.event, ev);
+    host?.usage(ev); // a hosted game gets the counts only (hosted.ts)
+  }
+
+  // ---------- the catalog: other games, installed by the player ----------
+
+  // The built-in game, from the game.json beside the app.
+  function readBuiltIn(): BuiltIn {
+    let m: Record<string, unknown> = {};
+    try { m = JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'game.json'), 'utf8')); } catch { /* a packaged app may not ship it */ }
+    const str = (v: unknown, d: string) => (typeof v === 'string' && v ? v : d);
+    return { id: isGameId(m.id) ? m.id : app.getName(), name: str(m.name, cfg.name), description: str(m.description, ''), version: str(m.version, app.getVersion()) };
+  }
+
+  function setupCatalog(): void {
+    builtIn = readBuiltIn();
+    const dir = env.TG_CATALOG_DIR ? path.resolve(env.TG_CATALOG_DIR) : SMOKE ? path.join(app.getPath('userData'), 'catalog') : defaultCatalogDir();
+    let keys = [...REGISTRY_KEYS], url = env.TG_REGISTRY_URL || DEFAULT_REGISTRY;
+    if (env.TG_REGISTRY_KEY) keys.push(env.TG_REGISTRY_KEY); // a developer's own registry, signed with their own key
+    if (SMOKE && env.TG_SMOKE_MODE === 'catalog') {
+      // the smoke test's registry: the repo's sample game, signed with a key made for this run and never saved
+      const reg = smokeRegistry(path.join(SMOKE, 'registry'), path.join(app.getAppPath(), '..', 'samples'));
+      keys = [reg.publicKey]; url = reg.url;
+    }
+    catalog = new Catalog({ dir, hostApp: builtIn.id, builtIn, trustedKeys: keys, registryUrl: url });
+    activeId = catalog.active();
+    hosted = hostedBoot();
+    catalog.onChange(() => {
+      send(CH.gamesChanged, gamesView());
+      if (catalog.active() !== activeId) switchGame();
+    });
+    serveControl(dir, catalogCommands(catalog)).then((c) => { control = c; }, (e) => console.warn('Token Games: the control socket could not start:', (e as Error).message));
+  }
+
+  function hostedBoot(): HostedBoot | null {
+    if (activeId === builtIn.id) return null;
+    const dir = catalog.gameDir(activeId), m = catalog.manifestOf(activeId), row = catalog.list().find((r) => r.id === activeId);
+    if (!dir || !m || !row) return null;
+    return { id: m.id, name: m.name, version: m.version, tier: row.tier, icon: iconDataUrl(dir, m.icon) };
+  }
+
+  const hostedEnv = (): HostedEnv => ({ scale: hostedScale, dark: nativeTheme.shouldUseDarkColors, reducedMotion: store.get().reducedMotion });
+
+  function openHost(): void {
+    if (!win || !hosted || host) return;
+    const dir = catalog.gameDir(hosted.id), m = catalog.manifestOf(hosted.id);
+    if (!dir || !m) return;
+    host = new GameHost({
+      win, preload: path.join(cfg.dir, 'game-preload.js'), smoke: !!SMOKE, env: hostedEnv,
+      game: { id: hosted.id, dir, page: m.entry.page, network: catalog.approvedHosts(hosted.id), saveDir: catalog.saveDir(hosted.id) },
+      onStatus: (st) => send(CH.hostedStatus, st),
+      pop: () => { if (!floating()) dispatch('pop'); },
+      dock: () => { if (floating()) dispatch('dock'); },
+      key: (k) => send(CH.hostedKey, k),
+    });
+  }
+
+  // Another game was chosen (here, or by the CLI): the page starts again around it. The built-in game saves as it goes.
+  function switchGame(): void {
+    activeId = catalog.active();
+    host?.close();
+    host = null;
+    hostedScale = 'mini';
+    hosted = hostedBoot();
+    status = { count: '', title: '' };
+    refreshTray();
+    win?.webContents.reload();
+  }
+
+  function gamesView(): GamesView {
+    const st = catalog.status();
+    return {
+      rows: st.games, pending: st.pending, allowCommunity: st.allowCommunity, canAddLocal: !SMOKE,
+      catalog: { fetchedAt: st.catalog.fetchedAt, games: st.catalog.games, error: st.catalog.error, signed: st.catalog.signed },
+    };
+  }
+
+  // What Settings → Games asks for. Approving happens only here: the player clicked it in the app.
+  async function gamesDo(op: GamesOp): Promise<GamesResult> {
+    try {
+      if (op?.op === 'refresh') {
+        const r = await catalog.refresh();
+        if (!r.ok) return { ok: false, error: r.error, view: gamesView() };
+      } else if (op?.op === 'request' && ['install', 'update', 'remove'].includes(op.action) && typeof op.id === 'string') await catalog.request(op.action, op.id, 'player');
+      else if (op?.op === 'add-local') {
+        if (SMOKE || !win) throw new Error('no folder picker here');
+        const r = await dialog.showOpenDialog(win, { title: 'Add a game folder', buttonLabel: 'Add', properties: ['openDirectory'] });
+        if (!r.canceled && r.filePaths[0]) await catalog.request('add-local', r.filePaths[0], 'player');
+      } else if (op?.op === 'approve' && typeof op.requestId === 'string') catalog.approve(op.requestId);
+      else if (op?.op === 'deny' && typeof op.requestId === 'string') catalog.deny(op.requestId);
+      else if (op?.op === 'use' && typeof op.id === 'string') catalog.setActive(op.id);
+      else if (op?.op === 'community') catalog.setAllowCommunity(op.on === true);
+      else throw new Error('unknown games request');
+      return { ok: true, view: gamesView() };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, view: gamesView() };
+    }
   }
 
   // ---------- full screen (the display's whole area, not the Mac's full-screen Space), popped out only ----------
@@ -441,31 +561,45 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
   }
 
   function wireIpc(): void {
-    ipcMain.handle(CH.state, (): ShellBoot<S> => ({
+    // Only the shell's own page may use these: never a hosted game's view (it has its own, smaller bridge).
+    const fromPage = (e: IpcMainEvent | IpcMainInvokeEvent) => !!win && e.sender === win.webContents;
+    const handle = (ch: string, fn: (...a: any[]) => unknown) => ipcMain.handle(ch, (e, ...a) => (fromPage(e) ? fn(...a) : null));
+    const on = (ch: string, fn: (...a: any[]) => void) => ipcMain.on(ch, (e, ...a) => { if (fromPage(e)) fn(...a); });
+    handle(CH.state, (): ShellBoot<S> => ({
       name: cfg.name, settings: store.get(), dark: nativeTheme.shouldUseDarkColors, platform: process.platform, fullscreen: !!fullPrev,
       feed: { ...feedStatus, watching: !!feed && feed.watching(), files: feed ? feed.files() : 0 }, smoke: !!SMOKE, mode: modeInfo(), shortcut: SHORTCUT,
+      hosted,
     }));
-    ipcMain.handle(CH.set, (_e, patch: Partial<S>) => {
+    handle(CH.set, (patch: Partial<S>) => {
       if (patch && (patch.size || patch.dock)) setFullscreen(false);
       return update(patch || {});
     });
-    ipcMain.handle(CH.reset, resetAll);
-    ipcMain.handle(CH.fullscreen, (_e, on: boolean) => setFullscreen(!!on));
-    ipcMain.on(CH.resize, (_e, d: ResizeDrag) => onResizeDrag(d));
-    ipcMain.on(CH.grab, (_e, on: boolean) => { if (state === 'popped' && store.get().clickThrough) ignore(!on); });
-    ipcMain.on(CH.orbDrag, (_e, d: OrbDrag) => { if (d && Number.isFinite(d.x) && Number.isFinite(d.y)) onOrbDrag(d); });
-    ipcMain.on(CH.intent, (_e, ev: ShellEvent) => { if (PAGE_EVENTS.includes(ev)) dispatch(ev); });
-    ipcMain.on(CH.status, (_e, st: GameStatus) => {
+    handle(CH.reset, resetAll);
+    handle(CH.fullscreen, (on: boolean) => setFullscreen(!!on));
+    on(CH.resize, (d: ResizeDrag) => onResizeDrag(d));
+    on(CH.grab, (on: boolean) => { if (state === 'popped' && store.get().clickThrough) ignore(!on); });
+    on(CH.orbDrag, (d: OrbDrag) => { if (d && Number.isFinite(d.x) && Number.isFinite(d.y)) onOrbDrag(d); });
+    on(CH.intent, (ev: ShellEvent) => { if (PAGE_EVENTS.includes(ev)) dispatch(ev); });
+    on(CH.status, (st: GameStatus) => {
       const clean = { count: String(st?.count ?? '').slice(0, 12), title: String(st?.title ?? '').slice(0, 24) };
       if (clean.count === status.count && clean.title === status.title) return;
       status = clean;
       tray?.setToolTip(cfg.name + (status.count ? ` · ${status.count} ${status.title}` : ''));
     });
-    ipcMain.on(CH.hide, hideWindow);
-    ipcMain.on(CH.quit, () => app.quit());
-    ipcMain.handle(CH.save, (_e, data: unknown) => save.save(data));
-    ipcMain.on(CH.saveNow, (e, data: unknown) => { e.returnValue = save.save(data); });
-    ipcMain.handle(CH.load, () => save.load());
+    on(CH.hide, hideWindow);
+    on(CH.quit, () => app.quit());
+    // The built-in game's save: untouched while a catalog game is hosted in its place.
+    handle(CH.save, (data: unknown) => !hosted && save.save(data));
+    ipcMain.on(CH.saveNow, (e, data: unknown) => { e.returnValue = fromPage(e) && !hosted && save.save(data); });
+    handle(CH.load, () => (hosted ? null : save.load()));
+    handle(CH.games, gamesView);
+    handle(CH.gamesDo, (op: GamesOp) => gamesDo(op));
+    on(CH.hostedRect, (r: GameRect | null, sc: Scale) => {
+      if (!hosted) return;
+      openHost();
+      if ((sc === 'mini' || sc === 'expanded' || sc === 'window') && sc !== hostedScale) { hostedScale = sc; host?.envChanged(); }
+      host?.setRect(r && typeof r === 'object' ? r : null);
+    });
   }
 
   if (!SMOKE && !app.requestSingleInstanceLock()) {
@@ -478,15 +612,17 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     Menu.setApplicationMenu(null);
     store = new SettingsStore<S>(path.join(app.getPath('userData'), 'settings.json'), kit);
     save = new SaveFile(path.join(app.getPath('userData'), cfg.saveFile || 'save.json'));
+    setupCatalog();
     wireIpc();
     createWindow();
-    nativeTheme.on('updated', () => send(CH.dark, nativeTheme.shouldUseDarkColors));
+    nativeTheme.on('updated', () => { send(CH.dark, nativeTheme.shouldUseDarkColors); host?.envChanged(); });
     for (const ev of ['display-added', 'display-removed', 'display-metrics-changed'] as const) screen.on(ev as 'display-added', onDisplays);
     if (SMOKE) {
       runSmoke<S>({
         win: win!, store, outDir: SMOKE, claudeDir: CLAUDE_DIR, update: (p) => update(p), resize: onResizeDrag, orbDrag: onOrbDrag,
         isFullscreen: () => !!fullPrev, dispatch, displays: onDisplays, state: () => state, geo: () => geo, trayItems, hotkey, status: () => status,
         visible, show: () => showWindow(), hide: hideWindow, ignoresMouse: () => ignoring,
+        catalog: { catalog: () => catalog, host: () => host, socket: () => control?.socket || '', builtIn: () => builtIn, saveFile: () => save.file },
       }, cfg.smoke);
       return;
     }
@@ -497,6 +633,6 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     globalShortcut.register(SHORTCUT, hotkey);
   });
   app.on('window-all-closed', () => app.quit());
-  app.on('before-quit', () => { store?.flush(); feed?.stop(); });
+  app.on('before-quit', () => { store?.flush(); feed?.stop(); void control?.close(); });
   app.on('will-quit', () => globalShortcut.unregisterAll());
 }

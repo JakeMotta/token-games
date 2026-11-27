@@ -1,0 +1,42 @@
+name: release-bundle
+# A tag <id>-v<version> (like token-garden-v0.1.0) packs that web game from this repo into <id>-<version>.zip and
+# attaches it to a GitHub Release of the same name. The job summary prints the pointer to add in registry/games/.
+# A released bundle is never replaced: to change a game, release a new version.
+on:
+  push:
+    tags: ['*-v[0-9]*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build the CLI
+        working-directory: cli
+        run: npm ci && npm run build
+      - name: Pack and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          id="${TAG%-v*}"; version="${TAG##*-v}"
+          dir=""
+          for d in "samples/$id" "$id"; do [ -f "$d/game.json" ] && dir="$d" && break; done
+          [ -n "$dir" ] || { echo "::error::no game folder for $id (looked in samples/$id and $id)"; exit 1; }
+          [ "$(jq -r .version "$dir/game.json")" = "$version" ] || { echo "::error::$dir/game.json is not version $version"; exit 1; }
+          node cli/dist/tg-registry.js pack "$dir" --out dist-bundles
+          zip="dist-bundles/$id-$version.zip"; sha=$(sha256sum "$zip" | cut -d' ' -f1)
+          gh release view "$TAG" >/dev/null 2>&1 && { echo "::error::release $TAG already exists; bundles are never replaced"; exit 1; }
+          gh release create "$TAG" "$zip" --title "$TAG" --notes "Bundle for $id $version. sha256: $sha"
+          url="https://github.com/${{ github.repository }}/releases/download/$TAG/$id-$version.zip"
+          {
+            echo "### registry/games/$id.json"; echo '```json'
+            jq -n --arg id "$id" --arg repo "${{ github.repository }}" --arg path "$dir" --arg commit "${{ github.sha }}" --arg tag "$TAG" --arg url "$url" --arg sha "$sha" \
+              '{id:$id, tier:"verified", repository:$repo, path:$path, commit:$commit, tag:$tag, bundle:{url:$url, sha256:$sha}}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

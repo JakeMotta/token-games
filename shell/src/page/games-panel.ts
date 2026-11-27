@@ -1,0 +1,125 @@
+// Settings → Games: the game picker. It lists the built-in game, installed games and what the signed catalog offers,
+// and shows every request waiting for the player (an install, update or removal they asked for, or one an agent asked
+// for through the tokengames CLI) as a permission sheet with Approve and Deny. Approving is only possible here.
+// Everything from the catalog is shown as text (textContent), never as HTML.
+import type { GamesOp, GamesView, ShellApi } from '../api';
+import type { GameRow, PendingRequest } from '../catalog/catalog';
+
+const TIER: Record<string, string> = { 'built-in': 'built in', verified: 'verified', community: 'community', local: 'local folder' };
+const ACTION: Record<string, string> = { install: 'Install', update: 'Update', remove: 'Remove', 'add-local': 'Add' };
+
+export interface GamesPanel {
+  el: HTMLElement;
+  refresh(): void; // read the view again (the panel opened)
+  view(): GamesView | null;
+}
+
+export function gamesPanel(api: ShellApi<any>, onAgentRequest: (r: PendingRequest) => void): GamesPanel {
+  const el = document.createElement('section');
+  el.className = 'tg-games';
+  el.id = 'tg-games';
+  let v: GamesView | null = null, busy = false, error = '';
+  const seen = new Set<string>();
+
+  const h = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text) e.textContent = text;
+    return e;
+  };
+  const btn = (text: string, id: string, fn: () => void, cls = ''): HTMLButtonElement => {
+    const b = h('button', cls, text);
+    b.dataset.games = id;
+    b.disabled = busy;
+    b.onclick = (e) => { e.stopPropagation(); fn(); };
+    return b;
+  };
+
+  async function run(op: GamesOp): Promise<void> {
+    busy = true; error = ''; render();
+    try {
+      const r = await api.gamesDo(op);
+      v = r.view;
+      error = r.ok ? '' : r.error || 'that did not work';
+    } catch (e) { error = (e as Error).message; }
+    busy = false;
+    render();
+  }
+
+  function sheet(r: PendingRequest): HTMLElement {
+    const s = h('div', 'tg-sheet');
+    s.dataset.request = r.requestId;
+    const title = h('div', 'tg-sheet-t');
+    title.append(h('b', '', `${ACTION[r.action] || r.action} ${r.name}`), h('span', 'tg-ver', r.action === 'remove' ? '' : ` ${r.version}`), h('span', 'tg-tier', TIER[r.tier] || r.tier));
+    s.append(title);
+    if (r.from === 'agent') s.append(h('div', 'tg-agent', 'Requested by an agent. Nothing changes unless you approve.'));
+    const ul = h('ul');
+    for (const l of r.sheet) { const li = h('li', 'tg-l-' + l.kind, l.text); ul.append(li); }
+    s.append(ul);
+    const row = h('div', 'tg-chips');
+    row.append(btn('Approve', 'approve:' + r.requestId, () => void run({ op: 'approve', requestId: r.requestId }), 'tg-yes'),
+      btn('Deny', 'deny:' + r.requestId, () => void run({ op: 'deny', requestId: r.requestId })));
+    s.append(row);
+    return s;
+  }
+
+  function gameRow(g: GameRow): HTMLElement {
+    const row = h('div', 'tg-game' + (g.active ? ' on' : ''));
+    row.dataset.game = g.id;
+    const info = h('div', 'tg-gi');
+    const t = h('div', 'tg-gt');
+    t.append(h('b', '', g.name), h('span', 'tg-ver', ' ' + g.version), h('span', 'tg-tier', TIER[g.tier] || g.tier));
+    info.append(t, h('div', 'tg-gd', g.blocked ? 'Blocked: ' + g.blocked : g.description));
+    if (g.network.length) info.append(h('div', 'tg-gd', 'Reaches: ' + g.network.join(', ')));
+    const acts = h('div', 'tg-chips');
+    if (g.active) acts.append(h('span', 'tg-playing', 'Playing'));
+    else if (g.installed && !g.blocked) acts.append(btn('Play', 'use:' + g.id, () => void run({ op: 'use', id: g.id })));
+    if (!g.installed && !g.blocked) acts.append(btn('Install', 'install:' + g.id, () => void run({ op: 'request', action: 'install', id: g.id })));
+    if (g.installed && g.update && !g.blocked) acts.append(btn('Update to ' + g.update, 'update:' + g.id, () => void run({ op: 'request', action: 'update', id: g.id })));
+    if (g.installed && g.tier !== 'built-in') acts.append(btn('Remove', 'remove:' + g.id, () => void run({ op: 'request', action: 'remove', id: g.id })));
+    row.append(info, acts);
+    return row;
+  }
+
+  function render(): void {
+    el.textContent = '';
+    el.append(h('h4', '', 'Games'));
+    if (!v) { el.append(h('p', 'tg-note', 'Loading…')); return; }
+    for (const r of v.pending) el.append(sheet(r));
+    const list = h('div', 'tg-glist');
+    for (const g of v.rows) list.append(gameRow(g));
+    el.append(list);
+    const c = v.catalog;
+    const note = c.error ? 'The catalog could not be read: ' + c.error
+      : c.fetchedAt ? `Catalog checked ${new Date(c.fetchedAt).toLocaleString()} · ${c.games} game${c.games === 1 ? '' : 's'}, signature verified`
+      : 'The catalog is only fetched when you ask.';
+    el.append(h('p', 'tg-note', note));
+    if (error) el.append(h('p', 'tg-note tg-err', error));
+    const acts = h('div', 'tg-chips');
+    acts.append(btn(busy ? 'Working…' : 'Check for games', 'refresh', () => void run({ op: 'refresh' })));
+    if (v.canAddLocal) acts.append(btn('Add local folder…', 'add-local', () => void run({ op: 'add-local' })));
+    el.append(acts);
+    const lab = h('label', 'tg-row');
+    const cb = h('input');
+    cb.type = 'checkbox'; cb.id = 'tg-community'; cb.checked = v.allowCommunity; cb.disabled = busy;
+    cb.onchange = () => void run({ op: 'community', on: cb.checked });
+    lab.append(cb, ' Show community games (not reviewed)');
+    el.append(lab);
+  }
+
+  function take(next: GamesView): void {
+    v = next;
+    for (const r of next.pending) {
+      if (seen.has(r.requestId)) continue;
+      seen.add(r.requestId);
+      if (r.from === 'agent') onAgentRequest(r);
+    }
+    render();
+  }
+
+  api.onGames(take);
+  const refresh = () => { api.games().then(take, () => {}); };
+  refresh();
+  render();
+  return { el, refresh, view: () => v };
+}

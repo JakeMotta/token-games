@@ -291,7 +291,7 @@ footer { padding-top: 36px; color: var(--muted); font-size: 13.5px; border-top: 
 
 <div class="wrap">
 <header class="hero">
-  <div class="eyebrow">Token Games · design note · task 480</div>
+  <div class="eyebrow">Token Games · design note · the original proposal (as built: docs/catalog.md)</div>
   <h1>A game catalog that lives on GitHub</h1>
   <p class="lede">Anyone can write a Token Games overlay game. Everyone else finds it in a list inside the app, presses Install, and picks it in Settings to see it in the notch or in a pop-out window. This page shows the experience, the GitHub plumbing under it, and how to keep third-party code from hurting anyone.</p>
   <ol class="journey" aria-label="The journey"><li>Browse</li><li>Install</li><li>Pick</li><li>Play in the notch</li></ol>
@@ -419,7 +419,7 @@ footer { padding-top: 36px; color: var(--muted); font-size: 13.5px; border-top: 
       </tbody>
     </table>
   </div>
-  <p class="note">The repo you are in is private (JakeMotta/token-games). The registry and each published game must be public, otherwise nobody else can fetch them. A separate public repo such as <code>token-games-registry</code> is the clean way to do it.</p>
+  <p class="note">Update: the token-games repo is public, so the registry lives in its <code>registry/</code> folder (index published on GitHub Pages) and bundles are attached to its GitHub Releases. A separate registry repo remains an option; see <code>docs/catalog.md</code>.</p>
 
   <h3>The manifest</h3>
   <p>Three files, each with one job. The game's own <code>game.json</code> travels inside the zip, so the app can show a correct card even when it is offline. The registry pointer is what a contributor adds. CI merges both into the index entry.</p>
@@ -470,7 +470,7 @@ footer { padding-top: 36px; color: var(--muted); font-size: 13.5px; border-top: 
   "screenshots": ["shots/creature-pet-1.png"]
 }</code></pre></div>
   </div>
-  <p class="note">The per-game manifest is also what task 479's shell needs for presentation modes. At the time of writing I found no manifest file in that worktree yet (it has the notch states and a notch/floating setting), so the field names above are a proposal to reconcile with whatever 479 lands, not a copy of it.</p>
+  <p class="note">As built, the catalog extends the shell's real <code>game.json</code> (a <code>"kind": "web"</code> game, plus optional <code>network</code>, <code>license</code>, <code>repository</code> and <code>screenshots</code>) instead of the fields sketched here; see <code>docs/manifest.md</code>.</p>
 </section>
 
 <!-- ============ 3. MECHANICS ============ -->
@@ -804,7 +804,7 @@ git tag v0.1.0 &amp;&amp; git push --tags   # Action builds the Release zip
   <header>
     <div class="tag">7 · Phased build plan</div>
     <h2>Four phases, each useful on its own</h2>
-    <p>Effort is rough, for one developer working with Claude, and assumes task 479's shell and manifest land first.</p>
+    <p>Effort is rough, for one developer working with Claude, and assumes the shared shell and its manifest land first.</p>
   </header>
 
   <figure class="fig">
@@ -847,8 +847,8 @@ git tag v0.1.0 &amp;&amp; git push --tags   # Action builds the Release zip
         <li><b>Performance.</b> Three canvases at once on a laptop. Frame budgets, hidden games stop drawing, a hard cap.</li>
         <li><b>Review load.</b> One person reading every PR does not scale. Verified tier only on request; community tier is automated.</li>
         <li><b>Key custody.</b> The signing key must live in a protected CI secret or a hardware key, with a documented rotation plan.</li>
-        <li><b>API churn.</b> Task 479 is still shaping the shell. Lock the manifest and <code>tokenGame</code> API before phase 2 ships.</li>
-        <li><b>Private repo.</b> The registry and games must be public.</li>
+        <li><b>API churn.</b> The shell is still taking shape. Lock the manifest and <code>tokenGame</code> API before phase 2 ships.</li>
+        <li><b>Public by necessity.</b> The registry and games must be public (the token-games repo now is).</li>
         <li><b>GitHub dependence.</b> Rate limits or outages. Cache the index and keep a mirror option.</li>
       </ul></div>
     <div class="card"><h3>Decisions for Jake</h3>
