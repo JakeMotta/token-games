@@ -184,6 +184,9 @@ Done:
   node ../shell/scripts/smoke.mjs --only catalog-game`): the signature, the permission sheet and the sha256 all
   checked, played sandboxed, fed tokens, saved in its own slot (the built-in `colony.json` untouched), loaded that save
   again, removed with its save kept.
+- The first update, `ant-farm-web` 1.0.1 (ants glide on every display frame and face the way they walk), from commit
+  `e821960`, released as `ant-farm-web-v1.0.1` (zip sha256 `25e9299a…6d290aa5`, the same packed locally and in CI),
+  its pointer moved and the index signed again on Jake's Mac. A copy of 1.0.0 shows **Update** after Check for games.
 
 Left for Jake:
 

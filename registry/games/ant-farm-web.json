@@ -3,10 +3,10 @@
   "tier": "verified",
   "repository": "JakeMotta/token-games",
   "path": "ant-farm/catalog",
-  "commit": "eb48d0a959f6648dc617d0c15888d903ffa6348e",
-  "tag": "ant-farm-web-v1.0.0",
+  "commit": "e821960337ed21e131965b1780750cfd4c4d8a64",
+  "tag": "ant-farm-web-v1.0.1",
   "bundle": {
-    "url": "https://github.com/JakeMotta/token-games/releases/download/ant-farm-web-v1.0.0/ant-farm-web-1.0.0.zip",
-    "sha256": "177ddc6cb94e5d85aa8686525f64d2bb1955facd3ecd78e8c393e9bec3db6789"
+    "url": "https://github.com/JakeMotta/token-games/releases/download/ant-farm-web-v1.0.1/ant-farm-web-1.0.1.zip",
+    "sha256": "25e9299a710fb347bdb32013095b26b7881e234dcc9e3f32c49aafcf6d290aa5"
   }
 }
