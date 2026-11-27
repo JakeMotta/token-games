@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Creatures Side by Side</title>
+<style>
+  :root { --bg: #f3ecdf; --panel: #fffaf1; --line: #e2d6c1; --fg: #2a2433; --dim: #8a7f90; --accent: #f2c84b; --accent-ink: #2a2433; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #1a1826; --panel: #23202f; --line: #353047; --fg: #ece6f2; --dim: #9188a3; --accent: #f6d34a; --accent-ink: #1a1826; }
+  }
+  :root[data-theme="dark"] { --bg: #1a1826; --panel: #23202f; --line: #353047; --fg: #ece6f2; --dim: #9188a3; --accent: #f6d34a; --accent-ink: #1a1826; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { padding: 12px 16px 16px; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  h1 { font-size: 20px; margin: 0; }
+  header p { margin: 0; color: var(--dim); }
+  form { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; }
+  label { display: flex; gap: 6px; align-items: center; color: var(--dim); }
+  input, select, button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+  input[type=text] { width: 9em; }
+  input[type=number] { width: 4.5em; }
+  button { background: var(--accent); color: var(--accent-ink); border: 0; padding: 4px 12px; cursor: pointer; }
+  .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+  @media (max-width: 900px) { .pair { grid-template-columns: minmax(0, 1fr); } }
+  figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; min-width: 0; }
+  figcaption { padding: 6px 10px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+  figcaption a { color: var(--dim); font-weight: 400; }
+  iframe { display: block; width: 100%; height: 860px; border: 0; border-top: 1px solid var(--line); background: var(--bg); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Creatures: version 1 and version 2, side by side</h1>
+    <p>Same seed, level, look and habitat in both. Only the body and the walk differ, plus version 2's sun-cast shadow. Prototype only.</p>
+  </header>
+  <form id="f">
+    <label>Seed <input type="text" id="seed" value="moss"></label>
+    <label>Level <input type="number" id="level" min="0" max="100" value="70"></label>
+    <label>Look <select id="style"><option value="gochi">Original</option><option value="cel">Cel</option><option value="pixel">Pixel</option></select></label>
+    <label>Habitat <select id="habitat"><option value="">Own</option><option>grass</option><option>flat</option><option>meadow</option><option>cave</option><option>wildwood</option><option>studio</option></select></label>
+    <label><input type="checkbox" id="debug"> Skeleton</label>
+    <button type="submit">Show both</button>
+  </form>
+  <div class="pair">
+    <figure><figcaption>Version 1: rings plus limbs <a id="openV1" href="../prototype/index.html" target="_blank">open alone</a></figcaption><iframe id="v1" title="Version 1: rings plus limbs"></iframe></figure>
+    <figure><figcaption>Version 2: Argonaut technique <a id="openV2" href="index.html" target="_blank">open alone</a></figcaption><iframe id="v2" title="Version 2: Argonaut technique"></iframe></figure>
+  </div>
+</div>
+<script>
+  // Both versions read the same query (seed, level, style, habitat, debug), so one form drives both frames.
+  // Level 0 means "still an egg": the query then leaves level out.
+  (() => {
+    const $ = (id) => document.getElementById(id);
+    const params = new URLSearchParams(location.search);
+    for (const k of ['seed', 'level', 'style', 'habitat']) if (params.get(k) != null) $(k).value = params.get(k);
+    $('debug').checked = params.get('debug') === '1';
+    function query() {
+      const q = new URLSearchParams();
+      q.set('seed', $('seed').value.trim() || 'moss');
+      if (Number($('level').value) > 0) q.set('level', String(Math.min(100, Number($('level').value))));
+      if ($('style').value !== 'gochi') q.set('style', $('style').value);
+      if ($('habitat').value) q.set('habitat', $('habitat').value);
+      if ($('debug').checked) q.set('debug', '1');
+      for (const k of ['pause', 'sun']) if (params.get(k) != null) q.set(k, params.get(k)); // pass-through for screenshots
+      return q.toString();
+    }
+    function show() {
+      const q = query();
+      $('v1').src = $('openV1').href = '../prototype/index.html?' + q;
+      $('v2').src = $('openV2').href = 'index.html?' + q;
+      history.replaceState(null, '', '?' + q);
+    }
+    $('f').addEventListener('submit', (e) => { e.preventDefault(); show(); });
+    show();
+  })();
+</script>
+</body>
+</html>

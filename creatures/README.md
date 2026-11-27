@@ -41,3 +41,12 @@ node tools/mouths.js ../docs/shots/mouths.png   # every mouth kind, closed and o
 node tools/proof.js ../docs/shots    # turn, spin, eating and habitat proof sheets, drawn by the page headless
 node tools/bundle.js           # rebuild creatures-standalone.html after editing the scripts
 ```
+
+## Version 2: Argonaut technique
+
+A second, separate prototype in `prototype-v2/` (Version 1 above is unchanged). Same genome, looks, habitats, eggs, food, hunger, mouths and controls; only the body and legs differ. The body is a chain of joints that follows its head, with distance and angle constraints and a radius per joint. The legs are two-bone FABRIK legs that step when they fall a stride behind. It adds a real light-driven shadow: a sun that sweeps from left to right (a slider and an Auto day cycle), dawn and dusk tints, a dim moon, and a shadow projected from the creature's actual pieces.
+
+- Open `prototype-v2/index.html` (or `prototype-v2/creatures-v2-standalone.html`), and `prototype-v2/compare.html` for both versions side by side with the same seed. Every page links to the others.
+- [docs/argonaut-technique-analysis.md](docs/argonaut-technique-analysis.md): what argonaut's video shows (frames only, no transcript), the method, formulas, pseudo-code, parameters and open questions.
+- [docs/v2-vs-v1.md](docs/v2-vs-v1.md): how each version works, strengths, weaknesses, performance, what to look for, the lighting model and its commands.
+- [docs/shots-v2](docs/shots-v2/): screenshots (light, dark, sun left, noon and right, night, pixel cave, egg, narrow, compare) and proof sheets.
