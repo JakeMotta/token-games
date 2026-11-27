@@ -6,7 +6,7 @@
 // transcript, so old history never replays.
 import fs from 'node:fs';
 import path from 'node:path';
-import type { FarmEvent, TokensEvent } from '../shared/events';
+import type { UsageEvent, TokensEvent } from '../events';
 
 interface Usage { input: number; output: number; cache_read: number; cache_write: number }
 
@@ -19,7 +19,7 @@ export class ClaudeParser {
   private seen = new Map<string, Usage>();
   private done = new Set<string>();
 
-  line(line: string, subagent: boolean, now: number): FarmEvent[] {
+  line(line: string, subagent: boolean, now: number): UsageEvent[] {
     // Cheap test first: most lines (tool results, user turns) carry no usage and are never parsed.
     if (!line.includes('"usage"')) return [];
     let j: Record<string, any>;
@@ -41,7 +41,7 @@ export class ClaudeParser {
       this.seen.set(id, prev ? { input: Math.max(prev.input, cur.input), output: Math.max(prev.output, cur.output), cache_read: Math.max(prev.cache_read, cur.cache_read), cache_write: Math.max(prev.cache_write, cur.cache_write) } : cur);
       if (this.seen.size > MAX_IDS) this.seen.delete(this.seen.keys().next().value as string);
     }
-    const out: FarmEvent[] = [];
+    const out: UsageEvent[] = [];
     if (d.input + d.output + d.cache_read + d.cache_write > 0) {
       const ev: TokensEvent = { v: 1, source: 'claude-code', type: 'tokens', ...d, ts };
       if (session) ev.session = session;
@@ -62,7 +62,7 @@ export class ClaudeParser {
 
 export interface FeedOptions {
   root: string; // ~/.claude/projects
-  onEvent(ev: FarmEvent): void;
+  onEvent(ev: UsageEvent): void;
   pollMs?: number; // only used where the folder can't be watched
   now?: () => number;
 }

@@ -1,10 +1,12 @@
-// The page inside the farm window: runs the simulation, draws it, and holds the title bar and the settings menu.
-// Talks to the main process only through window.antFarm (preload.ts). The farm grows only from real Claude Code
-// usage, which the main process reads and forwards; there is no other way to feed it.
-import type { FarmApi, FarmState, FeedStatus } from '../shared/api';
-import type { FarmEvent } from '../shared/events';
-import { DOCKS, MAP_SIZE_IDS, PALETTE_IDS, type Settings } from '../shared/settings';
-import { gripCorner } from '../main/geometry';
+// The Ant Farm's page: runs the simulation and draws it into #farm, which the shell (shell/src/page/shell-page.ts)
+// moves between the notch, the peek strip, the drop-down and the popped-out window. The shell owns the title bar, the
+// Display settings, the tray and the Claude Code feed; this file adds the farm, its camera and its own settings.
+// The farm grows only from real Claude Code usage, which the shell forwards; there is no other way to feed it.
+import type { GameContext, Scale } from '@token-games/shell/game';
+import type { FeedStatus } from '@token-games/shell/api';
+import type { UsageEvent } from '@token-games/shell/events';
+import { mountShell } from '@token-games/shell/page/shell-page';
+import { MAP_SIZE_IDS, PALETTE_IDS, type Settings } from '../shared/settings';
 import { createSim, readSave, type Sim } from '../sim/sim';
 import { MAP_SIZES, TICK_HZ } from '../sim/world';
 import { fit, lerp, near, clamp, type Cam } from './camera';
@@ -12,25 +14,22 @@ import { classifyWheel, wheelPixels, panBy, pinchFactor, wheelFactor, easeZoom, 
 import { ORDER, PALETTES, resolve } from './palettes';
 import { View, minScale, type ViewStats } from './render';
 
-declare global { interface Window { antFarm: FarmApi; farmTest?: Record<string, unknown> } }
-
-const api = window.antFarm;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
-const farm = $('farm'), view = $<HTMLCanvasElement>('view'), ctx = view.getContext('2d')!;
-const panel = $('panel');
+const farm = $('farm'), view = $<HTMLCanvasElement>('view'), g2d = view.getContext('2d')!;
 
 // Idle fade: after a few quiet seconds the farm sinks toward its backdrop; a token event brings it back.
 const FADE = { after: 5000, depth: 0.5, down: 3500, up: 600 };
-const BAR = 20, BAR_FULL = 26;
 const SAVE_EVERY = 30_000; // the colony is saved this often, and whenever the window hides or closes
+const ANT = '<svg viewBox="0 0 16 10" fill="currentColor"><ellipse cx="3" cy="5" rx="2.2" ry="1.9"/><ellipse cx="7.4" cy="5" rx="1.6" ry="1.4"/><ellipse cx="12" cy="5.2" rx="3" ry="2.3"/><path d="M6 6.2 4 9M7.4 6.4V9.4M8.8 6.2l2 2.8M6 3.8 4.4 1M8.8 3.8 10.6 1.2M1.6 3.6.4 1.2" stroke="currentColor" stroke-width=".9" fill="none"/></svg>';
 
-let S: Settings, dark = true, full = false, smoke = false, feed: FeedStatus | null = null;
+let C: GameContext<Settings>;
+let S: Settings, dark = true, smoke = false, feed: FeedStatus | null = null, scale: Scale = 'mini';
 let sim: Sim = createSim({ size: 'classic', colony: false }); // replaced by the real farm once the settings arrive
 let simSize = '', ready = false;
 let main = new View();
 let cam: Cam | null = null, auto = true, snap = true, pausedUntil = 0, zoomGoal: ZoomGoal | null = null;
 let acc = 0, lastT = performance.now(), timer = 0, dim = 0, lastEvt = performance.now(), lastThumbs = 0, lastSave = 0, lastFrame = 0;
-let drag: { x: number; y: number; id: number } | null = null, grab = false, showStats = false;
+let drag: { x: number; y: number; id: number } | null = null, showStats = false;
 const inertia = new Inertia();
 const thumbs = new Map<string, { canvas: HTMLCanvasElement; view: View }>();
 const counts = { events: 0, tokens: 0, tasks: 0, frames: 0 };
@@ -39,37 +38,39 @@ const perf = { tickMs: 0, drawMs: 0, view: null as ViewStats | null };
 const fmt = (n: number): string => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(Math.round(n)));
 const age = (ms: number): string => (ms >= 48 * 3_600_000 ? Math.round(ms / 86_400_000) + ' d' : ms >= 3_600_000 ? Math.round(ms / 3_600_000) + ' h' : Math.round(ms / 60_000) + ' min');
 const opts = (palette = S.palette) => ({ palette, calm: S.calm, dark, dim, soft: !resolve(palette, dark).identity });
-const barH = () => (full ? BAR_FULL : BAR);
+const vw = () => Math.max(1, farm.clientWidth), vh = () => Math.max(1, farm.clientHeight);
+const mini = () => scale === 'mini';
 
 // ---------- the camera ----------
 
-const limits = () => ({ min: minScale(window.innerWidth, window.innerHeight), max: 24 });
-const keepIn = (c: Cam): Cam => clamp(c, sim.W, sim.H, window.innerWidth, window.innerHeight);
+const limits = () => ({ min: minScale(vw(), vh()), max: 24 });
+const keepIn = (c: Cam): Cam => clamp(c, sim.W, sim.H, vw(), vh());
 
-function target(vw: number, vh: number): Cam {
-  const t = fit(sim.interestBox(), vw, vh - barH(), { pad: 8, min: Math.max(0.5, minScale(vw, vh)), max: 10 });
-  return { x: t.x, y: t.y - barH() / t.s, s: t.s };
+function target(w: number, h: number): Cam {
+  const top = C ? C.topInset : 0;
+  const t = fit(sim.interestBox(), w, h - top, { pad: mini() ? 1 : 8, min: Math.max(mini() ? 0.1 : 0.5, minScale(w, h)), max: 10 });
+  return { x: t.x, y: t.y - top / t.s, s: t.s };
 }
 
 // You moved the camera: the auto camera steps back for a while (double-click or A brings it back at once).
 function manual(): void {
   auto = false;
   pausedUntil = performance.now() + FOLLOW_PAUSE_MS;
-  $('bFollow').hidden = false;
+  followBtn.hidden = false;
 }
 function follow(): void {
   auto = true; zoomGoal = null; inertia.reset();
   // from far away, jump back rather than slide across half the map
-  if (cam) { const t = target(window.innerWidth, window.innerHeight); if (Math.abs(t.x - cam.x) * cam.s > window.innerWidth * 2 || Math.abs(t.y - cam.y) * cam.s > window.innerHeight * 2) snap = true; }
-  $('bFollow').hidden = true;
+  if (cam) { const t = target(vw(), vh()); if (Math.abs(t.x - cam.x) * cam.s > vw() * 2 || Math.abs(t.y - cam.y) * cam.s > vh() * 2) snap = true; }
+  followBtn.hidden = true;
   wake(true);
 }
 
 // ---------- drawing ----------
 
 function draw(dt: number): void {
-  const dpr = window.devicePixelRatio || 1, vw = window.innerWidth, vh = window.innerHeight;
-  const w = Math.max(1, Math.round(vw * dpr)), h = Math.max(1, Math.round(vh * dpr));
+  const dpr = window.devicePixelRatio || 1, w0 = vw(), h0 = vh();
+  const w = Math.max(1, Math.round(w0 * dpr)), h = Math.max(1, Math.round(h0 * dpr));
   if (view.width !== w || view.height !== h) { view.width = w; view.height = h; snap = true; }
   if (!auto && !drag && !inertia.moving && !zoomGoal && performance.now() > pausedUntil) follow();
   if (cam && zoomGoal) {
@@ -77,39 +78,29 @@ function draw(dt: number): void {
     if (zoomDone(cam, zoomGoal)) zoomGoal = null;
   }
   if (cam && !drag) { const d = inertia.step(dt); if (d) cam = keepIn(panBy(cam, d.dx, d.dy)); }
-  if (auto) {
+  if (auto || mini()) {
     // the auto camera re-fits at every size; a resize jumps, the farm's growth eases (or jumps, with reduced motion)
-    const t = target(vw, vh);
-    cam = !cam || snap || S.reducedMotion || near(cam, t) ? t : lerp(cam, t, 0.12, vw, vh);
+    const t = target(w0, h0);
+    cam = !cam || snap || S.reducedMotion || mini() || near(cam, t) ? t : lerp(cam, t, 0.12, w0, h0);
   }
   snap = false;
-  const r = main.draw(ctx, sim, cam!, dpr, { ...opts(), budgetMs: smoke ? 1000 : 8 });
+  const r = main.draw(g2d, sim, cam!, dpr, { ...opts(), budgetMs: smoke ? 1000 : mini() ? 4 : 8 });
   sim.setView(r.box);
   perf.drawMs = perf.drawMs * 0.9 + r.stats.ms * 0.1; perf.view = r.stats;
-  setChrome(r.mapper.palette.ui);
+  C.setTheme(r.mapper.palette.ui);
   counts.frames++;
-  meter();
+  status();
   if (showStats) statsText();
 }
 
-let chromeKey = '';
-function setChrome(ui: { back: string; bar: string; ink: string; dim: string; hot: string; task: string; line: string }): void {
-  const key = ui.back + ui.bar + ui.ink;
-  if (key === chromeKey) return;
-  chromeKey = key;
-  const st = farm.style;
-  st.setProperty('--f-back', ui.back); st.setProperty('--f-bar', ui.bar); st.setProperty('--f-ink', ui.ink); st.setProperty('--f-dim', ui.dim);
-  st.setProperty('--f-hot', ui.hot); st.setProperty('--f-task', ui.task); st.setProperty('--f-line', ui.line);
-  const n = parseInt(ui.back.slice(1), 16);
-  st.setProperty('--f-panel', `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},0.94)`);
-}
-
 const MOOD = { fed: '', hungry: ' · hungry', starving: ' · starving', empty: ' · empty' } as const;
-function meter(): void {
-  const wide = window.innerWidth >= 420, h = sim.health();
-  $('meter').innerHTML = '<b>⚡' + Math.floor(sim.energy) + '</b> · ' + fmt(sim.stats.tokens) + ' tok' +
-    (wide ? ' · ' + h.workers + ' ants · ' + h.food + ' food' : '') + MOOD[h.mood] +
-    (feed && (feed.error || !feed.files) && wide ? ' · waiting for Claude Code' : '');
+function status(): void {
+  const h = sim.health();
+  C.setStatus({
+    count: String(h.workers), title: h.workers === 1 ? 'ant' : 'ants', lead: '⚡' + Math.floor(sim.energy),
+    line: fmt(sim.stats.tokens) + ' tok · ' + h.workers + ' ants · ' + h.food + ' food' + MOOD[h.mood] +
+      (feed && (feed.error || !feed.files) ? ' · waiting for Claude Code' : ''),
+  });
 }
 
 // The stats overlay (I): what a frame costs and how much of the map is in memory.
@@ -138,14 +129,15 @@ function drawThumbs(): void {
   }
 }
 
-// ---------- the loop: the simulation at 20 steps a second, the picture at 60, 30, 8, 5 or 2 frames a second ----------
+// ---------- the loop: the simulation at 20 steps a second; the picture at 60, 30 or 8 frames a second in the window
+// and the drop-down, 4 or 2 in the notch, fewer with reduced motion ----------
 
 function running(): boolean { return ready && (smoke || !document.hidden); }
 
 function frame(): void {
   timer = 0;
   if (!running()) return;
-  const t = performance.now(), dt = Math.min(250, t - lastT);
+  const t = performance.now(), dt = Math.min(1100, t - lastT); // the slowest frame is a second apart: the farm keeps time
   lastT = t; lastFrame = t;
   acc += (dt * TICK_HZ) / 1000;
   let n = 0;
@@ -156,15 +148,17 @@ function frame(): void {
   lifeNews();
   const moving = !!drag || inertia.moving || !!zoomGoal;
   const busy = sim.isBusy() || moving;
-  farm.classList.toggle('calm', !busy);
-  const want = S.fadeIdle && t - lastEvt > FADE.after && panel.hidden ? FADE.depth : 0;
+  C.setCalm(!busy);
+  const want = S.fadeIdle && t - lastEvt > FADE.after && !C.panelOpen ? FADE.depth : 0;
   const rate = (dt / (want > dim ? FADE.down : FADE.up)) * FADE.depth;
   dim = want > dim ? Math.min(want, dim + rate) : Math.max(want, dim - rate);
   draw(dt);
-  if (!panel.hidden && t - lastThumbs > 1000) { lastThumbs = t; drawThumbs(); renderHealth(); }
+  if (C.panelOpen && t - lastThumbs > 1000) { lastThumbs = t; drawThumbs(); renderHealth(); }
   if (t - lastSave > SAVE_EVERY) save();
-  // reduced motion: few frames, so less flicker at the edge of your eye; moving the camera gets every frame
-  const fps = moving && !S.reducedMotion ? 60 : S.reducedMotion ? (moving ? 15 : busy ? 5 : 2) : busy || dim !== want ? 30 : 8;
+  // reduced motion: few frames, so less flicker at the edge of your eye; moving the camera gets every frame.
+  // Resting in the notch the farm is a few pixels tall: a handful of frames is plenty and costs next to nothing.
+  const fps = mini() ? (S.reducedMotion ? 1 : busy ? 4 : 2)
+    : moving && !S.reducedMotion ? 60 : S.reducedMotion ? (moving ? 15 : busy ? 5 : 2) : busy || dim !== want ? 30 : 8;
   timer = window.setTimeout(frame, 1000 / fps);
 }
 
@@ -177,26 +171,25 @@ function wake(now = false): void {
   timer = window.setTimeout(frame, Math.max(0, 8 - (performance.now() - lastFrame)));
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) { clearTimeout(timer); timer = 0; save(); } else wake(); });
-window.addEventListener('beforeunload', () => { if (ready) api.saveColonyNow(sim.save()); });
 
 // ---------- the colony, kept across restarts ----------
 
 function save(): void {
   if (!ready) return;
   lastSave = performance.now();
-  api.saveColony(sim.save());
+  void C.save(sim.save());
 }
 
 async function newFarm(): Promise<void> {
   ready = false;
   const size = S.mapSize, { W, H } = MAP_SIZES[size];
-  const restore = readSave(await api.loadColony(), S.seed, W, H);
+  const restore = readSave(await C.load(), S.seed, W, H);
   sim = createSim({ seed: S.seed, size, restore });
   simSize = size;
   main = new View();
   for (const t of thumbs.values()) t.view = new View();
   cam = null; auto = true; zoomGoal = null; inertia.reset();
-  $('bFollow').hidden = true;
+  followBtn.hidden = true;
   ready = true;
   if (!restore) save(); // a new farm replaces the old save straight away
   wake();
@@ -208,25 +201,16 @@ function lifeNews(): void {
   const evs = sim.events;
   for (const e of evs) {
     if (e.tick <= seenEvents) continue;
-    if (e.type === 'died') label(e.queen ? 'the old queen died' : e.cause === 'age' ? 'an old ant died' : 'an ant starved', 'task');
-    else if (e.type === 'queen') label('a new queen took over', 'task');
-    else if (e.type === 'founded') label('a new queen founded the farm', 'task');
+    if (e.type === 'died') C.pulse(e.queen ? 'the old queen died' : e.cause === 'age' ? 'an old ant died' : 'an ant starved', 'task');
+    else if (e.type === 'queen') C.pulse('a new queen took over', 'task');
+    else if (e.type === 'founded') C.pulse('a new queen founded the farm', 'task');
   }
   if (evs.length) seenEvents = Math.max(seenEvents, evs[evs.length - 1].tick);
 }
 
 // ---------- events from the feed ----------
 
-let evtT = 0;
-function label(text: string, kind: 'hot' | 'task'): void {
-  const p = $('pulse'), e = $('evt');
-  p.classList.remove('hot', 'task'); void p.offsetWidth; p.classList.add(kind);
-  e.textContent = text; e.classList.add('show');
-  clearTimeout(evtT);
-  evtT = window.setTimeout(() => { e.classList.remove('show'); p.classList.remove('hot', 'task'); }, 2600);
-}
-
-function onEvent(ev: FarmEvent): void {
+function onEvent(ev: UsageEvent): void {
   sim.feed(ev);
   counts.events++;
   lastEvt = performance.now();
@@ -239,8 +223,8 @@ function onEvent(ev: FarmEvent): void {
     text = ev.width && ev.width > 24 ? 'task done → a wide room' : 'task done → new gallery';
     kind = 'task';
   } else return;
-  label(text, kind);
-  if (!S.reducedMotion && running()) {
+  C.pulse(text, kind);
+  if (!S.reducedMotion && !mini() && running()) {
     const f = document.createElement('div');
     f.className = 'floater'; f.textContent = text;
     f.style.bottom = 8 + 14 * farm.querySelectorAll('.floater').length + 'px'; // stack, don't overlap
@@ -250,21 +234,11 @@ function onEvent(ev: FarmEvent): void {
   wake();
 }
 
-// ---------- settings ----------
-
-function set(patch: Partial<Settings>): void {
-  S = { ...S, ...patch }; // show it at once; the main process confirms with the saved settings
-  applySettings();
-  api.setSettings(patch).then((s) => { S = s; applySettings(); });
-}
+// ---------- settings: the farm's own sections of the Settings sheet ----------
 
 function applySettings(): void {
-  farm.classList.toggle('thru', S.clickThrough);
-  farm.classList.toggle('rm', S.reducedMotion);
-  const g = $('grip');
-  g.className = 'grip ' + gripCorner(S.dock);
   if (ready && (sim.seed !== S.seed || simSize !== S.mapSize)) { save(); void newFarm(); }
-  if (!panel.hidden) renderPanel();
+  if (C.panelOpen) renderPanel();
   wake();
 }
 
@@ -276,41 +250,24 @@ function buildPanel(): void {
     const c = document.createElement('canvas'), s = document.createElement('span');
     s.textContent = PALETTES[id].name;
     b.append(c, s);
-    b.onclick = () => set({ palette: id });
+    b.onclick = () => C.set({ palette: id });
     host.appendChild(b);
     thumbs.set(id, { canvas: c, view: new View() });
   }
-  const range = (id: 'calm' | 'opacity') => {
-    const el = $<HTMLInputElement>(id);
-    el.oninput = () => set({ [id]: +el.value / 100 } as Partial<Settings>);
-  };
-  range('calm'); range('opacity');
-  for (const id of ['fadeIdle', 'reducedMotion', 'alwaysOnTop', 'clickThrough'] as const) {
-    const el = $<HTMLInputElement>(id);
-    el.onchange = () => set({ [id]: el.checked } as Partial<Settings>);
-  }
-  for (const b of $('sizes').querySelectorAll<HTMLButtonElement>('[data-size]')) b.onclick = () => set({ size: b.dataset.size as Settings['size'] });
-  for (const b of $('docks').querySelectorAll<HTMLButtonElement>('[data-dock]')) b.onclick = () => set({ dock: b.dataset.dock as Settings['dock'] });
-  for (const b of $('maps').querySelectorAll<HTMLButtonElement>('[data-map]')) b.onclick = () => set({ mapSize: b.dataset.map as Settings['mapSize'] });
-  $('pFull').onclick = () => toggleFull();
-  $('reset').onclick = () => api.resetSettings().then((s) => { S = s; applySettings(); });
-  $('pClose').onclick = () => togglePanel(false);
+  const calm = $<HTMLInputElement>('calm');
+  calm.oninput = () => C.set({ calm: +calm.value / 100 });
+  const fade = $<HTMLInputElement>('fadeIdle');
+  fade.onchange = () => C.set({ fadeIdle: fade.checked });
+  for (const b of $('maps').querySelectorAll<HTMLButtonElement>('[data-map]')) b.onclick = () => C.set({ mapSize: b.dataset.map as Settings['mapSize'] });
 }
 
 function renderPanel(): void {
   for (const b of $('pals').querySelectorAll<HTMLButtonElement>('.pal')) b.classList.toggle('on', b.dataset.pal === S.palette);
   $('palNote').textContent = PALETTES[S.palette].name + ': ' + PALETTES[S.palette].note;
-  const range = (id: 'calm' | 'opacity', v: number) => {
-    const el = $<HTMLInputElement>(id);
-    if (document.activeElement !== el) el.value = String(Math.round(v * 100));
-    $(id + 'V').textContent = Math.round(v * 100) + '%';
-  };
-  range('calm', S.calm); range('opacity', S.opacity);
-  for (const id of ['fadeIdle', 'reducedMotion', 'alwaysOnTop', 'clickThrough'] as const) $<HTMLInputElement>(id).checked = S[id];
-  for (const b of $('sizes').querySelectorAll<HTMLButtonElement>('[data-size]')) b.classList.toggle('on', !full && b.dataset.size === S.size);
-  $('pFull').classList.toggle('on', full);
-  $('sizeNote').textContent = full ? 'Full screen: Esc or F to leave.' : S.size === 'custom' ? `Your size: ${S.width} × ${Math.round((S.width * 9) / 16)} (drag the corner grip)` : 'Drag the corner grip for any size in between.';
-  for (const b of $('docks').querySelectorAll<HTMLButtonElement>('[data-dock]')) b.classList.toggle('on', b.dataset.dock === S.dock);
+  const calm = $<HTMLInputElement>('calm');
+  if (document.activeElement !== calm) calm.value = String(Math.round(S.calm * 100));
+  $('calmV').textContent = Math.round(S.calm * 100) + '%';
+  $<HTMLInputElement>('fadeIdle').checked = S.fadeIdle;
   for (const b of $('maps').querySelectorAll<HTMLButtonElement>('[data-map]')) b.classList.toggle('on', b.dataset.map === S.mapSize);
   const m = MAP_SIZES[S.mapSize];
   $('mapNote').textContent = `${m.W.toLocaleString()} × ${m.H.toLocaleString()} cells. Only what's on screen is drawn. Another size starts a new farm.`;
@@ -333,56 +290,29 @@ function renderHealth(): void {
   ].map(([k, v]) => `<div class="hrow"><span>${k}</span><span>${v}</span></div>`).join('');
 }
 
-function togglePanel(open = panel.hidden): void {
-  panel.hidden = !open;
-  farm.classList.toggle('open', open);
-  if (open) { renderPanel(); lastThumbs = 0; }
-  wake();
-}
-
-function toggleFull(on = !full): void { api.setFullscreen(on).then(setFull); }
-function setFull(on: boolean): void {
-  full = on;
-  farm.classList.toggle('full', on);
-  snap = true;
-  if (!panel.hidden) renderPanel();
-  wake();
-}
-
-// ---------- input ----------
+// ---------- input: the camera ----------
 
 function cycle<T>(list: readonly T[], cur: T): T { return list[(list.indexOf(cur) + 1) % list.length]; }
 
-function zoomBy(f: number, sx = window.innerWidth / 2, sy = window.innerHeight / 2): void {
-  if (!cam) return;
+function zoomBy(f: number, sx = vw() / 2, sy = vh() / 2): void {
+  if (!cam || mini()) return;
   manual();
   const l = limits(), s = Math.max(l.min, Math.min(l.max, (zoomGoal ? zoomGoal.s : cam.s) * f));
   zoomGoal = { s, sx, sy };
   wake(true);
 }
 function panScreen(dx: number, dy: number): void {
-  if (!cam) return;
+  if (!cam || mini()) return;
   manual();
   cam = keepIn(panBy(cam, dx, dy));
   wake(true);
 }
 
-window.addEventListener('keydown', (e) => {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'q') { api.quit(); return; }
-  if ((e.metaKey || e.ctrlKey) && e.key === ',') { togglePanel(); return; }
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
-  if ((e.target as HTMLElement).tagName === 'INPUT' && (e.target as HTMLInputElement).type === 'range' && e.key.startsWith('Arrow')) return;
-  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key, step = Math.min(window.innerWidth, window.innerHeight) * 0.2;
-  if (k === 'Escape') { if (!panel.hidden) togglePanel(false); else if (full) toggleFull(false); }
-  else if (k === '1') set({ size: 'small' });
-  else if (k === '2') set({ size: 'large' });
-  else if (k === 'f') toggleFull();
-  else if (k === 't') set({ clickThrough: !S.clickThrough });
-  else if (k === 'h') { save(); api.hide(); }
-  else if (k === ',') togglePanel();
-  else if (k === 'p') set({ palette: cycle(PALETTE_IDS, S.palette) });
-  else if (k === 'd') set({ dock: cycle(DOCKS, S.dock) });
-  else if (k === 'm') set({ mapSize: cycle(MAP_SIZE_IDS, S.mapSize) });
+// The keys the shell leaves to the game (it keeps Esc , O H, and 1 2 F T D in the window).
+function onKey(k: string): boolean {
+  const step = Math.min(vw(), vh()) * 0.2;
+  if (k === 'p') C.set({ palette: cycle(PALETTE_IDS, S.palette) });
+  else if (k === 'm') C.set({ mapSize: cycle(MAP_SIZE_IDS, S.mapSize) });
   else if (k === 'a') follow();
   else if (k === 'i') { showStats = !showStats; $('stats').hidden = !showStats; wake(true); }
   else if (k === 'ArrowLeft') panScreen(-step, 0);
@@ -391,22 +321,25 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'ArrowDown') panScreen(0, step);
   else if (k === '+' || k === '=') zoomBy(1.25);
   else if (k === '-' || k === '_') zoomBy(1 / 1.25);
-  else return;
-  e.preventDefault();
-});
+  else return false;
+  return true;
+}
 
-$('bFollow').onclick = () => follow();
-$('bFull').onclick = () => toggleFull();
-$('bGear').onclick = () => togglePanel();
-$('bHide').onclick = () => { save(); api.hide(); };
+const followBtn = document.createElement('button');
+followBtn.className = 'tg-wbtn'; followBtn.id = 'bFollow'; followBtn.hidden = true;
+followBtn.title = 'Follow the colony again (A, or double-click)';
+followBtn.innerHTML = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6" cy="6" r="3.2"/><circle cx="6" cy="6" r=".9" fill="currentColor"/><path d="M6 .8v1.8M6 9.4v1.8M.8 6h1.8M9.4 6h1.8"/></svg>';
+followBtn.onclick = () => follow();
 
-// The camera. Two fingers on a trackpad pan, 1:1 and at once; a pinch zooms around the pointer; a mouse wheel zooms;
-// dragging pans and glides on when let go. Double-click (or A) lets the camera follow the colony again.
+// Two fingers on a trackpad pan, 1:1 and at once; a pinch zooms around the pointer; a mouse wheel zooms; dragging pans
+// and glides on when let go. Double-click (or A) lets the camera follow the colony again. In the notch the farm is
+// only a picture: a click there opens the drop-down.
 view.addEventListener('wheel', (e) => {
+  if (mini()) return;
   e.preventDefault();
   if (!cam) return;
   const w = { deltaX: e.deltaX, deltaY: e.deltaY, deltaMode: e.deltaMode, ctrlKey: e.ctrlKey, wheelDeltaY: (e as unknown as { wheelDeltaY?: number }).wheelDeltaY };
-  const kind = classifyWheel(w), d = wheelPixels(w, window.innerHeight);
+  const kind = classifyWheel(w), d = wheelPixels(w, vh());
   inertia.reset();
   if (kind === 'pan') panScreen(d.dx, d.dy);
   else zoomBy(kind === 'pinch' ? pinchFactor(d.dy) : wheelFactor(d.dy), e.offsetX, e.offsetY);
@@ -420,7 +353,7 @@ view.addEventListener('gesturechange', (e) => {
   zoomBy(g.scale / gesture, g.clientX, g.clientY); gesture = g.scale;
 });
 view.addEventListener('pointerdown', (e) => {
-  if (!cam || e.button !== 0) return;
+  if (!cam || e.button !== 0 || mini()) return;
   drag = { x: e.clientX, y: e.clientY, id: e.pointerId };
   inertia.reset();
   view.setPointerCapture(e.pointerId);
@@ -440,82 +373,57 @@ const endDrag = (e: PointerEvent) => {
 };
 view.addEventListener('pointerup', endDrag);
 view.addEventListener('pointercancel', endDrag);
-view.addEventListener('dblclick', () => follow());
-
-// Resizing from the grip: the main process does the 16:9 maths in screen coordinates.
-const grip = $('grip');
-let resizing = false, sizeT = 0;
-grip.addEventListener('pointerdown', (e) => {
-  resizing = true; grip.setPointerCapture(e.pointerId);
-  api.resizeDrag({ phase: 'start', x: e.screenX, y: e.screenY });
-});
-grip.addEventListener('pointermove', (e) => { if (resizing) api.resizeDrag({ phase: 'move', x: e.screenX, y: e.screenY }); });
-const endResize = (e: PointerEvent) => { if (!resizing) return; resizing = false; api.resizeDrag({ phase: 'end', x: e.screenX, y: e.screenY }); };
-grip.addEventListener('pointerup', endResize);
-grip.addEventListener('pointercancel', endResize);
-window.addEventListener('resize', () => {
-  const t = $('sizetag');
-  t.textContent = window.innerWidth + ' × ' + window.innerHeight;
-  t.classList.add('show');
-  clearTimeout(sizeT);
-  sizeT = window.setTimeout(() => t.classList.remove('show'), 1200);
-  snap = true;
-  wake();
-});
-
-// Click-through: the window lets clicks pass, but still sees the pointer move; hold Alt over it to take it back.
-document.addEventListener('mousemove', (e) => {
-  if (S && S.fadeIdle && dim > 0) { lastEvt = performance.now(); wake(); } // a faded farm comes back when pointed at
-  if (!S || !S.clickThrough) return;
-  if (e.altKey !== grab) { grab = e.altKey; farm.classList.toggle('grab', grab); api.setGrab(grab); }
-});
-document.addEventListener('mouseleave', () => { if (grab) { grab = false; farm.classList.remove('grab'); api.setGrab(false); } });
+view.addEventListener('dblclick', () => { if (!mini()) follow(); });
+new ResizeObserver(() => { snap = true; wake(); }).observe(farm);
+document.addEventListener('mousemove', () => { if (S && S.fadeIdle && dim > 0) { lastEvt = performance.now(); wake(); } }); // a faded farm comes back when pointed at
 
 // ---------- start ----------
 
-api.getState().then(async (st: FarmState) => {
-  S = st.settings; dark = st.dark; feed = st.feed; smoke = st.smoke; full = st.fullscreen;
-  buildPanel();
-  await newFarm();
-  setFull(full);
-  applySettings();
-  api.onSettings((s) => { S = s; applySettings(); });
-  api.onDark((d) => { dark = d; wake(); });
-  api.onEvent(onEvent);
-  api.onFeed((f) => { feed = f; if (!panel.hidden) renderPanel(); });
-  api.onCommand((c) => {
-    if (c === 'settings') togglePanel(true);
-    else setFull(c === 'fullscreen-on');
-  });
-  if (smoke) exposeTest();
-  wake();
+mountShell<Settings>({
+  name: 'Ant Farm',
+  root: farm,
+  icon: ANT,
+  settingsPanel: $('afPanel'),
+  barButtons: [followBtn],
+  keysHelp: 'Two fingers pan · pinch or wheel zooms · drag pans · double-click follows the colony · arrows pan · + − zoom · A follow · P palette · M map size · I stats',
+  async start(ctx) {
+    C = ctx; S = ctx.settings; dark = ctx.dark; feed = ctx.feed; smoke = ctx.smoke; scale = ctx.scale;
+    buildPanel();
+    await newFarm();
+  },
+  onEvent,
+  onSettings(s) { S = s; if (C) applySettings(); },
+  onScale(s) { scale = s; farm.classList.toggle('mini', s === 'mini'); snap = true; if (C) wake(true); },
+  onDark(d) { dark = d; wake(); },
+  onFeed(f) { feed = f; if (C.panelOpen) renderPanel(); },
+  onPanel(open) { if (open) { renderPanel(); lastThumbs = 0; } wake(); },
+  onFullscreen() { snap = true; wake(); },
+  onKey,
+  onHide() { if (ready) { lastSave = performance.now(); C.saveNow(sim.save()); } },
+  testHooks,
 });
 
-// For the automated smoke test only: read-only views of the farm, and a way to press keys and move the camera like a
-// player. There is no way here to feed the farm: the smoke test writes a real transcript line for that.
-function exposeTest(): void {
-  window.farmTest = {
+// For the automated smoke test only: read-only views of the farm, and a way to move the camera like a player. There is
+// no way here to feed the farm: the smoke test writes a real transcript line for that.
+function testHooks(): Record<string, unknown> {
+  return {
     state: () => ({
       ready, energy: sim.energy, tokens: sim.stats.tokens, tick: sim.tick, ants: sim.ants.length, galleries: sim.galleryQueue.length,
-      panelOpen: !panel.hidden, full, palette: S.palette, mapSize: S.mapSize, W: sim.W, H: sim.H, counts: { ...counts },
-      w: window.innerWidth, h: window.innerHeight, auto, cam: cam && { ...cam },
-      thru: farm.classList.contains('thru'), chrome: getComputedStyle(farm).getPropertyValue('--f-back').trim(),
+      palette: S.palette, mapSize: S.mapSize, W: sim.W, H: sim.H, counts: { ...counts }, scale,
+      w: vw(), h: vh(), auto, cam: cam && { ...cam },
       view: perf.view, drawMs: perf.drawMs, tickMs: perf.tickMs, chunks: sim.chunkStats(), health: sim.health(),
       heapMB: ((performance as unknown as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize || 0) / 1048576,
       ages: sim.ants.map((a) => a.born),
     }),
     colours: () => {
-      const d = ctx.getImageData(0, 0, view.width, view.height).data, seen = new Set<number>();
+      const d = g2d.getImageData(0, 0, view.width, view.height).data, seen = new Set<number>();
       for (let i = 0; i < d.length; i += 4 * 7) seen.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
       return seen.size;
     },
-    key: (key: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key })),
-    click: (id: string) => $(id).click(),
     clickPalette: (id: string) => $('pals').querySelector<HTMLButtonElement>(`[data-pal="${id}"]`)!.click(),
     wheel: (o: WheelEventInit) => view.dispatchEvent(new WheelEvent('wheel', { cancelable: true, clientX: 100, clientY: 80, ...o })),
     look: (x: number, y: number) => { manual(); cam = keepIn({ x, y, s: cam ? cam.s : 1 }); wake(true); }, // jump the camera far away
     save: () => { save(); return sim.tick; },
     feed: () => $('feedNote').textContent || '',
-    text: () => panel.innerText + '\n' + $('bar').innerText,
   };
 }

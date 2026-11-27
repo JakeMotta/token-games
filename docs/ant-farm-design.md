@@ -137,6 +137,9 @@ Any palette can be calmed further with the Calm amount (up to 85% less saturatio
 
 ## The always-on window
 
+Since the shared shell, the farm starts in the notch and this window is what **Pop out** gives
+([presentation.md](presentation.md)); everything below still describes the popped-out window.
+
 The farm is meant to sit in a corner of the screen while an agent works, like a small desktop widget. In the real app this is a native window that is transparent, frameless and always on top, and does not take focus. `prototype/ant-farm/overlay.html` mocks it up over a fake Mac desktop:
 
 - **Sizes:** small 320 × 180 (the default), large 640 × 360, any size between 256 wide and the work area by dragging the corner grip (always 16:9), and full screen with an exit button and `Esc`. The auto camera re-fits at every size.

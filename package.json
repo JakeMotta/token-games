@@ -1,0 +1,12 @@
+{
+  "name": "token-games",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Idle games that live in the notch and move forward only when your AI agent really works.",
+  "scripts": {
+    "new-game": "node scripts/new-game.mjs",
+    "docs-check": "node scripts/check-docs.mjs",
+    "test:scripts": "node --test scripts/"
+  },
+  "engines": { "node": ">=20" }
+}

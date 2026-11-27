@@ -2,30 +2,30 @@
 // change is written a moment later (so dragging a slider doesn't write on every step) and always on quit.
 import fs from 'node:fs';
 import path from 'node:path';
-import { applyPatch, defaultSettings, resetSettings, sanitize, type Settings } from '../shared/settings';
+import type { SettingsKit, ShellSettings } from '../settings';
 
-export class SettingsStore {
-  private cur: Settings;
+export class SettingsStore<S extends ShellSettings = ShellSettings> {
+  private cur: S;
   private timer: NodeJS.Timeout | null = null;
 
-  constructor(readonly file: string, private delayMs = 400, newSeed = () => (Math.random() * 2 ** 32) >>> 0) {
+  constructor(readonly file: string, private kit: SettingsKit<S>, private delayMs = 400, newSeed = () => (Math.random() * 2 ** 32) >>> 0) {
     let raw: unknown = null;
     try { raw = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* first run or a broken file */ }
-    const base = defaultSettings(newSeed());
-    this.cur = raw ? sanitize(raw, base) : base;
+    const base = kit.defaults(newSeed());
+    this.cur = raw ? kit.sanitize(raw, base) : base;
     if (!raw) this.save();
   }
 
-  get(): Settings { return this.cur; }
+  get(): S { return this.cur; }
 
-  set(patch: Partial<Settings>): Settings {
-    this.cur = applyPatch(this.cur, patch);
+  set(patch: Partial<S>): S {
+    this.cur = this.kit.applyPatch(this.cur, patch);
     this.later();
     return this.cur;
   }
 
-  reset(): Settings {
-    this.cur = resetSettings(this.cur);
+  reset(): S {
+    this.cur = this.kit.reset(this.cur);
     this.later();
     return this.cur;
   }
@@ -47,13 +47,13 @@ export class SettingsStore {
   }
 }
 
-// The colony itself (ants, their birth times, food, what was dug), saved by the page now and then and on hide, so the
-// farm and its ants' ages carry on across restarts. Only the chunks the colony changed are in it, so it stays small.
-export class ColonyFile {
+// The game's own state (an ant farm's colony, say), saved by the page now and then and on hide, so the game carries
+// on across restarts. Games keep it small.
+export class SaveFile {
   constructor(readonly file: string) {}
 
   load(): unknown {
-    try { return JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch { return null; } // none yet, or broken: a new farm
+    try { return JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch { return null; } // none yet, or broken: a new game
   }
 
   save(data: unknown): boolean {

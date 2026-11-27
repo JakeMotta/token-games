@@ -1,6 +1,6 @@
 # Ant Farm
 
-A small ant farm that sits in a corner of your screen and digs while your AI agent works. Every token Claude Code spends gives the colony digging energy and drops food crumbs; every finished turn orders a new gallery. Real Claude Code use is the only thing that feeds it: there are no test buttons or free energy, and a colony left without tokens slowly goes hungry. Design: [../docs/ant-farm-design.md](../docs/ant-farm-design.md). The browser prototype it grew from is in [../prototype/ant-farm](../prototype/ant-farm/).
+A small ant farm that lives in your Mac's notch and digs while your AI agent works. Every token Claude Code spends gives the colony digging energy and drops food crumbs; every finished turn orders a new gallery. Real Claude Code use is the only thing that feeds it: there are no test buttons or free energy, and a colony left without tokens slowly goes hungry. Design: [../docs/ant-farm-design.md](../docs/ant-farm-design.md). The browser prototype it grew from is in [../prototype/ant-farm](../prototype/ant-farm/).
 
 ## Run it
 
@@ -10,23 +10,34 @@ npm install
 npm start
 ```
 
-Needs Node 20 or newer. It opens a small frameless window in the bottom-right corner, always on top, and a little ant in the menu bar (the system tray on Windows) with the same controls. Quit from that menu or with Cmd+Q / Ctrl+Q.
+Needs Node 20 or newer. It runs inside the Token Games shell ([../shell](../shell/README.md)), like every game in this repo: it starts in the notch, as a black island with a tiny live view of the colony on the left and the number of ants on the right (on a Mac without a notch, a pill in the middle of the menu bar). A little ant in the menu bar (the system tray on Windows) has every control. Quit from that menu or with Cmd+Q / Ctrl+Q.
+
+Already running an older Ant Farm? Quit it first: only one runs at a time. Your colony and settings carry over.
 
 ## Using it
+
+In the notch ([../docs/presentation.md](../docs/presentation.md)):
+
+- **Peek**: point at the island and it widens into a strip of the farm with energy, tokens, ants and food.
+- **Drop down**: click it (or press Alt+Cmd+T anywhere) for the whole farm, large, with **Pop out ↗** and **Settings**. Esc, a click elsewhere or the shortcut closes it.
+- **Pop out**: **Pop out ↗** (or O) turns it into the floating window below; the island stays in the notch, and clicking it, **↩ Notch** in the title bar, or O brings the farm back. It remembers which you chose.
+
+Popped out, in the floating window:
 
 - **Move it**: drag the title bar. Dropped near a corner, it docks there.
 - **Resize it**: drag the grip on the corner away from its dock (it stays 16:9), or press 1 for small (320 × 180) and 2 for large (640 × 360).
 - **Full screen**: F, or the square button. Esc comes back.
 - **Click-through**: T, or the setting, lets clicks pass through to whatever is behind. To get the window back, hold Alt over it, use the menu-bar menu, or press Alt+Cmd+T (Alt+Ctrl+T on Windows) anywhere.
+- Opacity, always on top and click-through apply to the popped-out window only; the island in the notch is always solid black, like the notch.
 - **Settings**: the gear button, or the , key (Cmd+, works too).
-- **Camera**: it follows the colony by itself, until you move it:
+- **Camera** (in the drop-down and the window; in the notch it always shows the whole colony): it follows the colony by itself, until you move it:
   - two fingers on a trackpad pan, 1:1 with your fingers and with no easing;
   - pinch to zoom around the pointer (a mouse wheel zooms too);
   - drag with the mouse to pan; let go while moving and it glides on and slows down;
   - arrow keys pan, + and − zoom.
   Panning covers more of the map per pixel when zoomed out. Moving the camera yourself pauses the auto camera for 30 seconds; double-click, A, or the target button in the title bar gives it back at once. Reduced motion turns off the zoom easing and the glide.
 - **Stats**: I shows what a frame costs: draw time, ticks, chunks on screen, painted and loaded, tile memory and the JS heap.
-- Other keys: H hides it, P cycles palettes, D cycles docking corners, M cycles map sizes.
+- Other keys: H hides it, P cycles palettes, D cycles docking corners (popped out), M cycles map sizes.
 
 ## Settings
 
@@ -37,14 +48,15 @@ Every change shows at once and is saved straight away (on a Mac in `~/Library/Ap
 | Colours | Original, Quiet Earth, Graphite, Slate, Sepia Dusk, Terminal, Desktop Blend (follows the system's light or dark mode) | Desktop Blend |
 | Calm | Less colour and contrast, from 0 to 100% | 0% |
 | Fade when idle | Sinks toward the desktop after a few quiet seconds, comes back on the next event or when you point at it | off |
-| Reduced motion | No floating labels, fewer frames | off |
+| Presentation | In the notch, or a floating window | in the notch |
+| Reduced motion | No floating labels, no pop-out flight, fewer frames | off |
 | Window size | Small, large, full screen; a dragged size is kept as custom | small |
 | Docking | Top left, top right, bottom left, bottom right, or free where you drop it | bottom right |
 | Opacity | 25% to 100% | 100% |
 | Always on top | Floats above other windows | on |
 | Click-through | Clicks pass through to what is behind | off |
 | Map | Large (2,048 × 1,024), Huge (8,192 × 4,096) or Ridiculous (65,536 × 16,384 cells); another size starts a new farm | Ridiculous |
-| Reset | Every setting back to its default; the farm itself stays | |
+| Reset | Every setting back to its default (back in the notch too); the farm itself stays. In Settings and the menu-bar menu | |
 
 Settings also shows the colony's health (ants, brood, stored food, the oldest ant's age, the queen's age, and whether it is fed, hungry or starving) and whether Claude Code is being watched. The title bar shows energy, tokens, ants and food, and "hungry" or "starving" when it is.
 
@@ -89,22 +101,23 @@ Claude Code writes each session's transcript as a JSON-lines file under `~/.clau
 
 The feed turns these into the shared event format in the design doc (`tokens`, `task_done`, `session_start`), so a Codex feed can be added beside it later.
 
-When the farm is calm it draws 8 frames a second (2 with reduced motion), 60 while you move the camera, and nothing at all while it is hidden.
+Resting in the notch it draws 2 frames a second (4 while tokens arrive, 1 with reduced motion). Dropped down or popped out and calm it draws 8 (2 with reduced motion), 60 while you move the camera, and nothing at all while it is hidden. The simulation keeps real time at any frame rate.
 
 ## Code
 
 - `src/sim/` the simulation: chunks, soil, rock, food, ants, life, collapse rules, token mapping. No DOM, so it runs in tests.
-- `src/game/` the page: tile drawing and culling, palettes, camera and its input, title bar and settings menu.
-- `src/main/` the Electron side: the window, docking, menu-bar menu, settings and colony files.
-- `src/feed/` the Claude Code feed.
-- `src/shared/` settings and event format shared by both sides.
+- `src/game/` the page: tile drawing and culling, palettes, camera and its input, and the farm's Settings sections. It hands the shell a `Game` (`mountShell`).
+- `src/main/` the Electron side: `main.ts` starts the shell with the farm's settings, menu-bar ant and save file (`colony.json`); `smoke.ts` adds the farm's checks to the shell's smoke test.
+- `src/shared/settings.ts` the farm's settings (palette, calm, fade, map size, seed), stored beside the shell's.
+- `game.json`, `icon.svg` the manifest ([../docs/manifest.md](../docs/manifest.md)).
+- The window, notch, tray, hotkey, settings file and Claude Code feed are the shell's ([../shell](../shell/README.md)).
 
 ## Tests
 
 ```sh
-npm test            # unit tests: simulation, chunks and culling, life on a fake clock, camera input, tokens, palettes, settings, feed
+npm test            # unit tests: simulation, chunks and culling, life on a fake clock, camera input, tokens, palettes, settings, and the shell's
 npm run typecheck
-npm run test:smoke  # launches the app hidden and drives it: the big map, camera, settings, sizes, full screen, feed, saving, restart
+npm run test:smoke  # launches the app hidden and drives it: the notch, peek, drop-down, pop out and back, the big map, camera, settings, sizes, full screen, feed, saving, restart
 npm run shots       # the same, and saves screenshots to shots/
 npm run bench       # frame time and memory at each map size
 ```

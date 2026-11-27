@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ClaudeParser, watchClaudeCode } from '../src/feed/claude-code';
-import { normalizeEvent, type FarmEvent } from '../src/shared/events';
+import { normalizeEvent, type UsageEvent } from '../src/events';
 
 const usage = { input_tokens: 1200, output_tokens: 850, cache_read_input_tokens: 40000, cache_creation_input_tokens: 3000 };
 const line = (o: Record<string, unknown> = {}, m: Record<string, unknown> = {}) => JSON.stringify({
@@ -67,7 +67,7 @@ test('watcher: starts at the end of existing transcripts and reads only what is 
   const main = path.join(root, 'proj', 's-1.jsonl'), sub = path.join(root, 'proj', 's-1', 'subagents', 'agent-a.jsonl');
   fs.writeFileSync(main, line({}, { id: 'old', stop_reason: 'end_turn' }) + '\n');
   fs.writeFileSync(sub, '');
-  const got: FarmEvent[] = [];
+  const got: UsageEvent[] = [];
   const feed = watchClaudeCode({ root, onEvent: (e) => got.push(e), pollMs: 100 });
   try {
     assert.equal(feed.files(), 2);

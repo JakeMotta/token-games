@@ -1,0 +1,12 @@
+{
+  "manifestVersion": 1,
+  "id": "ant-farm",
+  "name": "Ant Farm",
+  "description": "An ant colony that digs, eats and lives on the real clock, fed only by the tokens your AI agent spends.",
+  "author": "Jacob Motta",
+  "version": "0.2.0",
+  "entry": { "main": "dist/main.js", "page": "dist/index.html" },
+  "icon": "icon.svg",
+  "minShellVersion": "1.0.0",
+  "permissions": ["claude-usage"]
+}

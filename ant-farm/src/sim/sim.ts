@@ -14,7 +14,7 @@ import {
 } from './world';
 import { CS, CM, CELLS, ChunkStore, applyDiff, type Chunk, type ChunkStats } from './chunks';
 import { TokenMeter } from './tokens';
-import type { FarmEvent } from '../shared/events';
+import type { UsageEvent } from '@token-games/shell/events';
 
 export interface SimOptions {
   seed?: number; size?: MapSize; W?: number; H?: number; span?: number; rocks?: boolean; food?: boolean;
@@ -87,7 +87,7 @@ export interface Sim {
   cap(): number;
   step(): void;
   run(n: number): void;
-  feed(ev: FarmEvent | null | undefined): void;
+  feed(ev: UsageEvent | null | undefined): void;
   isBusy(): boolean;
   interestBox(): { x: number; y: number; w: number; h: number };
   setView(b: Box | null): void;

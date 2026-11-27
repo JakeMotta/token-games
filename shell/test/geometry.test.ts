@@ -1,8 +1,10 @@
 // Window placement: 16:9 sizes, docking, snapping and the resize grip.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { boundsFor, clampWidth, dockPoint, gripCorner, heightFor, MARGIN, maxWidth, nearestDock, resizeFromGrip } from '../src/main/geometry';
-import { applyPatch, defaultSettings } from '../src/shared/settings';
+import { boundsFor, clampWidth, dockPoint, gripCorner, heightFor, MARGIN, maxWidth, nearestDock, resizeFromGrip } from '../src/geometry';
+import { settingsKit } from '../src/settings';
+
+const { applyPatch, defaults: defaultSettings } = settingsKit({ defaults: () => ({}), sanitize: () => ({}), reset: () => ({}) });
 
 const AREA = { x: 0, y: 25, width: 1440, height: 800 }; // a Mac work area under the menu bar
 

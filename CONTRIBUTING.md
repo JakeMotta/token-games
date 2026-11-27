@@ -1,0 +1,62 @@
+# Contributing
+
+Thanks for building a Token Game. The short version: the **shell** behaves the same for every game; what happens
+inside your game is up to you, as long as only real agent usage moves it forward.
+
+## The rules
+
+1. **Usage only.** Progress comes from `UsageEvent`s the shell forwards (`tokens`, `task_done`, `session_start`,
+   `agent_waiting`). No cheat, feed, debug or "add tokens" controls of any kind. Idle regen, if any, must not let a
+   player progress without an agent working.
+2. **Notch first, pop out.** Your game draws at three scales the shell picks: `mini` (a tiny strip in the island's
+   left ear, a few dozen pixels wide), `expanded` (the drop-down, about 600 × 275) and `window` (320 × 180 up to
+   full screen). Make each readable.
+3. **Cheap when collapsed.** In `mini`, draw 1–4 frames a second and skip whatever nobody can see. Keep the
+   simulation on the real clock so a slow frame rate doesn't slow the game.
+4. **Calm.** Quiet palettes, no flashing; follow `settings.reducedMotion`; fade when idle where it fits.
+5. **One instance, one view.** Don't open windows, trays or files of your own; ask the shell (`GameContext`).
+6. **Counts only, nothing online.** Never read transcript contents, never use the network.
+7. **Docs must match the shell.** If you change the wrapper (anything in `shell/`, `templates/`, `scripts/`, the
+   manifest format, the root `package.json`, install or run commands, or how the app behaves on someone's computer),
+   update `CLAUDE.md`, `README.md` and the affected docs in the same PR. `npm run docs-check` enforces the first two.
+   Gameplay changes inside one game don't need this.
+
+## A new game in 10 minutes
+
+1. **Make it.** From the repo root: `npm run new-game -- my-game "My Game"`, then `cd my-game && npm install`.
+2. **Run it.** `npm start`. The jar sits in the notch; click it, pop it out, open Settings (`,`).
+3. **Your logic.** Replace `src/shared/jar.ts` with your game's state. Keep it free of the DOM; give it
+   `feed(ev: UsageEvent)`, `save()` and `load()`. Write tests in `test/` (`npm test`).
+4. **Your view.** In `src/game/app.ts`, draw into `#game` sized from its own `clientWidth`/`clientHeight` (minus
+   `ctx.topInset` in the window). Use `onScale` to switch between the strip, the drop-down and the window.
+5. **Talk to the shell.** `ctx.setStatus({ count, title, lead, line })` for the island and title bar,
+   `ctx.pulse('+3 grains')` for a quiet moment of news, `ctx.setTheme(...)` for your colours, `ctx.save(...)` /
+   `ctx.load()` for your save file, `ctx.set(...)` to change a setting.
+6. **Your settings.** Add fields in `src/shared/settings.ts` (defaults, sanitize, what Reset keeps) and their
+   controls in `index.html`'s `#gamePanel`. The shell adds Display (presentation, size, docking, opacity, …) and Reset.
+7. **Your manifest.** Edit `game.json`: description, icon (`icon.svg`), version. The build checks it.
+8. **Prove it.** Add checks to `src/main/smoke.ts`, then `npm run typecheck`, `npm test`, `npm run test:smoke`,
+   and look at `npm run shots`.
+9. **List it** in the Games table in `README.md`, and open a PR.
+
+## Art
+
+Pixel art fits the notch. [PixelLab](https://pixellab.ai) is fine for sprites but optional; hand-made art is just as
+welcome. Keep any API key in your environment, never in the repo, and commit only the finished images (PNG or SVG)
+under your game's folder.
+
+## Testing
+
+- Unit tests: `test/*.test.ts` in your game, run with the shell's own tests by `npm test`.
+- The smoke test (`npm run test:smoke`) starts the real app with a temporary profile and a fake Claude Code
+  folder, walks every mode (notch, peek, drop-down, pop out, dock back, the window's sizes and corners, Settings,
+  Reset, a restart), runs your game's checks, and **never shows a window**. Feed your game in it only with
+  `k.transcript(...)`, which writes a real transcript line.
+- Run one at a time; don't start a second Electron test while one runs.
+
+## Branches and pull requests
+
+- Branch from `main`: `feature/<short-name>` or `fix/<short-name>`.
+- One plain-line commit message per change, saying what changed.
+- Fill in the PR template; tick the docs box honestly. CI runs `npm run docs-check`.
+- Keep PRs to one game or one shell change where you can.

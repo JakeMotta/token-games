@@ -1,19 +1,20 @@
-// Runs the app's smoke test without ever showing a window: a fresh settings folder and a fake Claude Code folder in
-// a temp directory, a full run, then a second launch that checks the settings came back. Exits 1 on any failure.
-//   node scripts/smoke.mjs                 (screenshots go to the temp folder)
-//   node scripts/smoke.mjs --shots <dir>   (and are copied to <dir>)
+// Runs a game's smoke test without ever showing a window: a fresh settings folder and a fake Claude Code folder in a
+// temp directory, a full run, then a second launch that checks everything came back. Exits 1 on any failure.
+// Run it from the game's folder, after building it:
+//   node ../shell/scripts/smoke.mjs                 (screenshots go to the temp folder)
+//   node ../shell/scripts/smoke.mjs --shots <dir>   (and are copied to <dir>)
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
-const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const electron = createRequire(import.meta.url)('electron');
+const root = process.cwd();
+const electron = createRequire(path.join(root, 'package.json'))('electron');
 const shotsAt = process.argv.includes('--shots') ? path.resolve(process.argv[process.argv.indexOf('--shots') + 1]) : null;
+const name = path.basename(root);
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ant-farm-smoke-'));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `${name}-smoke-`));
 const out = path.join(tmp, 'out'), userData = path.join(tmp, 'user-data'), claude = path.join(tmp, 'claude-projects');
 fs.mkdirSync(path.join(claude, 'demo-project'), { recursive: true });
 // a transcript that already exists before the app starts: its tokens must not be counted
@@ -24,13 +25,13 @@ fs.writeFileSync(path.join(claude, 'demo-project', 'session-1.jsonl'), JSON.stri
 
 function run(mode) {
   return new Promise((resolve) => {
-    const env = { ...process.env, ANT_FARM_SMOKE: out, ANT_FARM_SMOKE_MODE: mode, ANT_FARM_USER_DATA: userData, ANT_FARM_CLAUDE_DIR: claude };
+    const env = { ...process.env, TG_SMOKE: out, TG_SMOKE_MODE: mode, TG_USER_DATA: userData, TG_CLAUDE_DIR: claude };
     delete env.ELECTRON_RUN_AS_NODE;
     const p = spawn(electron, [root], { env, stdio: ['ignore', 'pipe', 'pipe'] });
     let log = '';
     p.stdout.on('data', (d) => { log += d; });
     p.stderr.on('data', (d) => { log += d; });
-    const kill = setTimeout(() => { log += '\n(timed out after 90 s)'; p.kill('SIGKILL'); }, 90000);
+    const kill = setTimeout(() => { log += '\n(timed out after 120 s)'; p.kill('SIGKILL'); }, 120000);
     p.on('exit', (code) => {
       clearTimeout(kill);
       let result = { ok: false, checks: [{ name: 'the app wrote a result', ok: false, detail: log.slice(-2000) }] };

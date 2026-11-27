@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+<title>__GAME_NAME__</title>
+<link rel="stylesheet" href="shell.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- The game's view. The shell builds the island, the window's title bar and the Settings sheet around it. -->
+<div class="game" id="game"><canvas id="view"></canvas></div>
+
+<!-- The game's own sections of the Settings sheet; the shell adds Display and Reset below them. -->
+<div id="gamePanel" hidden>
+  <section>
+    <h4>Jar</h4>
+    <div class="tg-chips" id="sands"></div>
+    <p class="tg-note" id="jarNote"></p>
+  </section>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

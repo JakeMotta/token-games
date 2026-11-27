@@ -1,0 +1,21 @@
+{
+  "name": "__GAME_ID__",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Token Games: __GAME_NAME__. It lives in the notch and pops out into a window.",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "node ../shell/scripts/build-game.mjs",
+    "start": "npm run build && electron .",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test dist/test/",
+    "test:smoke": "npm run build && node ../shell/scripts/smoke.mjs",
+    "shots": "npm run build && node ../shell/scripts/smoke.mjs --shots shots"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "electron": "38.2.2",
+    "esbuild": "0.24.0",
+    "typescript": "5.6.3"
+  }
+}

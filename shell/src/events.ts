@@ -1,4 +1,4 @@
-// The one token event format every source sends to every game (docs/ant-farm-design.md, "Event format", version 1).
+// The one usage event format every source sends to every game (docs/ant-farm-design.md, "Event format", version 1).
 // Counts and timestamps only: an event never carries prompts, code or any other content.
 
 export type EventSource = 'claude-code' | 'codex' | string;
@@ -33,13 +33,13 @@ export interface SessionEvent {
   ts: number;
 }
 
-export type FarmEvent = TokensEvent | TaskDoneEvent | SessionEvent;
+export type UsageEvent = TokensEvent | TaskDoneEvent | SessionEvent;
 
 const count = (n: unknown): number => (typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.round(n) : 0);
 const text = (s: unknown, max = 64): string | undefined => (typeof s === 'string' && s ? s.slice(0, max) : undefined);
 
 // Checks an event from outside and returns a clean copy holding only the known fields, or null.
-export function normalizeEvent(raw: unknown, now = Date.now()): FarmEvent | null {
+export function normalizeEvent(raw: unknown, now = Date.now()): UsageEvent | null {
   if (!raw || typeof raw !== 'object') return null;
   const e = raw as Record<string, unknown>;
   if (e.v !== undefined && e.v !== 1) return null;
