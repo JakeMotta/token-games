@@ -36,7 +36,7 @@ export interface Job { type: 'rest' | 'forage' | 'nurse' | 'dig'; t?: number; id
 export interface Brood { id: number; x: number; y: number; age: number; stage: number; inRoom: boolean; nurse: number; carried: boolean }
 export interface Ant {
   id: number; x: number; y: number; hx: number; hy: number; role: Role; job: Job | null; carry: 'grain' | 'food' | 'brood' | null;
-  carryCol: number; busy: number; acc: number; speed: number; walk: number; stuckT: number; brood: Brood | null;
+  carryCol: number; busy: number; acc: number; speed: number; walk: number; stuckT: number; lost?: number; noForage?: number; brood: Brood | null;
   born: number; dies: number; // wall-clock ms
   dying?: number; // ticks left of its fade-out
   dumpX?: number | null; dumpAt?: number; home?: boolean; eggT?: number;
@@ -104,6 +104,8 @@ export interface Sim {
 }
 
 const SMALL = 4_194_304; // a map up to this many cells is counted, hashed and painted whole
+const STALL_TICKS = 600; // 30 s of work waiting and nothing dug: the watchdog looks for a plugged entrance
+const LOST_TICKS = 400; // a forager that can't find the way home for 20 s eats its crumb
 
 export function createSim(opts: SimOptions = {}): Sim {
   const R0 = opts.restore && opts.restore.v === 1 ? opts.restore : null;
@@ -112,6 +114,9 @@ export function createSim(opts: SimOptions = {}): Sim {
   const W = R0 ? R0.W : opts.W || (sz ? sz.W : 420), H = R0 ? R0.H : opts.H || (sz ? sz.H : 260);
   let XB = 0; while ((1 << XB) < W) XB++;
   const R = 1 << XB, XM = R - 1;
+  // The watchdog's memory: project cells dug so far, the count it last saw and when that changed. Only project work
+  // counts; an ant shuffling a loose grain about is not progress.
+  let workDone = 0, dugSeen = -1, dugAt = 0;
   const now = opts.now || Date.now;
   const rnd = mulberry32(R0 ? R0.rng : seed);
   const ri = (a: number, b: number): number => a + Math.floor(rnd() * (b - a + 1));
@@ -444,7 +449,7 @@ export function createSim(opts: SimOptions = {}): Sim {
   const hasAirNear = (k: number): boolean => { for (const [dx, dy] of D8) if (walkable(k + dx + dy * R)) return true; return false; };
   function canDig(p: Project, k: number): boolean {
     const t = T(k);
-    if (p.kind === 'clear') return t === LOOSE;
+    if (p.kind === 'clear') return t === LOOSE || t === CRUMB;
     return DIGGABLE[t];
   }
   // Cells this project wants dug now (all reachable from open air). Empty when it is finished or blocked.
@@ -520,7 +525,7 @@ export function createSim(opts: SimOptions = {}): Sim {
   function addAnt(x: number, y: number, role?: Role, born = now()): Ant {
     const r = role || 'worker';
     const a: Ant = { id: sim.nextId++, x, y, hx: 1, hy: 0, role: r, job: null, carry: null, carryCol: 0, busy: 0,
-      acc: rnd(), speed: r === 'queen' ? 0.25 : 0.75 + rnd() * 0.2, walk: 0, stuckT: 0, brood: null, born, dies: born + lifespan(r) };
+      acc: rnd(), speed: r === 'queen' ? 0.25 : 0.75 + rnd() * 0.2, walk: 0, stuckT: 0, lost: 0, brood: null, born, dies: born + lifespan(r) };
     sim.ants.push(a); occAdd(idx(x, y), 1);
     return a;
   }
@@ -547,8 +552,15 @@ export function createSim(opts: SimOptions = {}): Sim {
   }
 
   // Food is stored at a fixed place: beside the entrance, then on the royal chamber floor.
-  const storeRoom = () => (sim.royal && sim.royal.done ? sim.royal.room : null);
-  const storeSources = () => { const r = storeRoom(); return r ? near(r.cx, r.cy + r.ry - 1, 3) : near(sim.nest.x, sim.nest.y, 2); };
+  const storeRoom = () => (sim.royal && sim.royal.done && !sim.royal.failed ? sim.royal.room : null);
+  // Any open cell in the store will do: a pile that fills the middle must not lock the foragers out of it.
+  const storeSources = (): number[] => {
+    const b = storeRect(), out: number[] = [];
+    for (let y = Math.max(1, b.y0); y <= Math.min(H - 2, b.y1); y++) for (let x = Math.max(1, b.x0); x <= Math.min(W - 2, b.x1); x++) if (walkable(idx(x, y))) out.push(idx(x, y));
+    if (out.length) return out;
+    const r = storeRoom();
+    return r ? near(r.cx, r.cy + r.ry - 1, 3) : near(sim.nest.x, sim.nest.y, 2);
+  };
   const storeRect = (): Box => {
     const r = storeRoom();
     return r ? { x0: r.cx - r.rx - 2, y0: r.cy - r.ry - 2, x1: r.cx + r.rx + 2, y1: r.cy + r.ry + 2 } : { x0: sim.nest.x - 6, y0: sim.nest.y - 4, x1: sim.nest.x + 6, y1: sim.nest.y + 4 };
@@ -605,7 +617,7 @@ export function createSim(opts: SimOptions = {}): Sim {
       const b = sim.brood.find((e) => !e.inRoom && !e.nurse);
       if (b) { b.nurse = a.id; a.job = { type: 'nurse', id: b.id }; return; }
     }
-    if (sim.crumbsOut > 0 && workers.filter((b) => b.job && b.job.type === 'forage').length < Math.min(sim.crumbsOut, Math.ceil(workers.length / 3))) {
+    if (sim.crumbsOut > 0 && !(a.noForage! > sim.tick) && workers.filter((b) => b.job && b.job.type === 'forage').length < Math.min(sim.crumbsOut, Math.ceil(workers.length / 3))) {
       a.job = { type: 'forage' }; return;
     }
     if (sim.energy >= 1) {
@@ -659,9 +671,13 @@ export function createSim(opts: SimOptions = {}): Sim {
     }
     if (a.carry === 'food') {
       const r = follow(a, field('store', storeSources));
+      // lost with its crumb for a long while (the way home buried): it eats the crumb rather than wander forever
+      if (r === 'stuck' && (a.lost = (a.lost || 0) + 1) > LOST_TICKS) { a.lost = 0; eatCarried(a); return; }
+      if (r !== 'stuck') a.lost = 0;
       if (r === 'arrived') {
-        // a full store: the forager eats what it brought
-        if (sim.stored() >= STORE_CAP) { a.carry = null; a.busy = DROP_TICKS; sim.stats.eaten++; sim.life.hunger = Math.max(0, sim.life.hunger - 1); return; }
+        // No store before the royal chamber (a pile beside the entrance slides into the shaft and plugs it), and none
+        // past a full one: the forager eats what it brought.
+        if (!storeRoom() || sim.stored() >= STORE_CAP) { eatCarried(a); return; }
         // set food down only where it will stay put (not over a hole it would roll down)
         let put = false;
         for (const [dx, dy] of <[number, number][]>[[a.hx || 1, 0], [-(a.hx || 1), 0], [0, -1], [1, -1], [-1, -1]]) {
@@ -688,7 +704,10 @@ export function createSim(opts: SimOptions = {}): Sim {
       if (r === 'arrived') {
         for (const [dx, dy] of D8) { const n = k + dx + dy * R; if (T(n) === CRUMB && !isStored(n & XM, n >> XB)) { a.carry = 'food'; a.carryCol = C(n); setCell(n, AIR); a.busy = DIG_TICKS; sim.crumbsOut--; break; } }
         release(a);
-      } else if (r === 'stuck') { release(a); blocked(a, true); }
+      } else if (r === 'stuck') {
+        // no way to the crumbs from here: do other work for a while instead of trying again every tick
+        release(a); a.noForage = sim.tick + 400; blocked(a, true);
+      }
       return;
     }
     if (j.type === 'nurse') {
@@ -716,7 +735,7 @@ export function createSim(opts: SimOptions = {}): Sim {
         const cx = c & XM, cy = c >> XB, t = T(c);
         a.carry = t === FOOD || t === CRUMB ? 'food' : 'grain'; a.carryCol = C(c);
         a.hx = Math.sign(cx - a.x); a.hy = Math.sign(cy - a.y);
-        setCell(c, AIR); sim.energy -= 1; sim.stats.dug++; a.busy = DIG_TICKS;
+        setCell(c, AIR); sim.energy -= 1; sim.stats.dug++; workDone++; a.busy = DIG_TICKS;
         release(a);
         return;
       }
@@ -727,6 +746,10 @@ export function createSim(opts: SimOptions = {}): Sim {
   }
 
   // Path blocked (rubble, a slid spoil heap): dig through loose grains next to us.
+  function eatCarried(a: Ant) {
+    a.carry = null; a.busy = DROP_TICKS; sim.stats.eaten++; sim.life.hunger = Math.max(0, sim.life.hunger - 1);
+  }
+
   function blocked(a: Ant, now?: boolean) {
     const k = idx(a.x, a.y);
     if (!now && ++a.stuckT < 20) return;
@@ -863,12 +886,16 @@ export function createSim(opts: SimOptions = {}): Sim {
         const c = newProject('clear', -1, null, r.room); c.cells!.sort((a, b) => a - b); return;
       }
     }
-    if (!sim.royal) {
+    if (sim.tick % 100 === 1 && unplug()) return;
+    if (!sim.royal || sim.royal.failed) {
+      // A royal tunnel that gave up (its tip buried, say) is begun again from the entrance; the old one is dropped.
+      if (sim.royal) sim.projects.splice(sim.projects.indexOf(sim.royal), 1);
       const gx = ex + ri(-10, 10), gy = surf[ex] + ri(24, 30);
       sim.royal = newProject('royal', idx(ex, surf[ex] - 1), { x: gx, y: gy }, { cx: gx, cy: gy, rx: 7, ry: 3, shape: 'dome' });
       return;
     }
-    if (sim.royal.done && !sim.broodRoom) {
+    if (sim.royal.done && (!sim.broodRoom || sim.broodRoom.failed)) {
+      if (sim.broodRoom) sim.projects.splice(sim.projects.indexOf(sim.broodRoom), 1);
       const r = sim.royal.room!, side = rnd() < 0.5 ? -1 : 1;
       const gx = Math.max(12, Math.min(W - 12, r.cx + side * ri(14, 24))), gy = Math.min(H - 10, r.cy + ri(14, 20));
       const st = nearestTunnel(gx, gy);
@@ -923,6 +950,25 @@ export function createSim(opts: SimOptions = {}): Sim {
         return;
       }
     }
+  }
+  // The watchdog: work waiting, energy to do it, and nothing dug for a while usually means the entrance is plugged
+  // (food or soil slid into the shaft and the diggers can't reach the tunnel tip). Clear the plug from the top down.
+  function unplug(): boolean {
+    if (workDone !== dugSeen) { dugSeen = workDone; dugAt = sim.tick; return false; }
+    if (sim.tick - dugAt < STALL_TICKS || sim.energy < 1) return false;
+    const open = sim.projects.filter((p) => !p.done);
+    if (!open.length || open.some((p) => p.kind === 'clear')) return false;
+    dugAt = sim.tick;
+    const deep = Math.max(surf[ex] + 12, ...open.filter((p) => p.head >= 0).map((p) => (p.head >> XB) + 2));
+    const cells: number[] = [];
+    for (let y = Math.max(1, surf[ex] - 12); y <= Math.min(H - 2, deep); y++) for (let x = Math.max(1, ex - 8); x <= Math.min(W - 2, ex + 8); x++) {
+      const t = T(idx(x, y));
+      if (t === LOOSE || t === CRUMB) cells.push(idx(x, y));
+    }
+    if (!cells.length) return false;
+    const c = newProject('clear', -1, null, { cx: ex, cy: surf[ex], rx: 8, ry: 2, shape: 'flat' });
+    c.cells = cells.sort((a, b) => a - b); // top rows first: the plug is dug out from above
+    return true;
   }
   function pocketCells(p: Pocket): number[] {
     const cells: number[] = [];
@@ -1275,7 +1321,7 @@ export function createSim(opts: SimOptions = {}): Sim {
       brood: sim.brood.map((e) => ({ ...e, carried: false, nurse: 0 })),
       projects: sim.projects.map((p) => ({
         id: p.id, kind: p.kind, head: p.head, goal: p.goal, room: p.room, phase: p.phase, ang: p.ang, done: p.done, stuck: p.stuck,
-        failed: p.failed, pocket: p.pocket, cells: p.kind === 'food' ? p.cells : null,
+        failed: p.failed, pocket: p.pocket, cells: p.kind === 'food' || p.kind === 'clear' ? p.cells : null,
       })),
       royal: sim.royal ? sim.royal.id : 0, broodRoom: sim.broodRoom ? sim.broodRoom.id : 0,
       pockets: [...sim.pockets.values()].map((p) => [p.id, p.remaining, p.claimed ? 1 : 0]),
@@ -1315,7 +1361,7 @@ export function createSim(opts: SimOptions = {}): Sim {
     for (const q of R0.ants) {
       const a: Ant = {
         id: q.id!, x: q.x!, y: q.y!, hx: q.hx ?? 1, hy: q.hy ?? 0, role: q.role!, job: null, carry: q.carry ?? null, carryCol: q.carryCol || 0,
-        busy: 0, acc: 0, speed: q.speed!, walk: 0, stuckT: 0, brood: null, born: q.born!, dies: q.dies!, home: q.home,
+        busy: 0, acc: 0, speed: q.speed!, walk: 0, stuckT: 0, lost: 0, brood: null, born: q.born!, dies: q.dies!, home: q.home,
       };
       sim.ants.push(a); occAdd(idx(a.x, a.y), 1);
     }

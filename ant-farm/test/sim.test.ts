@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSim, type Counts, type SimOptions } from '../src/sim/sim';
-import { AIR, DIRT, LOOSE } from '../src/sim/world';
+import { AIR, CRUMB, DIRT, LOOSE } from '../src/sim/world';
 import { TOKENS_PER_CRUMB, TOKENS_PER_ENERGY } from '../src/sim/tokens';
 
 const soil = (c: Counts) => c.dirt + c.loose + c.rock + c.carriedGrain;
@@ -148,4 +148,36 @@ test('the colony digs a royal chamber, lays eggs and raises workers', () => {
   assert.ok(sim.royal && sim.royal.done, 'royal chamber dug');
   assert.ok(sim.stats.laid > 0 && sim.stats.born > 0, JSON.stringify(sim.stats));
   assert.ok(sim.ants.length > n0);
+});
+
+// Jake's farm, November 2026: food stored beside the entrance slid into the shaft, buried the tunnel tip and the
+// store itself, and every ant stood still for hours with full energy and galleries waiting.
+test('a shaft plugged with food is dug out again, and the colony gets back to work', () => {
+  const sim = createSim({ seed: 8, now: () => 1_700_000_000_000 }); // a fixed clock: the same farm every run
+  sim.feed(tokens(60_000, 0));
+  for (let i = 0; i < 12; i++) sim.feed({ v: 1, source: 'test', type: 'task_done', ts: 1_000_000 });
+  sim.run(600);
+  const royal = sim.royal!;
+  assert.ok(royal && !royal.done, 'the royal chamber is still being dug');
+  // bury the entrance: a mound of crumbs over the hole, down past the tunnel tip
+  const ex = sim.ex, top = sim.surf[ex] - 4, tip = royal.head >> sim.XB;
+  for (let y = top; y <= tip + 2; y++) for (let x = ex - 4; x <= ex + 4; x++) {
+    const k = sim.idx(x, y);
+    if (sim.typeAt(k) === AIR) sim.setCell(k, CRUMB, 0x1000);
+  }
+  const dug = sim.stats.dug;
+  for (let i = 0; i < 40 && !(sim.royal!.done && !sim.royal!.failed); i++) sim.run(250);
+  assert.ok(sim.stats.dug > dug + 40, 'digging resumed: ' + (sim.stats.dug - dug) + ' cells');
+  assert.ok(sim.royal!.done && !sim.royal!.failed, 'the royal chamber was dug after all');
+  sim.run(2000);
+  assert.ok(sim.projects.some((p) => p.kind === 'gallery'), 'and the waiting galleries began');
+});
+
+test('before the royal chamber exists, foragers eat what they bring instead of piling it by the entrance', () => {
+  const sim = createSim({ seed: 12 });
+  sim.feed(tokens(200_000, 0));
+  for (let i = 0; i < 40 && !(sim.royal && sim.royal.done); i++) sim.run(50);
+  const nest = sim.nest, pile = sim.count({ x0: nest.x - 6, y0: nest.y - 4, x1: nest.x + 6, y1: nest.y + 4 }).crumb;
+  if (!(sim.royal && sim.royal.done)) assert.ok(pile <= 4, pile + ' crumbs piled by the entrance');
+  assert.ok(sim.stats.eaten > 0, 'foragers ate what they brought');
 });
