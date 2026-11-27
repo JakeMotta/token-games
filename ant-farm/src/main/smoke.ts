@@ -12,6 +12,16 @@ const savedTick = (): number => { try { return JSON.parse(fs.readFileSync(colony
 const state = (k: SmokeKit<Settings>) => k.js('gameTest.state()');
 let seed = -1;
 
+// A DevTools CPU profile, summed into time per function (self time, ms per frame), heaviest first.
+interface CpuProfile { nodes: { id: number; callFrame: { functionName: string; url: string; lineNumber: number } }[]; samples: number[]; timeDeltas: number[] }
+function topFunctions(p: CpuProfile, frames: number, n = 10): Record<string, number> {
+  const name = new Map(p.nodes.map((x) => [x.id, (x.callFrame.functionName || '(anonymous)') + (x.callFrame.url ? ' ' + path.basename(x.callFrame.url) + ':' + (x.callFrame.lineNumber + 1) : '')]));
+  const self = new Map<string, number>();
+  for (let i = 0; i < p.samples.length; i++) { const f = name.get(p.samples[i])!; self.set(f, (self.get(f) || 0) + (p.timeDeltas[i] || 0) / 1000); }
+  self.delete('(idle)');
+  return Object.fromEntries([...self].sort((a, b) => b[1] - a[1]).slice(0, n).map(([f, ms]) => [f, Math.round((ms / Math.max(1, frames)) * 1000) / 1000]));
+}
+
 export const farmSmoke: GameSmoke<Settings> = {
   async full(k) {
     const { check, js, until, wait, shot } = k;
@@ -101,6 +111,17 @@ export const farmSmoke: GameSmoke<Settings> = {
     await shot('window-perf-readout');
     k.update({ perfReadout: false } as Partial<Settings>);
 
+    // smooth: walking ants glide on every display frame, not only on a simulation step (20 a second); Reduced motion
+    // keeps the few frames it promises
+    const rate = async () => { await js('gameTest.perfReset()'); await wait(1500); return (await js<{ fps: number }>('gameTest.perf()')).fps; };
+    const smoothFps = await rate();
+    check('in the window the farm draws on every display frame while ants walk', smoothFps >= 45, smoothFps);
+    k.update({ reducedMotion: true } as Partial<Settings>);
+    await wait(200);
+    const calmFps = await rate();
+    check('Reduced motion keeps it to a few frames a second', calmFps > 0 && calmFps <= 12, calmFps);
+    k.update({ reducedMotion: false } as Partial<Settings>);
+
     // light mode and Desktop Blend's light variant
     k.update({ palette: 'blend' } as Partial<Settings>);
     nativeTheme.themeSource = 'light';
@@ -165,12 +186,27 @@ export const farmSmoke: GameSmoke<Settings> = {
     check('the farm is ready', await until(async () => (await state(k)).ready, 15000));
     const st = await state(k);
     note('farm', { W: st.W, H: st.H, ants: st.ants, tick: st.tick, chunks: st.chunks.loaded, settings: (({ presentation, reducedMotion, size, palette, mapSize }) => ({ presentation, reducedMotion, size, palette, mapSize }))(k.store.get()) });
+    // DevTools on the hidden page: a sampling CPU profile (time by function, garbage collection) and the page's own
+    // counters (layout, style, script) for each part, so the top costs are measured, not guessed
+    const dbg = k.win.webContents.debugger;
+    if (!dbg.isAttached()) dbg.attach('1.3');
+    await dbg.sendCommand('Performance.enable');
+    await dbg.sendCommand('Profiler.enable');
+    await dbg.sendCommand('Profiler.setSamplingInterval', { interval: 250 });
+    const counters = async () => Object.fromEntries(((await dbg.sendCommand('Performance.getMetrics')) as { metrics: { name: string; value: number }[] }).metrics.map((m) => [m.name, m.value]));
+    note('rafPerSecond', await js('new Promise((r) => { let n = 0; const t0 = performance.now(); const f = () => { n++; if (performance.now() - t0 < 1000) requestAnimationFrame(f); else r(n); }; requestAnimationFrame(f); setTimeout(() => r(n), 1500); })'));
     const measure = async (name: string, ms: number) => {
       await wait(800);
       await js('gameTest.perfReset()');
+      const c0 = await counters();
+      await dbg.sendCommand('Profiler.start');
       const use = await cpu(ms);
+      const { profile } = (await dbg.sendCommand('Profiler.stop')) as { profile: CpuProfile };
+      const c1 = await counters();
       const p = await js('gameTest.perf()');
-      note(name, { ...p, cpu: use });
+      const per = (v: number) => Math.round((p.frames ? v / p.frames : 0) * 100) / 100;
+      const d = (key: string) => per((c1[key] - c0[key]) * 1000);
+      note(name, { ...p, cpu: use, page: { taskMs: d('TaskDuration'), scriptMs: d('ScriptDuration'), layoutMs: d('LayoutDuration'), styleMs: d('RecalcStyleDuration'), layouts: per(c1.LayoutCount - c0.LayoutCount) }, top: topFunctions(profile, p.frames) });
       check(`measured: ${name}`, p.frames > 0, p);
     };
     const go = async (st2: string, ev: 'toggle' | 'pop' | 'dock' | 'escape') => { if (k.state() !== st2) { k.dispatch(ev); await until(() => k.state() === st2, 3000); } };
@@ -183,6 +219,11 @@ export const farmSmoke: GameSmoke<Settings> = {
     await measure('window (settings as saved)', 8000);
     k.update({ reducedMotion: false, size: 'large' } as Partial<Settings>);
     await measure('window, large, full motion', 8000);
+    await js('gameTest.zoomIn()');
+    await measure('window, large, zoomed in', 6000);
+    await js('gameTest.zoomOut()');
+    await measure('window, large, zoomed out', 6000);
+    await js('shellTest.key("a")');
     await js('window.__pan = setInterval(() => gameTest.pan(3, 1), 16)');
     await measure('window, large, camera moving', 6000);
     await js('gameTest.zoomOut()');

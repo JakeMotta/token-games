@@ -50,6 +50,8 @@ export type SimEvent =
 export interface Field { dist: Int32Array; x0: number; y0: number; w: number; h: number; ver: number; at: number; sources: () => number[] }
 export interface PaintOptions { kind?: Uint8Array; ants?: boolean }
 export interface Box { x0: number; y0: number; x1: number; y1: number }
+// Where to draw an ant between steps and which way it faces (game/motion.ts): fills `out`, false to draw it as it is.
+export type PoseOf = (a: Ant, out: { x: number; y: number; fx: number; fy: number }) => boolean;
 export interface Stats {
   dug: number; stored: number; eaten: number; laid: number; born: number; collapses: number; crumbsSpawned: number; tokens: number; tasks: number;
   died: number; starved: number;
@@ -102,7 +104,7 @@ export interface Sim {
   count(b?: Box): Counts;
   hash(): number;
   paintChunk(cx: number, cy: number, px: Uint32Array, kind: Uint8Array): void;
-  overlay(b: Box, put: Put): void;
+  overlay(b: Box, put: Put, pose?: PoseOf): void;
   paint(px: Uint32Array, o?: PaintOptions): void;
   save(): SaveData;
 }
@@ -1269,7 +1271,8 @@ export function createSim(opts: SimOptions = {}): Sim {
   const BROOD = [rgb(238, 232, 214), rgb(226, 212, 182), rgb(201, 179, 140)];
   const body = rgb(158, 76, 54), gaster = rgb(104, 49, 36), head = rgb(122, 58, 42), legs = rgb(70, 36, 28);
   const qBody = rgb(196, 116, 80), qGaster = rgb(140, 72, 52);
-  sim.overlay = function (b, put) {
+  const at = { x: 0, y: 0, fx: 0, fy: 0 };
+  sim.overlay = function (b, put, pose) {
     const inB = (x: number, y: number) => x >= b.x0 - 3 && x <= b.x1 + 3 && y >= b.y0 - 3 && y <= b.y1 + 3;
     const p = (x: number, y: number, c: number, k: number, al: number) => { if (inside(x, y)) put(x, y, c, k, al); };
     for (const s of sim.strains) {
@@ -1292,18 +1295,22 @@ export function createSim(opts: SimOptions = {}): Sim {
     for (const a of sim.ants) {
       if (!inB(a.x, a.y)) continue;
       const al = a.dying === undefined ? 1 : a.dying / DYING_TICKS;
-      const hx = a.hx || 0, hy = a.hy || 0;
-      const dx = hx === 0 && hy === 0 ? 1 : hx, dy = hx === 0 && hy === 0 ? 0 : hy;
+      let x = a.x, y = a.y, dx: number, dy: number;
+      if (pose && pose(a, at)) { x = at.x; y = at.y; dx = at.fx; dy = at.fy; }
+      else {
+        const hx = a.hx || 0, hy = a.hy || 0;
+        dx = hx === 0 && hy === 0 ? 1 : hx; dy = hx === 0 && hy === 0 ? 0 : hy;
+      }
       if (a.role === 'queen') {
-        p(a.x - 2 * dx, a.y - 2 * dy, qGaster, K.QUEEN, al); p(a.x - dx, a.y - dy, qGaster, K.QUEEN, al);
-        p(a.x - dx + dy, a.y - dy - dx, qGaster, K.QUEEN, al);
-        p(a.x, a.y, qBody, K.QUEEN, al); p(a.x + dx, a.y + dy, head, K.QUEEN, al);
+        p(x - 2 * dx, y - 2 * dy, qGaster, K.QUEEN, al); p(x - dx, y - dy, qGaster, K.QUEEN, al);
+        p(x - dx + dy, y - dy - dx, qGaster, K.QUEEN, al);
+        p(x, y, qBody, K.QUEEN, al); p(x + dx, y + dy, head, K.QUEEN, al);
         continue;
       }
-      p(a.x - dx, a.y - dy, gaster, K.ANT, al); p(a.x, a.y, body, K.ANT, al); p(a.x + dx, a.y + dy, head, K.ANT, al);
-      if ((a.walk >> 1) & 1 && a.dying === undefined) p(a.x - dy, a.y + dx, legs, K.ANT, al);
-      if (a.carry === 'grain' || a.carry === 'food') p(a.x + 2 * dx, a.y + 2 * dy, COLOURS[a.carryCol], a.carry === 'food' ? K.LOAD_FOOD : K.LOAD_GRAIN, al);
-      else if (a.carry === 'brood' && a.brood) p(a.x + 2 * dx, a.y + 2 * dy, BROOD[Math.min(2, a.brood.stage)], K.BROOD, al);
+      p(x - dx, y - dy, gaster, K.ANT, al); p(x, y, body, K.ANT, al); p(x + dx, y + dy, head, K.ANT, al);
+      if ((a.walk >> 1) & 1 && a.dying === undefined) p(x - dy, y + dx, legs, K.ANT, al);
+      if (a.carry === 'grain' || a.carry === 'food') p(x + 2 * dx, y + 2 * dy, COLOURS[a.carryCol], a.carry === 'food' ? K.LOAD_FOOD : K.LOAD_GRAIN, al);
+      else if (a.carry === 'brood' && a.brood) p(x + 2 * dx, y + 2 * dy, BROOD[Math.min(2, a.brood.stage)], K.BROOD, al);
     }
   };
 

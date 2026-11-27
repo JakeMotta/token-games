@@ -1695,7 +1695,7 @@
       sim2.events.push(e);
       if (sim2.events.length > 50) sim2.events.shift();
     }
-    function die(a, cause, at) {
+    function die(a, cause, at2) {
       release(a);
       a.dying = DYING_TICKS;
       if (a.carry === "grain" && !dropNear(a, LOOSE, a.carryCol)) setCell(idx(a.x, a.y - 1), LOOSE, a.carryCol);
@@ -1708,7 +1708,7 @@
       a.brood = null;
       if (cause === "age") sim2.stats.died++;
       else sim2.stats.starved++;
-      sim2.stats.oldestMs = Math.max(sim2.stats.oldestMs, at - a.born);
+      sim2.stats.oldestMs = Math.max(sim2.stats.oldestMs, at2 - a.born);
       event({ type: "died", tick: sim2.tick, cause, queen: a.role === "queen" });
       if (a.role !== "queen") return;
       const heir = sim2.ants.filter((b) => b.role === "worker" && !b.dying).sort((p, q) => q.born - p.born)[0];
@@ -1717,7 +1717,7 @@
       heir.role = "queen";
       heir.speed = 0.25;
       heir.home = false;
-      heir.dies = at + lifespan("queen");
+      heir.dies = at2 + lifespan("queen");
       event({ type: "queen", tick: sim2.tick });
     }
     function eatStored() {
@@ -2215,7 +2215,8 @@
     const BROOD = [rgb(238, 232, 214), rgb(226, 212, 182), rgb(201, 179, 140)];
     const body = rgb(158, 76, 54), gaster = rgb(104, 49, 36), head = rgb(122, 58, 42), legs = rgb(70, 36, 28);
     const qBody = rgb(196, 116, 80), qGaster = rgb(140, 72, 52);
-    sim2.overlay = function(b, put) {
+    const at = { x: 0, y: 0, fx: 0, fy: 0 };
+    sim2.overlay = function(b, put, pose) {
       const inB = (x, y) => x >= b.x0 - 3 && x <= b.x1 + 3 && y >= b.y0 - 3 && y <= b.y1 + 3;
       const p = (x, y, c, k, al) => {
         if (inside(x, y)) put(x, y, c, k, al);
@@ -2239,22 +2240,31 @@
       for (const a of sim2.ants) {
         if (!inB(a.x, a.y)) continue;
         const al = a.dying === void 0 ? 1 : a.dying / DYING_TICKS;
-        const hx = a.hx || 0, hy = a.hy || 0;
-        const dx = hx === 0 && hy === 0 ? 1 : hx, dy = hx === 0 && hy === 0 ? 0 : hy;
+        let x = a.x, y = a.y, dx, dy;
+        if (pose && pose(a, at)) {
+          x = at.x;
+          y = at.y;
+          dx = at.fx;
+          dy = at.fy;
+        } else {
+          const hx = a.hx || 0, hy = a.hy || 0;
+          dx = hx === 0 && hy === 0 ? 1 : hx;
+          dy = hx === 0 && hy === 0 ? 0 : hy;
+        }
         if (a.role === "queen") {
-          p(a.x - 2 * dx, a.y - 2 * dy, qGaster, K.QUEEN, al);
-          p(a.x - dx, a.y - dy, qGaster, K.QUEEN, al);
-          p(a.x - dx + dy, a.y - dy - dx, qGaster, K.QUEEN, al);
-          p(a.x, a.y, qBody, K.QUEEN, al);
-          p(a.x + dx, a.y + dy, head, K.QUEEN, al);
+          p(x - 2 * dx, y - 2 * dy, qGaster, K.QUEEN, al);
+          p(x - dx, y - dy, qGaster, K.QUEEN, al);
+          p(x - dx + dy, y - dy - dx, qGaster, K.QUEEN, al);
+          p(x, y, qBody, K.QUEEN, al);
+          p(x + dx, y + dy, head, K.QUEEN, al);
           continue;
         }
-        p(a.x - dx, a.y - dy, gaster, K.ANT, al);
-        p(a.x, a.y, body, K.ANT, al);
-        p(a.x + dx, a.y + dy, head, K.ANT, al);
-        if (a.walk >> 1 & 1 && a.dying === void 0) p(a.x - dy, a.y + dx, legs, K.ANT, al);
-        if (a.carry === "grain" || a.carry === "food") p(a.x + 2 * dx, a.y + 2 * dy, COLOURS[a.carryCol], a.carry === "food" ? K.LOAD_FOOD : K.LOAD_GRAIN, al);
-        else if (a.carry === "brood" && a.brood) p(a.x + 2 * dx, a.y + 2 * dy, BROOD[Math.min(2, a.brood.stage)], K.BROOD, al);
+        p(x - dx, y - dy, gaster, K.ANT, al);
+        p(x, y, body, K.ANT, al);
+        p(x + dx, y + dy, head, K.ANT, al);
+        if (a.walk >> 1 & 1 && a.dying === void 0) p(x - dy, y + dx, legs, K.ANT, al);
+        if (a.carry === "grain" || a.carry === "food") p(x + 2 * dx, y + 2 * dy, COLOURS[a.carryCol], a.carry === "food" ? K.LOAD_FOOD : K.LOAD_GRAIN, al);
+        else if (a.carry === "brood" && a.brood) p(x + 2 * dx, y + 2 * dy, BROOD[Math.min(2, a.brood.stage)], K.BROOD, al);
       }
     };
     sim2.paint = function(px, o) {
@@ -2853,6 +2863,7 @@
     }
     return v;
   };
+  var canvasOf = (w, h) => typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(w, h) : Object.assign(document.createElement("canvas"), { width: w, height: h });
   var now = () => typeof performance !== "undefined" ? performance.now() : Date.now();
   function visibleBox(cam2, vw2, vh2, dpr, W, H) {
     const s = cam2.s * dpr;
@@ -2883,13 +2894,23 @@
     img;
     edges = { key: "", fills: [] };
     // the soft edges, made once per size
+    layer = null;
+    // the soil as laid out last
+    layerKey = "";
+    lastCam = "";
+    runs = /* @__PURE__ */ new Map();
+    // this frame's ant cells, by colour
     constructor() {
       this.img = new ImageData(CHUNK, CHUNK);
       this.out = new Uint32Array(this.img.data.buffer);
     }
     tile() {
-      const canvas = typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(CHUNK, CHUNK) : Object.assign(document.createElement("canvas"), { width: CHUNK, height: CHUNK });
+      const canvas = canvasOf(CHUNK, CHUNK);
       return { canvas, ctx: canvas.getContext("2d"), ver: -1, key: "", used: 0 };
+    }
+    makeLayer(w, h) {
+      const canvas = canvasOf(w, h);
+      return { canvas, ctx: canvas.getContext("2d") };
     }
     draw(ctx, sim2, cam2, dpr, o) {
       const t0 = now();
@@ -2902,13 +2923,14 @@
       const m = this.mapper, back = m.palette.ui.back;
       const W = ctx.canvas.width, H = ctx.canvas.height, s = cam2.s * dpr;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.fillStyle = back;
-      ctx.fillRect(0, 0, W, H);
       ctx.imageSmoothingEnabled = false;
       const box = visibleBox(cam2, W, H, dpr, sim2.W, sim2.H), cc = visibleChunks(box);
       const sx = (wx) => Math.round((wx - cam2.x) * s), sy = (wy) => Math.round((wy - cam2.y) * s);
       const budget = o.budgetMs ?? 8;
-      let visible = 0, painted = 0, waiting = 0;
+      let visible = 0, painted = 0, waiting = 0, calls = 0;
+      const camKey = cam2.x + "," + cam2.y + "," + s + "," + W + "x" + H + "|" + key;
+      const still = camKey === this.lastCam;
+      this.lastCam = camKey;
       for (let cy = cc.cy0; cy <= cc.cy1; cy++) for (let cx = cc.cx0; cx <= cc.cx1; cx++) {
         visible++;
         const ci = cy * sim2.chunks.cw + cx, ver = sim2.chunks.ver(ci);
@@ -2926,27 +2948,73 @@
           t.key = key;
           painted++;
         } else if (stale) waiting++;
-        if (!t || t.ver < 0) continue;
-        t.used = this.frame;
-        const x0 = sx(cx << CS), y0 = sy(cy << CS);
-        ctx.drawImage(t.canvas, x0, y0, sx(cx + 1 << CS) - x0, sy(cy + 1 << CS) - y0);
+        if (t) t.used = this.frame;
+      }
+      const layer = still && !painted && this.layerKey === camKey ? this.layer : null;
+      if (layer) {
+        ctx.drawImage(layer.canvas, 0, 0);
+        calls++;
+      } else {
+        let to = ctx;
+        if (still) {
+          if (!this.layer || this.layer.canvas.width !== W || this.layer.canvas.height !== H) this.layer = this.makeLayer(W, H);
+          to = this.layer.ctx;
+          to.imageSmoothingEnabled = false;
+        }
+        to.fillStyle = back;
+        to.fillRect(0, 0, W, H);
+        calls++;
+        for (let cy = cc.cy0; cy <= cc.cy1; cy++) for (let cx = cc.cx0; cx <= cc.cx1; cx++) {
+          const t = this.tiles.get(cy * sim2.chunks.cw + cx);
+          if (!t || t.ver < 0) continue;
+          const x0 = sx(cx << CS), y0 = sy(cy << CS);
+          to.drawImage(t.canvas, x0, y0, sx(cx + 1 << CS) - x0, sy(cy + 1 << CS) - y0);
+          calls++;
+        }
+        this.layerKey = still ? camKey : "";
+        if (still) {
+          ctx.drawImage(this.layer.canvas, 0, 0);
+          calls++;
+        }
       }
       const cap = Math.max(256, visible * 2);
       if (this.tiles.size > cap) {
         const old = [...this.tiles.entries()].sort((a, b) => a[1].used - b[1].used);
         for (let i = 0; i < old.length && this.tiles.size > cap; i++) if (old[i][1].used !== this.frame) this.tiles.delete(old[i][0]);
       }
-      let drawn = 0, alpha = 1, fill = "";
+      for (const r of this.runs.values()) r.n = 0;
+      if (this.runs.size > 512) this.runs.clear();
       sim2.overlay(box, (x, y, c, kind, a) => {
-        if (a !== alpha) {
-          ctx.globalAlpha = alpha = a;
+        const f = css(m.map(kind, c)), x0 = sx(x), y0 = sy(y), w = sx(x + 1) - x0, h = sy(y + 1) - y0;
+        if (a !== 1) {
+          ctx.globalAlpha = a;
+          ctx.fillStyle = f;
+          ctx.fillRect(x0, y0, w, h);
+          ctx.globalAlpha = 1;
+          calls++;
+          return;
         }
-        const f = css(m.map(kind, c));
-        if (f !== fill) ctx.fillStyle = fill = f;
-        const x0 = sx(x), y0 = sy(y);
-        ctx.fillRect(x0, y0, sx(x + 1) - x0, sy(y + 1) - y0);
-      });
-      ctx.globalAlpha = 1;
+        let r = this.runs.get(f);
+        if (!r) {
+          r = { r: [], n: 0 };
+          this.runs.set(f, r);
+        }
+        const q = r.r, i = r.n;
+        q[i] = x0;
+        q[i + 1] = y0;
+        q[i + 2] = w;
+        q[i + 3] = h;
+        r.n = i + 4;
+      }, o.pose);
+      for (const [f, r] of this.runs) {
+        if (!r.n) continue;
+        ctx.fillStyle = f;
+        ctx.beginPath();
+        for (let i = 0, q = r.r; i < r.n; i += 4) ctx.rect(q[i], q[i + 1], q[i + 2], q[i + 3]);
+        ctx.fill();
+        calls++;
+      }
+      let drawn = 0;
       for (const a of sim2.ants) if (a.x >= box.x0 && a.x <= box.x1 && a.y >= box.y0 && a.y <= box.y1) drawn++;
       if (o.dim && o.dim > 0) {
         ctx.globalAlpha = Math.min(1, o.dim);
@@ -2955,11 +3023,13 @@
         ctx.globalAlpha = 1;
       }
       if (o.soft) this.feather(ctx, back, Math.max(4, Math.round(Math.min(W, H) * 0.07)));
-      const stats = { visible, painted, waiting, tiles: this.tiles.size, tileMB: this.tiles.size * CHUNK * CHUNK * 4 / 1048576, ms: now() - t0 };
+      const stats = { visible, painted, waiting, tiles: this.tiles.size, tileMB: this.tiles.size * CHUNK * CHUNK * 4 / 1048576, ms: now() - t0, calls };
       return { drawn, mapper: m, stats, box };
     }
     clear() {
       this.tiles.clear();
+      this.layer = null;
+      this.layerKey = "";
     }
     // Edges that fade into the window's backdrop instead of ending in a hard line. The four gradients only change with
     // the canvas size and the backdrop colour.
@@ -3037,6 +3107,109 @@
       this.slowN = 0;
       this.maxMs = 0;
       this.n = 0;
+    }
+  };
+
+  // src/game/motion.ts
+  var STEP_MS = 1e3 / TICK_HZ;
+  var TURN_MS = 45;
+  var narrowAt = (w, x, y) => SOLID[w.typeAt(w.idx(x - 1, y))] === true && SOLID[w.typeAt(w.idx(x + 1, y))] === true;
+  var sign = (v) => v > 0 ? 1 : v < 0 ? -1 : 0;
+  var Motion = class {
+    recs = /* @__PURE__ */ new Map();
+    gen = 0;
+    at = 0;
+    smooth = true;
+    p = { x: 0, y: 0 };
+    // Once a frame, after the simulation stepped. smooth: glide and ease (false with reduced motion and in the orb, where
+    // an ant is drawn where it is, facing its final way at once). narrow(x, y): no room to turn at that cell, asked only
+    // for an ant resting after a climb (without it, it stays upright). Returns whether anything still moves on screen.
+    update(ants, now2, smooth, narrow2) {
+      const dt = this.at ? Math.max(0, now2 - this.at) : 0;
+      this.at = now2;
+      this.smooth = smooth;
+      const g = ++this.gen, k = smooth ? 1 - Math.exp(-dt / TURN_MS) : 1;
+      let busy = false;
+      for (const a of ants) {
+        let r = this.recs.get(a.id);
+        if (!r) {
+          const face = sign(a.hx) || 1;
+          r = { x: a.x, y: a.y, fromX: a.x, fromY: a.y, t0: now2, dur: 0, last: -1e9, face, vSign: 0, vRun: 0, pure: 0, hx: a.hx, tx: face, ty: 0, fx: face, fy: 0, seen: g };
+          this.recs.set(a.id, r);
+        }
+        r.seen = g;
+        const dx = a.x - r.x, dy = a.y - r.y;
+        if (dx || dy) {
+          if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+            r.fromX = a.x;
+            r.fromY = a.y;
+            r.dur = 0;
+            r.vRun = 0;
+            r.pure = 0;
+            if (dx) r.face = sign(dx);
+          } else {
+            this.place(r, now2, this.p);
+            r.fromX = this.p.x;
+            r.fromY = this.p.y;
+            r.t0 = now2;
+            const gap = now2 - r.last;
+            r.dur = gap < 4 * STEP_MS ? Math.min(3 * STEP_MS, Math.max(STEP_MS, gap)) : Math.min(3 * STEP_MS, STEP_MS / Math.max(0.3, a.speed));
+            const sx = sign(dx), sy = sign(dy);
+            if (sx) r.face = sx;
+            r.vRun = sy && sy === r.vSign ? r.vRun + 1 : sy ? 1 : 0;
+            r.vSign = sy;
+            r.pure = sy && !sx ? r.pure + 1 : 0;
+          }
+          r.x = a.x;
+          r.y = a.y;
+          r.last = now2;
+        } else if (a.hx && a.hx !== r.hx) r.face = a.hx;
+        r.hx = a.hx;
+        const climbing = r.vRun >= 2 && (now2 - r.last <= r.dur + STEP_MS || !narrow2 || narrow2(r.x, r.y));
+        if (climbing && r.pure >= 2) {
+          r.tx = 0;
+          r.ty = r.vSign;
+        } else if (climbing) {
+          r.tx = r.face;
+          r.ty = r.vSign;
+        } else {
+          r.tx = r.face;
+          r.ty = 0;
+        }
+        r.fx += (r.tx - r.fx) * k;
+        r.fy += (r.ty - r.fy) * k;
+        if (Math.abs(r.tx - r.fx) < 0.01) r.fx = r.tx;
+        if (Math.abs(r.ty - r.fy) < 0.01) r.fy = r.ty;
+        if (r.fx !== r.tx || r.fy !== r.ty || smooth && now2 < r.t0 + r.dur) busy = true;
+      }
+      if (this.recs.size > ants.length) {
+        for (const [id, r] of this.recs) if (r.seen !== g) this.recs.delete(id);
+      }
+      return busy;
+    }
+    // Where to draw an ant now and which way it faces, into `out` (no allocation per ant per frame). False for an ant
+    // update() hasn't seen yet.
+    pose(id, out) {
+      const r = this.recs.get(id);
+      if (!r) return false;
+      this.place(r, this.at, out);
+      out.fx = r.fx;
+      out.fy = r.fy;
+      return true;
+    }
+    clear() {
+      this.recs.clear();
+      this.at = 0;
+    }
+    place(r, now2, out) {
+      if (!this.smooth || r.dur <= 0 || now2 >= r.t0 + r.dur) {
+        out.x = r.x;
+        out.y = r.y;
+        return;
+      }
+      const t = Math.max(0, (now2 - r.t0) / r.dur);
+      out.x = r.fromX + (r.x - r.fromX) * t;
+      out.y = r.fromY + (r.y - r.fromY) * t;
     }
   };
 
@@ -3142,6 +3315,9 @@
   var parts = { since: performance.now(), tick: 0, ticks: 0, draw: 0, status: 0, thumbs: 0 };
   var realBudget = false;
   var governor = new Governor();
+  var motion = new Motion();
+  var narrow = (x, y) => narrowAt(sim, x, y);
+  var posed = (a, out) => motion.pose(a.id, out);
   var raf = 0;
   var asleep = false;
   var lastDraw = 0;
@@ -3200,12 +3376,12 @@
     }
     if (auto || mini()) {
       const t = target(w0, h0);
-      cam = !cam || snap || S.reducedMotion || mini() || near(cam, t) ? t : lerp(cam, t, 0.12, w0, h0);
+      cam = !cam || snap || S.reducedMotion || mini() || near(cam, t) ? t : lerp(cam, t, 1 - Math.pow(0.88, dt / 50), w0, h0);
     }
     if (cam && !mini()) cam = inBounds(cam, w0, h0);
     snap = false;
     const o = opts();
-    const r = main.draw(g2d, sim, cam, dpr, { ...o, soft: o.soft && q.soft, budgetMs: smoke && !realBudget ? 1e3 : mini() ? 4 : q.tileBudgetMs });
+    const r = main.draw(g2d, sim, cam, dpr, { ...o, soft: o.soft && q.soft, budgetMs: smoke && !realBudget ? 1e3 : mini() ? 4 : q.tileBudgetMs, pose: posed });
     sim.setView(r.box);
     perf.drawMs = perf.drawMs * 0.9 + r.stats.ms * 0.1;
     perf.view = r.stats;
@@ -3294,13 +3470,16 @@
     if (n >= 80) acc = 0;
     lifeNews();
     const moving = !!drag || inertia.moving || !!zoomGoal;
+    const smooth = !mini() && !S.reducedMotion;
+    const gliding = motion.update(sim.ants, t, smooth, narrow);
     const busy = sim.isBusy() || moving;
     C.setCalm(!busy);
     const want = S.fadeIdle && t - lastEvt > FADE.after && !C.panelOpen ? FADE.depth : 0;
     const rate = dt / (want > dim ? FADE.down : FADE.up) * FADE.depth;
     dim = want > dim ? Math.min(want, dim + rate) : Math.max(want, dim - rate);
-    const fps = mini() ? S.reducedMotion ? 1 : busy ? 4 : 2 : moving ? 60 : S.reducedMotion ? busy ? 10 : 2 : busy || dim !== want ? TICK_HZ : 8;
-    if (moving || t - lastDraw >= 1e3 / fps - 5) {
+    const live = moving || smooth && (busy || gliding || dim !== want);
+    const fps = mini() ? S.reducedMotion ? 1 : busy ? 4 : 2 : live ? Infinity : S.reducedMotion ? busy ? 10 : 2 : 8;
+    if (live || t - lastDraw >= 1e3 / fps - 5) {
       lastDraw = t;
       const t2 = performance.now();
       draw(dt);
@@ -3317,12 +3496,12 @@
       if (!mini() && (!smoke || realBudget)) governor.add(ms, t);
     }
     if (t - lastSave > SAVE_EVERY) save();
-    if (moving && !smoke) {
+    if (live) {
       raf = requestAnimationFrame(frame);
       return;
     }
     const steps = mini() ? TICK_HZ / 4 : Math.max(1, Math.round(TICK_HZ / fps));
-    timer = window.setTimeout(frame, moving ? 1e3 / fps : Math.max(4, (steps - acc) * 1e3 / TICK_HZ));
+    timer = window.setTimeout(frame, Math.max(4, (steps - acc) * 1e3 / TICK_HZ));
   }
   function stop() {
     clearTimeout(timer);
@@ -3362,6 +3541,7 @@
     sim = createSim({ seed: S.seed, size, restore });
     simSize = size;
     main = new View();
+    motion.clear();
     for (const t of thumbs.values()) t.view = new View();
     cam = null;
     auto = true;

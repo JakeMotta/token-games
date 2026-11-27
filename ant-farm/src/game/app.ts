@@ -15,6 +15,7 @@ import { classifyWheel, wheelPixels, panBy, pinchFactor, wheelFactor, easeZoom, 
 import { ORDER, PALETTES, resolve } from './palettes';
 import { View, minScale, type ViewStats } from './render';
 import { FrameMeter } from './meter';
+import { Motion, narrowAt } from './motion';
 import { Governor } from './quality';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -43,6 +44,9 @@ const meter = new FrameMeter();
 const parts = { since: performance.now(), tick: 0, ticks: 0, draw: 0, status: 0, thumbs: 0 };
 let realBudget = false; // the perf run measures with the real frame budget, not the smoke test's generous one
 const governor = new Governor();
+const motion = new Motion(); // where each ant is drawn between steps, and which way it faces
+const narrow = (x: number, y: number) => narrowAt(sim, x, y);
+const posed = (a: { id: number }, out: { x: number; y: number; fx: number; fy: number }) => motion.pose(a.id, out);
 let raf = 0, asleep = false, lastDraw = 0, lastStatus = 0;
 
 const fmt = (n: number): string => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(Math.round(n)));
@@ -100,12 +104,13 @@ function draw(dt: number): void {
   if (auto || mini()) {
     // the auto camera re-fits at every size; a resize jumps, the farm's growth eases (or jumps, with reduced motion)
     const t = target(w0, h0);
-    cam = !cam || snap || S.reducedMotion || mini() || near(cam, t) ? t : lerp(cam, t, 0.12, w0, h0);
+    // 12% of the way every 50 ms, at any frame rate
+    cam = !cam || snap || S.reducedMotion || mini() || near(cam, t) ? t : lerp(cam, t, 1 - Math.pow(0.88, dt / 50), w0, h0);
   }
   if (cam && !mini()) cam = inBounds(cam, w0, h0); // a resize can leave a camera you moved past the limits
   snap = false;
   const o = opts();
-  const r = main.draw(g2d, sim, cam!, dpr, { ...o, soft: o.soft && q.soft, budgetMs: smoke && !realBudget ? 1000 : mini() ? 4 : q.tileBudgetMs });
+  const r = main.draw(g2d, sim, cam!, dpr, { ...o, soft: o.soft && q.soft, budgetMs: smoke && !realBudget ? 1000 : mini() ? 4 : q.tileBudgetMs, pose: posed });
   sim.setView(r.box);
   perf.drawMs = perf.drawMs * 0.9 + r.stats.ms * 0.1; perf.view = r.stats;
   C.setTheme(r.mapper.palette.ui);
@@ -172,9 +177,11 @@ function drawThumbs(): void {
   }
 }
 
-// ---------- the loop: the simulation at 20 steps a second. The picture: every screen frame while you move the camera;
-// one frame a step while the colony is busy (10 a second with reduced motion), 8 when calm (2), and in the orb 4, 2 or
-// 1. The orb still steps the farm 4 times a second, so a frame never has to catch up on a whole second at once ----------
+// ---------- the loop: the simulation at 20 steps a second. The picture: every screen frame while anything moves (the
+// ants glide between their cells, the camera, the idle fade); 8 frames a second while nothing does. With reduced
+// motion one frame a step while busy (10 a second) and 2 when calm; moving the camera still gets every frame. In the
+// orb 4, 2 or 1, and the orb still steps the farm 4 times a second, so a frame never has to catch up on a whole second
+// at once ----------
 
 function running(): boolean { return ready && !asleep && (smoke || !document.hidden); }
 
@@ -193,6 +200,10 @@ function frame(): void {
   if (n >= 80) acc = 0;
   lifeNews();
   const moving = !!drag || inertia.moving || !!zoomGoal;
+  // smooth: every display frame while anything moves, the ants gliding between their cells (not in the orb, and not
+  // with reduced motion, where an ant is drawn in its cell)
+  const smooth = !mini() && !S.reducedMotion;
+  const gliding = motion.update(sim.ants, t, smooth, narrow);
   const busy = sim.isBusy() || moving;
   C.setCalm(!busy);
   const want = S.fadeIdle && t - lastEvt > FADE.after && !C.panelOpen ? FADE.depth : 0;
@@ -201,9 +212,10 @@ function frame(): void {
   // reduced motion: few frames, so less flicker at the edge of your eye. Moving the camera is your own hand, so it
   // gets every frame either way (easing and glide stay off with reduced motion).
   // Resting in the orb the farm is a few pixels across: a handful of frames is plenty and costs next to nothing.
+  const live = moving || (smooth && (busy || gliding || dim !== want));
   const fps = mini() ? (S.reducedMotion ? 1 : busy ? 4 : 2)
-    : moving ? 60 : S.reducedMotion ? (busy ? 10 : 2) : busy || dim !== want ? TICK_HZ : 8;
-  if (moving || t - lastDraw >= 1000 / fps - 5) {
+    : live ? Infinity : S.reducedMotion ? (busy ? 10 : 2) : 8;
+  if (live || t - lastDraw >= 1000 / fps - 5) {
     lastDraw = t;
     const t2 = performance.now();
     draw(dt);
@@ -216,11 +228,11 @@ function frame(): void {
     if (!mini() && (!smoke || realBudget)) governor.add(ms, t);
   }
   if (t - lastSave > SAVE_EVERY) save();
-  // the next frame: with the screen while moving; otherwise just as the next step is due, so each picture shows a
-  // fresh step and the steps come evenly
-  if (moving && !smoke) { raf = requestAnimationFrame(frame); return; }
+  // the next frame: with the screen while anything moves; otherwise just as the next step is due, so each picture
+  // shows a fresh step and the steps come evenly
+  if (live) { raf = requestAnimationFrame(frame); return; }
   const steps = mini() ? TICK_HZ / 4 : Math.max(1, Math.round(TICK_HZ / fps));
-  timer = window.setTimeout(frame, moving ? 1000 / fps : Math.max(4, ((steps - acc) * 1000) / TICK_HZ));
+  timer = window.setTimeout(frame, Math.max(4, ((steps - acc) * 1000) / TICK_HZ));
 }
 
 function stop(): void { clearTimeout(timer); timer = 0; cancelAnimationFrame(raf); raf = 0; }
@@ -254,7 +266,7 @@ async function newFarm(): Promise<void> {
   const restore = readSave(raw, S.seed, W, H);
   sim = createSim({ seed: S.seed, size, restore });
   simSize = size;
-  main = new View();
+  main = new View(); motion.clear();
   for (const t of thumbs.values()) t.view = new View();
   cam = null; auto = true; zoomGoal = null; inertia.reset();
   followBtn.hidden = true;

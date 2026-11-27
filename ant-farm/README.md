@@ -53,7 +53,7 @@ Every change shows at once and is saved straight away (on a Mac in `~/Library/Ap
 | Fade when idle | Sinks toward the desktop after a few quiet seconds, comes back on the next event or when you point at it | off |
 | Presentation | In the corner orb, or a floating window | corner orb |
 | Corner | Where the orb sits: top left, top right, bottom left, bottom right (or drag it) | bottom right |
-| Reduced motion | No floating labels, no pop-out flight, fewer frames while the colony is calm (moving the camera stays smooth) | off |
+| Reduced motion | No floating labels, no pop-out flight, no gliding ants: they step from cell to cell at a few frames a second (moving the camera stays smooth) | off |
 | Window size | Small, large, full screen; a dragged size is kept as custom | small |
 | Docking | Top left, top right, bottom left, bottom right, or free where you drop it | bottom right |
 | Opacity | 25% to 100% | 100% |
@@ -74,7 +74,9 @@ Above the ground there is only a thin strip of sky: a dozen rows above the highe
 
 Only the chunks on screen are drawn. Each one is painted once into a small tile, in the palette, and painted again only when it changes; ants, brood and cracks are drawn on top. The ants are always drawn; repainting changed soil gets what is left of a frame's budget and the rest waits a frame. A quality governor watches the frame time: when frames keep running long it first draws fewer pixels on a high-density screen (1.5× at most, then 1×), then drops the soft edges and repaints less soil a frame; after a long stretch of easy frames it steps back up. Loose soil away from the ants settles at an eighth of the rate, and ants nobody needs rest where they are.
 
-The farm draws only what anyone can see: about 20 frames a second while the colony is busy, 8 when it is calm, the screen's own rate while you move the camera, 1 to 4 in the orb, and nothing while it is hidden or the screen is locked or asleep.
+The farm draws only what anyone can see. Opened or popped out it draws on every display frame (60 or 120 a second) while anything on screen moves: walking ants glide between cells rather than hopping one cell per simulation step, and the camera moves. When nothing moves it drops to 8 a second; with reduced motion the ants step from cell to cell at 2 to 10 frames a second. In the orb it draws 1 to 4 a second, and nothing while it is hidden or the screen is locked or asleep. A frame draws the soil from a cached picture while the camera stands still, and draws the ants in one path per colour.
+
+How an ant faces (`src/game/motion.ts`, drawing only: the simulation is the same): it faces the way it walks. Turning around on level ground is a quick eased flip (about 125 ms) that never points up or down. One bump in the floor doesn't tilt it; two steps the same way up or down do. It points straight up or down only while it climbs or drops in a shaft, and levels out once it stops unless the shaft is too narrow to turn in. Digging above or below doesn't make it look up or down; digging beside it turns it to face its cell.
 
 `npm run bench` measures it headless. On an M-series Mac:
 
@@ -131,7 +133,7 @@ Claude Code writes each session's transcript as a JSON-lines file under `~/.clau
 
 The feed turns these into the shared event format in the design doc (`tokens`, `task_done`, `session_start`), so a Codex feed can be added beside it later.
 
-Resting in the orb it draws 2 frames a second (4 while tokens arrive, 1 with reduced motion). Opened or popped out and calm it draws 8 (2 with reduced motion), 60 while you move the camera, and nothing at all while it is hidden. The simulation keeps real time at any frame rate.
+Resting in the orb it draws 2 frames a second (4 while tokens arrive, 1 with reduced motion). Opened or popped out it draws every display frame while ants walk or the camera moves, 8 when nothing moves (2 to 10 with reduced motion), and nothing at all while it is hidden. The simulation keeps real time at any frame rate.
 
 ## Code
 
@@ -152,7 +154,9 @@ npm run test:smoke  # launches the app hidden and drives it: the orb, its pill a
 npm run shots       # the same, and saves screenshots to shots/
 npm run build:catalog   # the catalog bundle in catalog/; npm run check:catalog checks it is up to date
 npm run bench       # frame time and memory at each map size (-- --save <colony.json> for a saved farm, read only)
-npm run perf        # the real app, hidden: frames a second, ms and CPU in the orb, card, window, moving and zoomed out (-- --profile <folder> for a copy of a real profile)
+npm run perf        # the real app, hidden: frames a second, ms (average, p95), draw calls, CPU, page script and layout time, and the costliest functions a frame, in the orb, card, window, zoomed in and out and moving (-- --profile <folder> for a copy of a real profile)
+npm run busy-farm -- <folder> [--hours 3] [--size ridiculous]   # a profile with a busy colony (hours of usage played through the real simulation), for perf --profile
+npm run facing-trace -- <folder> [--save <colony.json>]          # how ants move and face, frame by frame, old and new: trace.json and frames.html
 ```
 
 The smoke test uses a throwaway settings folder and a fake transcript folder, never your own, and its window is never shown. It feeds the farm the only way the app allows: by writing a transcript line. Hooks for driving the simulation directly live in the tests, never in the app.

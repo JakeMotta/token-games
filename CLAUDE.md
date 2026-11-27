@@ -77,6 +77,7 @@ From a game folder (`cd ant-farm`):
 | `npm run shots` | The same, saving screenshots of every mode to `shots/` |
 | `npm run perf [-- --profile <folder>]` | Hidden frame-cost benchmark in every mode (fps, ms, CPU) into `perf.json`; `--profile` measures a copy of a real profile's settings and save |
 | `npm run build:catalog`, `npm run check:catalog` | The Ant Farm only: build its catalog bundle into `catalog/`, or check the committed one matches the source |
+| `npm run busy-farm -- <folder>`, `npm run facing-trace -- <folder>` | The Ant Farm only: a profile with a busy colony (for `perf --profile`); a frame-by-frame trace of how ants move and face |
 
 From the root: `npm run new-game -- <id> ["Name"] [--web] [--into <folder>]`, `npm run docs-check`, `npm run test:scripts`.
 
