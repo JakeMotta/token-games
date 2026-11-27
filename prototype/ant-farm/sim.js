@@ -812,8 +812,9 @@
       return h >>> 0;
     };
 
-    // Paint the world and the ants into a W*H RGBA buffer (one pixel per cell).
-    sim.paint = function (px) {
+    // Paint the world into a W*H RGBA buffer (one pixel per cell). The ants come too unless o.ants is false
+    // (the page draws them as sprites on top instead: see render.js).
+    sim.paint = function (px, o) {
       // loose grains (spoil, rubble) show a shade lighter than packed soil, like fresh-dug earth
       for (let k = 0; k < N; k++) { const t = type[k]; px[k] = t === AIR ? bg[k] : t === LOOSE ? scaleCol(col[k], 1.18) : col[k]; }
       for (const s of sim.strains) {
@@ -834,6 +835,7 @@
         put(b.x, b.y, BROOD[Math.min(2, b.stage)]);
         if (b.stage > 0) put(b.x + (b.id & 1 ? 1 : -1), b.y, BROOD[Math.min(2, b.stage)]);
       }
+      if (o && o.ants === false) return;
       const body = rgb(158, 76, 54), gaster = rgb(104, 49, 36), head = rgb(122, 58, 42), legs = rgb(70, 36, 28);
       const qBody = rgb(196, 116, 80), qGaster = rgb(140, 72, 52);
       for (const a of sim.ants) {

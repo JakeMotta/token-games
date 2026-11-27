@@ -59,6 +59,7 @@
 <pre id="result"></pre>
 <script src="sim.js"></script>
 <script src="camera.js"></script>
+<script src="render.js"></script>
 <script>
 (function () {
   'use strict';
@@ -72,15 +73,12 @@
   const statsEl = document.getElementById('stats');
   const toastEl = document.getElementById('toast');
 
-  let sim, buf, bctx, img, px, cam, auto = true, speed = 1, acc = 0, lastT = 0, lastDraw = 0, toastT = 0, warned = 0;
+  let sim, buf, cam, auto = true, speed = 1, acc = 0, lastT = 0, lastDraw = 0, toastT = 0, warned = 0;
   const SPEEDS = [1, 4, 16];
 
   function start(seed) {
     sim = AntSim.createSim({ seed });
-    buf = document.createElement('canvas'); buf.width = sim.W; buf.height = sim.H;
-    bctx = buf.getContext('2d');
-    img = bctx.createImageData(sim.W, sim.H);
-    px = new Uint32Array(img.data.buffer);
+    buf = AntRender.makeBuffer(sim);
     cam = null; auto = true; warned = sim.stats.collapses;
     document.getElementById('auto').classList.add('on');
     if (!TEST) history.replaceState(null, '', '?seed=' + seed + (speed > 1 ? '&speed=' + speed : ''));
@@ -107,6 +105,8 @@
     return { vw: view.clientWidth, vh: view.clientHeight, dpr };
   }
   const WHOLE = q.get('view') === 'all';
+  const OLD_ANTS = q.get('ants') === 'old', LOOK = q.get('look') || 'rust';
+  let lastAnts = null;
   function autoTarget(vw, vh) {
     const box = WHOLE ? { x: 0, y: 0, w: sim.W, h: sim.H } : sim.interestBox();
     return AntCamera.fit(box, vw, vh, { pad: 10, min: 0.5, max: 10 });
@@ -116,15 +116,7 @@
     const target = autoTarget(vw, vh);
     if (!cam) cam = target;
     else if (auto) cam = AntCamera.near(cam, target) ? target : AntCamera.lerp(cam, target, 0.12, vw, vh);
-    sim.paint(px);
-    bctx.putImageData(img, 0, 0);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#12151d';
-    ctx.fillRect(0, 0, view.width, view.height);
-    ctx.imageSmoothingEnabled = false;
-    const s = cam.s * dpr;
-    ctx.setTransform(s, 0, 0, s, Math.round(-cam.x * s), Math.round(-cam.y * s));
-    ctx.drawImage(buf, 0, 0);
+    lastAnts = AntRender.drawFarm(ctx, sim, cam, dpr, buf, { oldAnts: OLD_ANTS, look: LOOK });
     hud();
   }
   function hud() {
@@ -248,6 +240,7 @@
     const d = ctx.getImageData(0, 0, view.width, view.height).data, seen = new Set();
     for (let i = 0; i < d.length; i += 4 * 97) seen.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
     ok('canvas is drawn', seen.size > 12, { colours: seen.size });
+    ok('every ant on screen is drawn as a sprite', lastAnts && lastAnts.drawn > 0 && lastAnts.m >= 1, lastAnts);
     ok('no page errors', errors.length === 0, errors);
     const pass = checks.every((c) => c.pass);
     document.getElementById('result').textContent = JSON.stringify({ pass, seed: sim.seed, tick: sim.tick, checks }, null, 1);

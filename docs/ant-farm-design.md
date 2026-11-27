@@ -117,6 +117,30 @@ A tiny local bridge (later: one Node script, no dependencies) watches the agent 
 
 The bridge never sends prompts or code to the game, only counts, model names and timestamps.
 
+## How the ants look
+
+The soil stays one pixel a cell, but an ant drawn that way is three dots. So the ants are drawn on top of the soil as side-view sprites in micro pixels: four a cell when the window has room (3.5 device pixels a cell or more), else a two-a-cell shape. A sprite is never smaller than one device pixel per micro pixel, so when the camera is far out the ants are drawn larger than true scale and stay readable.
+
+- **Body:** gaster, a one-pixel waist, thorax and head, each a different shade, with a dark rim so they read against both dark tunnels and pale sand. One eye, mandibles at the front.
+- **Legs:** six, three near (bright) and three far (dark), bent at the knee, on a four-frame tripod gait that advances with each step the ant takes. Still ants stand still.
+- **Antennae:** elbowed, reaching forward, with a small twitch now and then.
+- **Load:** the grain (in its soil colour), the food crumb or the larva is held in front of and above the jaws, so a carrier is obvious.
+- **Castes:** the queen is longer and taller than a worker, amber, with a banded gaster and wing scars. Every sixth worker is a big-headed major, which looks like a digger; diggers open their jaws while they bite. Carriers show their load, nurses carry a pale larva.
+- **Pose:** ants turn to face the way they last stepped, cling upside down to ceilings, stand sideways on shaft walls and tilt one pixel on slopes.
+- **Colours:** three looks for now, `rust` (default), `black` and `glow` (teal, the playful one). See `prototype/ant-farm/sprites.html` for the sheet and a before/after.
+
+## The always-on window
+
+The farm is meant to sit in a corner of the screen while an agent works, like a small desktop widget. In the real app this is a native window that is transparent, frameless and always on top, and does not take focus. `prototype/ant-farm/overlay.html` mocks it up over a fake Mac desktop:
+
+- **Sizes:** small 320 × 180 (the default), large 640 × 360, any size between 256 wide and the work area by dragging the corner grip (always 16:9), and full screen with an exit button and `Esc`. The auto camera re-fits at every size.
+- **Title bar:** slim and translucent over the sky, with an event dot that lights on each token batch or finished task, the energy and token count (plus ants and brood when wide enough), and buttons for the sizes, full screen, click-through and hide. It fades back when the colony is calm.
+- **Click-through:** when on, the mouse passes through to the window behind; holding `⌥` makes the window grabbable again.
+- **Opacity:** 25 to 100 %.
+- **Docking:** the four corners of the work area, 12 px in from the edges, clear of the menu bar and Dock. Dragging the title bar and letting go near a corner snaps it there; elsewhere it stays where it is dropped. The resize grip is on the corner away from the dock, so the window grows into the screen.
+- **Hide:** to a menu-bar item that shows the token count; clicking it brings the window back.
+- **Motion stays inside the box:** nothing animates outside the window, and floating "+5k" labels rise inside it.
+
 ## Performance targets
 
 | Target | Budget | Prototype today |
@@ -126,7 +150,7 @@ The bridge never sends prompts or code to the game, only counts, model names and
 | Render | 30 fps while anything moves, ~8 fps when calm, 0 when hidden | as specified; calm rate not yet measured in a real window |
 | Draw cost | one W × H `putImageData` and one scaled `drawImage` per frame | as specified |
 | Memory | under 30 MB for the page | not measured |
-| Always-on overlay | readable at 320 × 200, no controls, one stats line | checked by screenshot |
+| Always-on overlay | readable at 320 × 180, one slim title bar | checked by screenshot (`overlay.html`) |
 
 If the map grows past about 1000 × 600, split it into 64 × 64 chunks that sleep when nothing in them changed, the way Noita does. Then move the sim to a Web Worker with an OffscreenCanvas. Neither is needed at the first-playable size.
 
@@ -136,7 +160,7 @@ Ship this, then watch it for a week of real agent use before adding more:
 
 - The prototype's sim, cleaned up: everything it does now, plus the soft token cap and saving state to localStorage every 30 s (seed + event log + snapshot).
 - A bridge for Claude Code: transcript tailing plus a Stop hook, a WebSocket on localhost and a one-line setup.
-- An always-on small window mode (frameless, 320 × 200 minimum) with the auto camera, and a hover reveals the HUD.
+- The always-on window described above (frameless, 320 × 180 by default), with the auto camera.
 - Day/night sky tied to the local clock. It's cheap and makes an always-on window feel alive.
 - A start screen: new seed or replay a seed, and the token rate shown in plain words ("this hour: 41k tokens ≈ 1,000 grains").
 
@@ -161,6 +185,9 @@ Ship this, then watch it for a week of real agent use before adding more:
 1. **Can ants die?** Today collapses only bury ants and they dig out. Should a collapse be able to kill a few ants (more drama, a real cost) or stay gentle (a calmer always-on window)? I recommend gentle by default with a hard-mode toggle.
 2. **Palette:** the prototype uses warm natural soil under the muted night-blue sky from the pitch. Do you want it fully muted (grey-blue soils like the pitch) or this warmer look?
 3. **How fast should a farm fill?** At 20 Hz the colony digs about 1 grain per second per 4 workers, so a farm takes days of agent use to fill the map. Is "days" right, or should a single long session show visible growth (a smaller map or faster ants)?
+
+4. **Ants when zoomed far out:** a sprite never drops under one device pixel, so in a small window showing a big farm the ants are drawn larger than the tunnels they walk in. That keeps them readable. Is that right, or should the small window follow the busiest spot instead of fitting the whole nest, so ants stay true to scale?
+5. **Ant colour:** rust (default), black, or glow?
 
 ## Sources
 

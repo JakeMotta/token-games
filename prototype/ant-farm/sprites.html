@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ant Sprites</title>
+<style>
+  :root { --ink: #12151d; --panel: #1a1e28; --line: #343c4e; --mid: #8890a3; --fg: #cfd3dc; --accent: #d6ad6a; }
+  html, body { margin: 0; background: var(--ink); color: var(--fg); font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  body { padding: 16px; }
+  h2 { font-size: 12px; font-weight: 600; color: var(--accent); margin: 18px 0 8px; letter-spacing: 0.04em; }
+  .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+  figure { margin: 0; }
+  figcaption { color: var(--mid); margin-top: 4px; }
+  canvas { display: block; image-rendering: pixelated; border: 1px solid var(--line); max-width: 100%; }
+  .looks button { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; cursor: pointer; }
+  .looks button.on { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="row looks" id="looks"></div>
+<h2>Before / after: the 320 × 180 window, real size</h2>
+<div class="row" id="real"></div>
+<h2>Before / after: the same frame, zoomed 4×</h2>
+<div class="row" id="zoom"></div>
+<h2>Sprites, 4 micro pixels a cell, zoomed 8×</h2>
+<div class="row" id="sheet"></div>
+<h2>Sprites, 2 micro pixels a cell (far zoomed out), zoomed 8×</h2>
+<div class="row" id="sheetTiny"></div>
+<script src="sim.js"></script>
+<script src="camera.js"></script>
+<script src="render.js"></script>
+<script>
+(function () {
+  'use strict';
+  const q = new URLSearchParams(location.search);
+  let look = q.get('look') || 'rust';
+  const seed = +(q.get('seed') || 3), warp = +(q.get('warp') || 2600);
+
+  function farmFrame(old, w, h, dpr) {
+    const sim = AntSim.createSim({ seed });
+    sim.run(warp);
+    const c = document.createElement('canvas'); c.width = w * dpr; c.height = h * dpr;
+    const cam = AntCamera.fit(sim.interestBox(), w, h, { pad: 10, min: 0.5, max: 10 });
+    AntRender.drawFarm(c.getContext('2d'), sim, cam, dpr, AntRender.makeBuffer(sim), { oldAnts: old, look });
+    return { c, cam, sim };
+  }
+  function zoomed(src, sx, sy, sw, sh, k) {
+    const c = document.createElement('canvas'); c.width = sw * k; c.height = sh * k;
+    const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
+    x.drawImage(src, sx, sy, sw, sh, 0, 0, sw * k, sh * k);
+    return c;
+  }
+  function fig(parent, canvas, text, cssW) {
+    const f = document.createElement('figure');
+    if (cssW) canvas.style.width = cssW + 'px';
+    f.appendChild(canvas);
+    const cap = document.createElement('figcaption'); cap.textContent = text; f.appendChild(cap);
+    parent.appendChild(f);
+  }
+
+  // one sprite on a patch of back wall with a floor under it, scaled up
+  function cell(kind, o, label, parent, k) {
+    const sp = AntRender.sprite(kind, o), per = o.tiny ? 2 : 4;
+    let u0 = 0, u1 = 0, v1 = 0;
+    for (const [u, v] of sp) { u0 = Math.min(u0, u); u1 = Math.max(u1, u); v1 = Math.max(v1, v); }
+    const w = u1 - u0 + 5, h = v1 + 6;
+    const c = document.createElement('canvas'); c.width = w * k; c.height = h * k;
+    const x = c.getContext('2d');
+    x.fillStyle = '#2a201a'; x.fillRect(0, 0, c.width, c.height);
+    x.fillStyle = '#6d5240'; x.fillRect(0, (h - 3) * k, c.width, 3 * k);
+    const P = Object.assign({}, AntRender.LOOKS[look], kind === 'queen' ? AntRender.LOOKS[look].queen : {});
+    const ox = -u0 + 2, gy = h - 3;
+    for (const [u, v, key] of sp) {
+      x.fillStyle = key === 'load' ? '#c9a27a' : key === 'brood' ? '#eee8d6' : P[key];
+      x.fillRect((ox + u) * k, (gy - v - 1) * k, k, k);
+    }
+    fig(parent, c, label);
+  }
+
+  function render() {
+    for (const id of ['real', 'zoom', 'sheet', 'sheetTiny']) document.getElementById(id).innerHTML = '';
+    const dpr = 2, before = farmFrame(true, 320, 180, dpr), after = farmFrame(false, 320, 180, dpr);
+    fig(document.getElementById('real'), before.c, 'before: one pixel a cell, ants are three dots', 320);
+    fig(document.getElementById('real'), after.c, 'after: side-view sprites', 320);
+    // zoom on the nest entrance, where the colony is busiest
+    const s = after.cam.s * dpr, nx = (after.sim.ex - after.cam.x) * s, ny = (after.sim.surf[after.sim.ex] - after.cam.y) * s;
+    const sw = 160, sh = 110, sx = Math.max(0, Math.min(640 - sw, nx - sw / 2)), sy = Math.max(0, Math.min(360 - sh, ny - 20));
+    fig(document.getElementById('zoom'), zoomed(before.c, sx, sy, sw, sh, 4), 'before ×4');
+    fig(document.getElementById('zoom'), zoomed(after.c, sx, sy, sw, sh, 4), 'after ×4');
+    for (const tiny of [false, true]) {
+      const p = document.getElementById(tiny ? 'sheetTiny' : 'sheet');
+      for (let f = 0; f < 4; f++) cell('worker', { tiny, frame: f }, 'worker, step ' + (f + 1), p, 8);
+      cell('worker', { tiny, load: 'grain' }, 'carrier, grain', p, 8);
+      cell('worker', { tiny, load: 'brood', frame: 2 }, 'nurse, larva', p, 8);
+      cell('major', { tiny, jaws: true }, 'digger, biting', p, 8);
+      cell('major', { tiny, frame: 1, twitch: true }, 'digger, walking', p, 8);
+      cell('queen', { tiny, frame: 0 }, 'queen', p, 8);
+    }
+  }
+
+  const looks = document.getElementById('looks');
+  for (const [k, v] of Object.entries(AntRender.LOOKS)) {
+    const b = document.createElement('button'); b.textContent = v.name; b.className = k === look ? 'on' : '';
+    b.onclick = () => { look = k; [...looks.children].forEach((e) => e.classList.toggle('on', e === b)); render(); };
+    looks.appendChild(b);
+  }
+  render();
+})();
+</script>
+</body>
+</html>
