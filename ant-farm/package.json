@@ -1,0 +1,21 @@
+{
+  "name": "ant-farm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Token Games: an ant farm that digs itself while your AI agent works, in a small always-on-top window.",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "npm run build && electron .",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test dist/test/",
+    "test:smoke": "npm run build && node scripts/smoke.mjs",
+    "shots": "npm run build && node scripts/smoke.mjs --shots shots"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "electron": "38.2.2",
+    "esbuild": "0.24.0",
+    "typescript": "5.6.3"
+  }
+}

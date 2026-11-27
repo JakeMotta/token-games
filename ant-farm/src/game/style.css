@@ -1,0 +1,90 @@
+/* The farm window: a canvas filling a frameless, transparent window, a slim title bar on top and the settings panel.
+   The farm's own colours come from its palette (palettes.ts), set on .farm by app.ts. */
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; }
+body { font: 11px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif; }
+
+.farm {
+  --f-back: #1b1c1f; --f-bar: rgba(30, 31, 35, 0.7); --f-ink: #a2a5ab; --f-dim: #76797f; --f-hot: #8f8671; --f-task: #8f8671;
+  --f-line: rgba(255, 255, 255, 0.07); --f-panel: rgba(27, 28, 31, 0.94);
+  position: fixed; inset: 0; border-radius: 10px; overflow: hidden; background: var(--f-back);
+  outline: 1px solid var(--f-line); outline-offset: -1px; color: var(--f-ink);
+}
+.farm.full { border-radius: 0; outline: none; }
+#view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; cursor: grab; }
+#view:active { cursor: grabbing; }
+
+/* title bar: drags the window; dims while the farm is calm */
+.bar { position: absolute; left: 0; right: 0; top: 0; height: 20px; display: flex; align-items: center; gap: 6px; padding: 0 4px 0 8px;
+  background: var(--f-bar); color: var(--f-ink); -webkit-app-region: drag; font: 10.5px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  transition: opacity 0.25s; z-index: 3; }
+.farm.full .bar { height: 26px; font-size: 12px; }
+.farm.calm .bar { opacity: 0.55; }
+.farm:hover .bar, .farm.grab .bar, .farm.open .bar { opacity: 1; }
+.farm.thru .bar { opacity: 0; }
+.farm.thru.grab .bar { opacity: 1; }
+.pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--f-dim); opacity: 0.6; flex: none; transition: background 0.3s, box-shadow 0.3s; }
+.pulse.hot { background: var(--f-hot); box-shadow: 0 0 6px var(--f-hot); opacity: 1; }
+.pulse.task { background: var(--f-task); box-shadow: 0 0 6px var(--f-task); opacity: 1; }
+.rm .pulse { box-shadow: none !important; transition: none; }
+.fname { font-weight: 600; white-space: nowrap; }
+.meter { color: var(--f-dim); white-space: nowrap; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.meter b { color: var(--f-hot); font-weight: 600; }
+.evt { color: var(--f-hot); white-space: nowrap; opacity: 0; transition: opacity 0.4s; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.evt.show { opacity: 1; }
+.wbtns { margin-left: auto; display: flex; gap: 1px; flex: none; -webkit-app-region: no-drag; }
+.wbtn { width: 18px; height: 16px; display: grid; place-items: center; border: 0; border-radius: 3px; background: transparent; color: var(--f-dim);
+  font: 600 9.5px/1 ui-monospace, Menlo, monospace; cursor: pointer; padding: 0; }
+.farm.full .wbtn { width: 24px; height: 20px; font-size: 11px; }
+.wbtn:hover { background: var(--f-line); color: var(--f-ink); }
+.wbtn.on { color: var(--f-hot); }
+.wbtn svg { width: 11px; height: 11px; display: block; }
+.farm.full .wbtn svg { width: 13px; height: 13px; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--f-hot); outline-offset: 1px; }
+
+/* the resize grip sits on the corner away from the dock */
+.grip { position: absolute; width: 14px; height: 14px; cursor: nwse-resize; touch-action: none; opacity: 0; transition: opacity 0.2s; z-index: 2;
+  -webkit-app-region: no-drag; }
+.grip::before { content: ''; position: absolute; inset: 3px; border: 0 solid var(--f-ink); opacity: 0.6; }
+.grip.br { right: 0; bottom: 0; } .grip.br::before { border-width: 0 2px 2px 0; border-bottom-right-radius: 4px; }
+.grip.tl { left: 0; top: 20px; } .grip.tl::before { border-width: 2px 0 0 2px; border-top-left-radius: 4px; }
+.grip.bl { left: 0; bottom: 0; cursor: nesw-resize; } .grip.bl::before { border-width: 0 0 2px 2px; border-bottom-left-radius: 4px; }
+.grip.tr { right: 0; top: 20px; cursor: nesw-resize; } .grip.tr::before { border-width: 2px 2px 0 0; border-top-right-radius: 4px; }
+.farm:hover .grip, .farm.grab .grip { opacity: 1; }
+.farm.full .grip, .farm.thru:not(.grab) .grip { display: none; }
+.sizetag { position: absolute; right: 6px; bottom: 5px; font: 10px ui-monospace, Menlo, monospace; color: var(--f-ink);
+  background: var(--f-bar); padding: 1px 4px; border-radius: 3px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 2; }
+.sizetag.show { opacity: 1; }
+.floater { position: absolute; left: 10px; bottom: 8px; font: 600 11px ui-monospace, Menlo, monospace; color: var(--f-hot); pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); animation: floatup 1.6s ease-out forwards; z-index: 1; }
+@keyframes floatup { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-26px); opacity: 0; } }
+
+/* settings: a sheet on the right, over the farm; the farm keeps running behind it so every change shows at once */
+.panel { position: absolute; top: 20px; right: 0; bottom: 0; width: min(100%, 300px); box-sizing: border-box; overflow-y: auto; z-index: 4;
+  padding: 6px 10px 10px; background: var(--f-panel); border-left: 1px solid var(--f-line); color: var(--f-ink);
+  -webkit-app-region: no-drag; scrollbar-width: thin; }
+.farm.full .panel { top: 26px; }
+.panel[hidden] { display: none; }
+.panel section + section { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--f-line); }
+.panel h4 { margin: 0 0 5px; font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--f-dim); }
+.pals { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 5px; }
+.pal { display: flex; flex-direction: column; gap: 2px; padding: 2px; border: 1px solid var(--f-line); border-radius: 5px; background: transparent;
+  color: var(--f-ink); font: inherit; font-size: 10px; text-align: left; cursor: pointer; }
+.pal canvas { width: 100%; aspect-ratio: 16 / 9; display: block; border-radius: 3px; image-rendering: pixelated; }
+.pal span { padding: 0 2px 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pal:hover { border-color: var(--f-dim); }
+.pal.on { border-color: var(--f-hot); color: var(--f-hot); }
+.note { margin: 4px 0; color: var(--f-dim); font-size: 10px; }
+.note.keys { margin-top: 6px; }
+.row { display: flex; align-items: center; gap: 6px; margin: 4px 0; min-height: 18px; }
+.row input[type=range] { flex: 1; min-width: 60px; accent-color: var(--f-hot); }
+.row input[type=checkbox] { margin: 0; accent-color: var(--f-hot); }
+.row output { width: 32px; text-align: right; color: var(--f-dim); font-variant-numeric: tabular-nums; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chips button, .docks button { font: inherit; font-size: 10.5px; color: var(--f-ink); background: transparent; border: 1px solid var(--f-line);
+  border-radius: 4px; padding: 2px 7px; cursor: pointer; }
+.chips button:hover, .docks button:hover { border-color: var(--f-dim); }
+.chips button.on, .docks button.on { border-color: var(--f-hot); color: var(--f-hot); }
+.docks { display: flex; gap: 3px; margin-left: auto; }
+.docks button { padding: 1px 5px; }
+
+@media (prefers-reduced-motion: reduce) { .floater { animation-duration: 0.01s; } }
