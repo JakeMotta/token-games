@@ -42,12 +42,13 @@ setting reads as `orb`), and Settings → Display sets it.
 ## Never without a way back
 
 - The menu-bar (tray) icon is always there: show or hide, open the card or **Back to the corner**, **Pop out**,
-  **Games…** (with the number of updates waiting), Settings, Presentation, Corner, the floating window's size, full screen, click-through, always on top and dock
+  **Games…** (the Games window, with the number of updates waiting), Settings, Presentation, Corner, the floating window's size, full screen, click-through, always on top and dock
   corner, Reduced motion, **Reset to defaults**, Quit.
 - **Alt+Cmd+T** (Alt+Ctrl+T): shows a hidden game; in the corner, opens or closes the card; popped out, switches
   click-through (so a click-through window can always be grabbed again).
-- The **Games** button sits next to Settings in the card and in the popped-out window's title bar; it opens the same
-  sheet on its Games view (the games only). Settings is a sheet over the game: its **×** (top right), **Close**, Esc or a click outside closes it. A press that
+- The **Games** button sits next to Settings in the card and in the popped-out window's title bar; it opens the
+  Games window, a normal window of its own centred on the screen (or brings it forward), and leaves the orb, the card
+  or the floating window as they are. Settings is a sheet over the game: its **×** (top right), **Close**, Esc or a click outside closes it. A press that
   starts inside it (dragging a slider past its edge) never closes it, and the click outside only closes it, it
   doesn't reach the game. Nothing traps the keyboard focus.
 - Keys while focused: Esc closes, `,` Settings, `O` pop out / back to the corner, `H` hide; popped out: `1` small,

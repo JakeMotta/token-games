@@ -123,7 +123,7 @@ test('the tray in the corner: open the game, pop out, move the orb, settings, re
   assert.equal(trayMenu(kit.defaults(1), { name: 'Demo', visible: false, state: 'orb', shortcut: '' })[0].label, 'Show Demo');
 });
 
-test('the tray opens the Games view, right above Settings, and says when an update is waiting', () => {
+test('the tray opens the Games window, right above Settings, and says when an update is waiting', () => {
   const m = trayMenu(kit.defaults(1), { name: 'Demo', visible: true, state: 'orb', shortcut: '' });
   const labels = m.map((i) => i.label);
   assert.deepEqual(find(m, 'Games…')!.action, { do: 'games' });

@@ -5,11 +5,11 @@
 // times: a full run, a 'reopen' run that checks everything survived the restart, a 'catalog' run, and for a game with
 // a catalog/ bundle a 'catalog-game' run (both in smoke-catalog.ts). With --perf it starts a single 'perf' run
 // instead: the game measures what its frames cost (GameSmoke.perf), still hidden.
-import { app, nativeTheme, screen, type BrowserWindow } from 'electron';
+import { app, BrowserWindow, nativeTheme, screen } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { GameStatus, OrbDrag, ResizeDrag } from '../api';
-import { dockPoint } from '../geometry';
+import { dockPoint, GAMES_WINDOW, gamesWindowBounds } from '../geometry';
 import { shapeOf, type ShellEvent, type ShellState } from '../modes';
 import { orbCenter, orbWindowBounds, shapeRect, shapeSize, type OrbGeo, type Shape } from '../orb';
 import type { ShellSettings } from '../settings';
@@ -35,6 +35,7 @@ export interface SmokeContext<S extends ShellSettings> {
   show(): void;
   hide(): void;
   ignoresMouse(): boolean; // clicks pass through the window
+  gamesWin(): BrowserWindow | null; // the Games window, while it is open
   catalog?: CatalogSmoke; // for the catalog run
 }
 
@@ -47,6 +48,9 @@ export interface SmokeKit<S extends ShellSettings> extends SmokeContext<S> {
   js<T = any>(code: string): Promise<T>;
   shot(name: string): Promise<void>; // the window as it is (the orb's shape alone while in the corner)
   shots(name: string): Promise<void>; // the same twice: <name>-dark and <name>-light
+  gjs<T = any>(code: string): Promise<T>; // run in the Games window's page (rejects while it is closed)
+  gamesReady(): Promise<boolean>; // the Games window is open and shows the games
+  gamesShot(name: string): Promise<void>; // the Games window as it is (always dark)
   docked(dock: 'tl' | 'tr' | 'bl' | 'br', w: number, h: number): boolean;
   transcript(usage: Record<string, number>, id: string): void; // append a real Claude Code transcript line
   note(key: string, value: unknown): void; // a measurement for the result file (the perf run prints them)
@@ -128,7 +132,17 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     for (const key of Object.keys(u) as (keyof CpuUse)[]) u[key] = Math.round(u[key] * 10) / 10;
     return u;
   };
-  const k: SmokeKit<S> = { ...c, mode, check, wait, until, js, shot, shots, docked, transcript, note, cpu };
+  const gjs = <T = any>(code: string): Promise<T> => {
+    const g = c.gamesWin();
+    return g ? g.webContents.executeJavaScript(code) : Promise.reject(new Error('the Games window is not open'));
+  };
+  const gamesReady = () => until(async () => !!c.gamesWin() && await gjs<boolean>('!!window.gamesTest && !!gamesTest.view()').catch(() => false), 8000);
+  const gamesShot = async (name: string) => {
+    await wait(300);
+    const g = c.gamesWin();
+    if (g) fs.writeFileSync(path.join(c.outDir, name + '.png'), (await g.webContents.capturePage()).toPNG());
+  };
+  const k: SmokeKit<S> = { ...c, mode, check, wait, until, js, shot, shots, gjs, gamesReady, gamesShot, docked, transcript, note, cpu };
 
   // the window sits in the orb's corner and the page shows this shape at its size
   const inCorner = () => same(c.win.getBounds(), orbWindowBounds(c.geo()));
@@ -201,7 +215,18 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     await shot('orb-expanded-settings');
     await js('shellTest.key("Escape")');
     check('Esc closes Settings first', await until(async () => !(await page()).panelOpen) && c.state() === 'expanded');
-    await gamesView(k, 'the card', 'tg-gamesbtn', 'games-card');
+    await gamesWindow(k, 'the card', 'tg-gamesbtn', 'games-window');
+    // Settings → Games in the card: a line about the games, any request waiting, and Open Games… for the window
+    await js('shellTest.click("tg-set")');
+    await until(async () => (await page()).panelOpen);
+    const sum = await js<string>('shellTest.games().text');
+    check('Settings → Games sums the games up and offers Open Games…', /Playing/.test(sum) && /Open Games…/.test(sum) && !/Check for games/.test(sum), sum);
+    await js('shellTest.gamesClick("open")');
+    check('Open Games… opens the Games window', await k.gamesReady());
+    await k.gjs('gamesTest.key("w", true)');
+    check('Cmd+W closes the Games window', await until(() => !c.gamesWin()));
+    await js('shellTest.key("Escape")');
+    await until(async () => !(await page()).panelOpen);
     await settingsCloses(k, 'the card', 'settings-card');
     await js('shellTest.click("tg-shrink")');
     check('– folds the card back into the orb', await shows('orb') && c.ignoresMouse());
@@ -215,14 +240,12 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     await js('shellTest.key("Escape")');
     check('Esc folds the card', await shows('orb'));
 
-    // the tray's Games… opens the card on the Games view
+    // the tray's Games… opens the Games window and leaves the orb in its corner
     check('the tray offers Games… next to Settings…', labels(c.trayItems()).join('|').includes('Games…|Settings…'), labels(c.trayItems()));
     c.tray({ do: 'games' });
-    check('the tray\'s Games… opens the card on the Games view', await shows('card') && await until(async () => { const p = await page(); return p.panelOpen && p.view === 'games'; }), await page());
-    await js('shellTest.key("Escape")');
-    await until(async () => !(await page()).panelOpen);
-    await js('shellTest.key("Escape")');
-    await shows('orb');
+    check('the tray\'s Games… opens the Games window, the orb stays in its corner', await k.gamesReady() && c.state() === 'orb' && inCorner() && c.visible(), c.state());
+    await k.gjs('document.getElementById("gw-close").click()');
+    check('the Games window\'s Close button closes it', await until(() => !c.gamesWin()));
 
     // never stuck without a way back: hidden, the shortcut and the tray bring it back
     c.hide();
@@ -268,7 +291,7 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     items = labels(c.trayItems());
     check('the tray offers the way back', items.includes('Back to the corner') && !items.includes('Pop out'), items);
     await shot('window-small');
-    await gamesView(k, 'the window', 'tg-gamesw', 'games-window');
+    await gamesWindow(k, 'the window', 'tg-gamesw');
     await settingsCloses(k, 'the window', 'settings-window');
 
     await game.full?.(k);
@@ -356,29 +379,43 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
 const same = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) =>
   a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 
-// The Games button next to Settings (in the card, or the window's title bar) opens the Games view: the same sheet with
-// only the game picker in it, the built-in game listed. Settings switches to the whole sheet; Games again closes it.
-async function gamesView<S extends ShellSettings>(c: SmokeKit<S>, where: string, button: string, shotName: string): Promise<void> {
-  const { check, until, js } = c;
-  const view = async () => js<{ panelOpen: boolean; view: string }>('shellTest.state()');
+// The Games button next to Settings (in the card, or the window's title bar) opens the Games window: a normal window of
+// its own, centred on the game's display, isolated like the shell's page, with the catalog in large type. The game
+// stays as it was. Games again brings the same window forward; Esc closes it.
+async function gamesWindow<S extends ShellSettings>(c: SmokeKit<S>, where: string, button: string, shotName?: string): Promise<void> {
+  const { check, until, js, gjs } = c;
+  const before = { state: c.state(), visible: c.visible(), bounds: c.win.getBounds() };
   const shown = (sel: string) => js<boolean>(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); return !!e && e.getClientRects().length > 0; })()`);
   check(`${where}: a Games button sits next to Settings`, await shown('#' + button) && await js<boolean>(`document.getElementById(${JSON.stringify(button)}).textContent === 'Games'`));
   await js(`shellTest.click(${JSON.stringify(button)})`);
-  check(`${where}: Games opens the Games view`, await until(async () => { const v = await view(); return v.panelOpen && v.view === 'games'; }), await view());
-  const text = await js<string>('document.getElementById("tg-panel").innerText');
-  check(`${where}: the Games view lists the games (the built-in one playing) and Check for games, and nothing else`,
-    /^Games/.test(text.trim()) && /Playing/.test(text) && /built in/i.test(text) && /Check for games/.test(text) && !/In the corner/.test(text) && !/Reset to defaults/.test(text), text.slice(0, 400));
-  const rows = await js<{ w: number; panel: number; font: number }>(`(() => { const p = document.getElementById('tg-panel'), b = p.querySelector('.tg-games .tg-chips button');
-    return { w: p.getBoundingClientRect().width, panel: p.parentElement.getBoundingClientRect().width, font: b ? parseFloat(getComputedStyle(b).fontSize) : 0 }; })()`);
-  check(`${where}: the Games view takes the whole width, with larger buttons`, rows.w >= rows.panel - 2 && rows.font >= 12, rows);
-  await c.shots(shotName);
-  await js(`shellTest.click(${JSON.stringify(where === 'the card' ? 'tg-set' : 'tg-gear')})`);
-  check(`${where}: Settings switches to the whole sheet, Games still in it`, await until(async () => { const v = await view(); return v.panelOpen && v.view === 'settings'; })
-    && /In the corner/.test(await js<string>('document.getElementById("tg-panel").innerText')) && await shown('#tg-games'));
+  check(`${where}: Games opens the Games window`, await c.gamesReady());
+  const g = c.gamesWin();
+  if (!g) return;
+  const area = screen.getDisplayMatching(c.win.getBounds()).workArea, want = gamesWindowBounds(area), b = g.getBounds(), min = g.getMinimumSize();
+  check(`${where}: it is centred on the game's display, about 960 × 680 and inside the work area`, same(b, want), { bounds: b, want, area });
+  check(`${where}: a normal window: resizable, a minimum size, a title bar with its name`, g.isResizable() && min[0] === Math.min(GAMES_WINDOW.minWidth, area.width)
+    && min[1] === Math.min(GAMES_WINDOW.minHeight, area.height) && g.getContentBounds().height < b.height && /^Games/.test(g.getTitle()),
+  { min, content: g.getContentBounds(), title: g.getTitle() });
+  // isolated and sandboxed: the page has no Node (no require, process, module or Buffer), nothing of the preload but
+  // the bridge it exposes, and only the catalog calls on it
+  const env = await gjs<Record<string, string>>(`({ require: typeof require, process: typeof process, module: typeof module, buffer: typeof Buffer,
+    ipc: typeof window.ipcRenderer, shell: typeof window.tokenShell, api: Object.keys(window.tokenGames).sort().join(',') })`);
+  check(`${where}: its page is isolated and sandboxed, with only the catalog calls (window.tokenGames)`, env.require === 'undefined' && env.process === 'undefined'
+    && env.module === 'undefined' && env.buffer === 'undefined' && env.ipc === 'undefined' && env.shell === 'undefined' && env.api === 'boot,close,games,gamesDo,onGames', env);
+  const text = await gjs<string>('gamesTest.text()');
+  check(`${where}: it lists the games (the built-in one playing) and Check for games`, /^Games/.test(text.trim()) && /Playing/.test(text) && /built in/i.test(text) && /Check for games/.test(text), text.slice(0, 400));
+  const look = await gjs<{ name: number; desc: number; button: number; cards: number; icons: number; back: string }>('gamesTest.look()');
+  check(`${where}: game cards in large type on the dark page, with the game's icon`, look.name >= 16 && look.desc >= 14 && look.button >= 14 && look.cards >= 1 && look.icons >= 1
+    && look.back === 'rgb(23, 24, 27)', look);
+  check(`${where}: the game stays as it was: same mode, same place, still shown, Settings not opened`, c.state() === before.state && c.visible() === before.visible
+    && same(c.win.getBounds(), before.bounds) && !(await js<boolean>('shellTest.state().panelOpen')), { state: c.state(), before });
+  if (shotName) await c.gamesShot(shotName);
   await js(`shellTest.click(${JSON.stringify(button)})`);
-  await until(async () => (await view()).view === 'games');
-  await js(`shellTest.click(${JSON.stringify(button)})`);
-  check(`${where}: Games again closes it`, await until(async () => !(await view()).panelOpen, 1500));
+  await c.wait(300);
+  const all = BrowserWindow.getAllWindows().filter((w) => w.webContents.getURL().endsWith('/games.html'));
+  check(`${where}: Games again brings the same window forward, never a second one`, c.gamesWin()?.id === g.id && all.length === 1, all.length);
+  await gjs('gamesTest.key("Escape")');
+  check(`${where}: Esc closes the Games window, the game still there`, await until(() => !c.gamesWin()) && c.state() === before.state && c.visible() === before.visible);
 }
 
 // Settings closes every way a sheet should, with real mouse input (not synthetic DOM events): its × at the top right,

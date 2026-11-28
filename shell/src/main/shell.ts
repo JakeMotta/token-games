@@ -7,8 +7,10 @@
 // open card and lets every click through except over the orb (or the pill, or the open card).
 //
 // It also hosts the game catalog (docs/catalog.md): the shell's own game is the built-in one, and a catalog game the
-// player installed and chose runs in its place, sandboxed (catalog-host.ts). The control socket lets the tokengames
-// CLI and agents list games and ask for installs, which only the player can approve, in Settings → Games.
+// player installed and chose runs in its place, sandboxed (catalog-host.ts). The catalog has its own normal window,
+// the Games window (the Games buttons, the tray's Games…), a second page with only the catalog calls. The control
+// socket lets the tokengames CLI and agents list games and ask for installs, which only the player can approve, in the
+// Games window or Settings → Games.
 //
 // Environment (for the automated smoke test): TG_SMOKE=<folder> runs the smoke test and quits without ever showing a
 // window; TG_SMOKE_MODE picks the run; TG_USER_DATA moves the settings and save files; TG_CLAUDE_DIR points the feed
@@ -18,7 +20,7 @@ import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage,
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { CH, type FeedStatus, type GameRect, type GamesOp, type GamesResult, type GamesView, type GameStatus, type HostedBoot, type ModeInfo, type OrbDrag, type ResizeDrag, type ShellBoot, type ShellCommand, updatesIn } from '../api';
+import { CH, type FeedStatus, type GameRect, type GamesBoot, type GamesOp, type GamesResult, type GamesView, type GameStatus, type HostedBoot, type ModeInfo, type OrbDrag, type ResizeDrag, type ShellBoot, type ShellCommand, updatesIn } from '../api';
 import { Catalog, type BuiltIn } from '../catalog/catalog';
 import { catalogCommands } from '../catalog/commands';
 import { defaultCatalogDir, serveControl, type ControlServer } from '../catalog/control';
@@ -29,7 +31,7 @@ import { GameHost, iconDataUrl, registerGameScheme } from './catalog-host';
 import { smokeRegistry, type SmokeRegistry } from './smoke-registry';
 import { normalizeEvent, type UsageEvent } from '../events';
 import { watchClaudeCode, type Feed } from '../feed/claude-code';
-import { boundsFor, clampToArea, gripCorner, nearestDock, resizeFromGrip, type Area } from '../geometry';
+import { boundsFor, clampToArea, GAMES_WINDOW, gamesWindowBounds, gripCorner, nearestDock, resizeFromGrip, type Area } from '../geometry';
 import { initialState, next, PAGE_EVENTS, presentationOf, type Scale, type ShellEvent, type ShellState } from '../modes';
 import { contains, nearestCorner, onOrb, orbCenter, orbGeo, orbWindowBounds, pickDisplay, shapeRect, type Corner, type OrbGeo } from '../orb';
 import { settingsKit, type Bounds, type GameSettingsSchema, type ShellSettings } from '../settings';
@@ -61,6 +63,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
   const kit = settingsKit(cfg.settings);
 
   let win: BrowserWindow | null = null;
+  let gamesWin: BrowserWindow | null = null; // the Games window, while it is open
   let tray: Tray | null = null;
   let store: SettingsStore<S>;
   let save: SaveFile;
@@ -79,6 +82,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
   let catalog: Catalog;
   let smokeReg: SmokeRegistry | null = null; // the catalog smoke runs' own registry
   let builtIn: BuiltIn;
+  let builtInIcon = ''; // a data: URL
   let control: ControlServer | null = null;
   let activeId = ''; // the game the page runs: the built-in one, or a catalog game hosted in its place
   let hosted: HostedBoot | null = null;
@@ -92,6 +96,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
 
   const same = (a: Bounds | null, b: Bounds): boolean => !!a && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
   const send = (ch: string, v: unknown): void => { if (win && !win.isDestroyed()) win.webContents.send(ch, v); };
+  const gamesOpen = (): boolean => !!gamesWin && !gamesWin.isDestroyed();
   const floating = (): boolean => presentationOf(state) === 'floating';
   // The smoke test never puts a window on screen: there, showing and hiding only flip this flag.
   let smokeShown = true;
@@ -314,6 +319,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
 
   function setupCatalog(): void {
     builtIn = readBuiltIn();
+    try { builtInIcon = iconDataUrl(app.getAppPath(), JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'game.json'), 'utf8')).icon); } catch { /* no icon */ }
     const dir = env.TG_CATALOG_DIR ? path.resolve(env.TG_CATALOG_DIR) : SMOKE ? path.join(app.getPath('userData'), 'catalog') : defaultCatalogDir();
     let keys = [...REGISTRY_KEYS], url = env.TG_REGISTRY_URL || DEFAULT_REGISTRY;
     if (env.TG_REGISTRY_KEY) keys.push(env.TG_REGISTRY_KEY); // a developer's own registry, signed with their own key
@@ -330,7 +336,9 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     activeId = catalog.active();
     hosted = hostedBoot();
     catalog.onChange(() => {
-      send(CH.gamesChanged, gamesView());
+      const v = gamesView();
+      send(CH.gamesChanged, v);
+      if (gamesOpen()) gamesWin!.webContents.send(CH.gamesChanged, v);
       refreshTray(); // the tray says when an update is waiting
       if (catalog.active() !== activeId) switchGame();
     });
@@ -383,13 +391,19 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
 
   function gamesView(): GamesView {
     const st = catalog.status();
+    const icons: Record<string, string> = {};
+    for (const r of st.games) {
+      const dir = r.id === builtIn.id ? null : catalog.gameDir(r.id);
+      const icon = r.id === builtIn.id ? builtInIcon : dir ? iconDataUrl(dir, catalog.manifestOf(r.id)?.icon) : '';
+      if (icon) icons[r.id] = icon;
+    }
     return {
-      rows: st.games, pending: st.pending, allowCommunity: st.allowCommunity, canAddLocal: !SMOKE,
+      rows: st.games, pending: st.pending, allowCommunity: st.allowCommunity, canAddLocal: !SMOKE, icons,
       catalog: { fetchedAt: st.catalog.fetchedAt, games: st.catalog.games, error: st.catalog.error, signed: st.catalog.signed },
     };
   }
 
-  // What Settings → Games asks for. Approving happens only here: the player clicked it in the app.
+  // What the Games window and Settings → Games ask for. Approving happens only here: the player clicked it in the app.
   async function gamesDo(op: GamesOp): Promise<GamesResult> {
     try {
       if (op?.op === 'refresh') {
@@ -397,8 +411,9 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
         if (!r.ok) return { ok: false, error: r.error, view: gamesView() };
       } else if (op?.op === 'request' && ['install', 'update', 'remove'].includes(op.action) && typeof op.id === 'string') await catalog.request(op.action, op.id, 'player');
       else if (op?.op === 'add-local') {
-        if (SMOKE || !win) throw new Error('no folder picker here');
-        const r = await dialog.showOpenDialog(win, { title: 'Add a game folder', buttonLabel: 'Add', properties: ['openDirectory'] });
+        const parent = gamesOpen() ? gamesWin : win;
+        if (SMOKE || !parent) throw new Error('no folder picker here');
+        const r = await dialog.showOpenDialog(parent, { title: 'Add a game folder', buttonLabel: 'Add', properties: ['openDirectory'] });
         if (!r.canceled && r.filePaths[0]) await catalog.request('add-local', r.filePaths[0], 'player');
       } else if (op?.op === 'approve' && typeof op.requestId === 'string') catalog.approve(op.requestId);
       else if (op?.op === 'deny' && typeof op.requestId === 'string') catalog.deny(op.requestId);
@@ -409,6 +424,36 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     } catch (e) {
       return { ok: false, error: (e as Error).message, view: gamesView() };
     }
+  }
+
+  // ---------- the Games window: the catalog in a normal window of its own ----------
+
+  // Opens it centred on the display the game is on, or brings the open one to the front: there is only ever one. It
+  // changes nothing about the game: not the active game, not where it is or whether it shows.
+  function openGames(): void {
+    if (gamesOpen()) {
+      if (gamesWin!.isMinimized()) gamesWin!.restore();
+      if (!SMOKE) { if (IS_MAC) app.focus({ steal: true }); gamesWin!.show(); gamesWin!.focus(); }
+      return;
+    }
+    const area = screen.getDisplayMatching(win ? win.getBounds() : screen.getPrimaryDisplay().bounds).workArea;
+    const g = gamesWin = new BrowserWindow({
+      ...gamesWindowBounds(area), minWidth: Math.min(GAMES_WINDOW.minWidth, area.width), minHeight: Math.min(GAMES_WINDOW.minHeight, area.height),
+      show: false, title: `Games · ${cfg.name}`, backgroundColor: '#17181b', resizable: true, fullscreenable: false, autoHideMenuBar: true,
+      webPreferences: {
+        preload: path.join(cfg.dir, 'games-window-preload.js'), contextIsolation: true, sandbox: true, nodeIntegration: false,
+        backgroundThrottling: !SMOKE,
+      },
+    });
+    g.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    g.webContents.on('will-navigate', (e) => e.preventDefault());
+    g.on('closed', () => { if (gamesWin === g) gamesWin = null; });
+    if (!SMOKE) g.once('ready-to-show', () => { if (IS_MAC) app.focus({ steal: true }); g.show(); g.focus(); });
+    g.loadFile(path.join(cfg.dir, 'games.html'));
+  }
+
+  function closeGames(): void {
+    if (gamesOpen()) gamesWin!.close();
   }
 
   // ---------- full screen (the display's whole area, not the Mac's full-screen Space), popped out only ----------
@@ -502,10 +547,11 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     else if (a.do === 'open') { showWindow(); dispatch('toggle'); }
     else if (a.do === 'pop') { showWindow(); dispatch('pop'); }
     else if (a.do === 'dock') { showWindow(); dispatch('dock'); }
-    else if (a.do === 'settings' || a.do === 'games') {
+    else if (a.do === 'games') openGames();
+    else if (a.do === 'settings') {
       showWindow(true);
       if (!floating() && state !== 'expanded') dispatch('toggle');
-      send(CH.command, a.do satisfies ShellCommand);
+      send(CH.command, 'settings' satisfies ShellCommand);
     } else if (a.do === 'fullscreen') { if (state === 'popped') { showWindow(true); setFullscreen(!fullPrev); } }
     else if (a.do === 'reset') resetAll();
     else if (a.do === 'quit') app.quit();
@@ -577,10 +623,12 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
   }
 
   function wireIpc(): void {
-    // Only the shell's own page may use these: never a hosted game's view (it has its own, smaller bridge).
+    // Only the shell's own page may use these: never a hosted game's view (it has its own, smaller bridge). The Games
+    // window's page may use the catalog calls and nothing else.
     const fromPage = (e: IpcMainEvent | IpcMainInvokeEvent) => !!win && e.sender === win.webContents;
-    const handle = (ch: string, fn: (...a: any[]) => unknown) => ipcMain.handle(ch, (e, ...a) => (fromPage(e) ? fn(...a) : null));
-    const on = (ch: string, fn: (...a: any[]) => void) => ipcMain.on(ch, (e, ...a) => { if (fromPage(e)) fn(...a); });
+    const fromGames = (e: IpcMainEvent | IpcMainInvokeEvent) => gamesOpen() && e.sender === gamesWin!.webContents;
+    const handle = (ch: string, fn: (...a: any[]) => unknown, games = false) => ipcMain.handle(ch, (e, ...a) => (fromPage(e) || (games && fromGames(e)) ? fn(...a) : null));
+    const on = (ch: string, fn: (...a: any[]) => void, games = false) => ipcMain.on(ch, (e, ...a) => { if (fromPage(e) || (games && fromGames(e))) fn(...a); });
     handle(CH.state, (): ShellBoot<S> => ({
       name: cfg.name, settings: store.get(), dark: nativeTheme.shouldUseDarkColors, platform: process.platform, fullscreen: !!fullPrev,
       feed: { ...feedStatus, watching: !!feed && feed.watching(), files: feed ? feed.files() : 0 }, smoke: !!SMOKE, mode: modeInfo(), shortcut: SHORTCUT,
@@ -608,8 +656,11 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     handle(CH.save, (data: unknown) => !hosted && save.save(data));
     ipcMain.on(CH.saveNow, (e, data: unknown) => { e.returnValue = fromPage(e) && !hosted && save.save(data); });
     handle(CH.load, () => (hosted ? null : save.load()));
-    handle(CH.games, gamesView);
-    handle(CH.gamesDo, (op: GamesOp) => gamesDo(op));
+    handle(CH.games, gamesView, true);
+    handle(CH.gamesDo, (op: GamesOp) => gamesDo(op), true);
+    handle(CH.gamesBoot, (): GamesBoot => ({ name: cfg.name, smoke: !!SMOKE }), true);
+    on(CH.gamesOpen, openGames);
+    on(CH.gamesClose, closeGames, true);
     on(CH.hostedRect, (r: GameRect | null, sc: Scale) => {
       if (!hosted) return;
       openHost();
@@ -639,7 +690,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
       runSmoke<S>({
         win: win!, store, outDir: SMOKE, claudeDir: CLAUDE_DIR, update: (p) => update(p), resize: onResizeDrag, orbDrag: onOrbDrag,
         isFullscreen: () => !!fullPrev, dispatch, displays: onDisplays, state: () => state, geo: () => geo, trayItems, tray: runAction, hotkey, status: () => status,
-        visible, show: () => showWindow(), hide: hideWindow, ignoresMouse: () => ignoring,
+        visible, show: () => showWindow(), hide: hideWindow, ignoresMouse: () => ignoring, gamesWin: () => (gamesOpen() ? gamesWin : null),
         catalog: {
           catalog: () => catalog, host: () => host, socket: () => control?.socket || '', builtIn: () => builtIn, saveFile: () => save.file,
           bundleDir: () => path.join(app.getAppPath(), 'catalog'), publish: (v) => smokeReg?.publish(v),

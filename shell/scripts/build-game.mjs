@@ -3,7 +3,7 @@
 // It expects the layout every game has (see templates/game): game.json (checked first, see docs/manifest.md),
 // src/main/main.ts (calls startShell), src/game/app.ts
 // (calls mountShell), src/game/index.html and style.css, and test/*.test.ts. It also builds game-preload.js, the bridge
-// the shell gives a hosted catalog game (docs/catalog.md). The shell's own tests run with every
+// the shell gives a hosted catalog game (docs/catalog.md), and the Games window (games.html, games.js, its preload). The shell's own tests run with every
 // game's tests, so the wrapper is checked wherever it is used. Extra entry points: --extra <src.ts>:<out.js> (node).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -41,10 +41,11 @@ const tests = [...testsIn(path.join(root, 'test')), ...testsIn(path.join(shell, 
 const extra = process.argv.flatMap((a, i) => process.argv[i - 1] === '--extra' ? [a.split(':')] : []);
 
 await Promise.all([
-  build({ ...common, entryPoints: { main: 'src/main/main.ts', preload: path.join(shell, 'src/main/preload.ts'), 'game-preload': path.join(shell, 'src/main/game-preload.ts') }, outdir: 'dist', platform: 'node', format: 'cjs', external: ['electron'] }),
+  build({ ...common, entryPoints: { main: 'src/main/main.ts', preload: path.join(shell, 'src/main/preload.ts'), 'game-preload': path.join(shell, 'src/main/game-preload.ts'), 'games-window-preload': path.join(shell, 'src/main/games-window-preload.ts') }, outdir: 'dist', platform: 'node', format: 'cjs', external: ['electron'] }),
   build({ ...common, entryPoints: ['src/game/app.ts'], outfile: 'dist/app.js', platform: 'browser', format: 'iife' }),
+  build({ ...common, entryPoints: [path.join(shell, 'src/page/games-page.ts')], outfile: 'dist/games.js', platform: 'browser', format: 'iife' }),
   tests.length && build({ ...common, entryPoints: tests, outdir: 'dist/test', outbase: path.dirname(root), platform: 'node', format: 'cjs', external: ['electron'] }),
   ...extra.map(([src, out]) => build({ ...common, entryPoints: [src], outfile: path.join('dist', out), platform: 'node', format: 'cjs' })),
 ]);
-for (const f of ['shell.css']) fs.copyFileSync(path.join(shell, 'src/page', f), path.join(dist, f));
+for (const f of ['shell.css', 'games.html', 'games.css']) fs.copyFileSync(path.join(shell, 'src/page', f), path.join(dist, f));
 for (const f of fs.readdirSync(path.join(root, 'src/game'))) if (/\.(html|css|png)$/.test(f)) fs.copyFileSync(path.join(root, 'src/game', f), path.join(dist, f));

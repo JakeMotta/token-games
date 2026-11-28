@@ -19,11 +19,13 @@ Planned: a tower defense where tokens queue the waves.
 
 ## More games: the catalog
 
-Anyone can write a game for Token Games, and players install them inside the app: the **Games** button (next to
-Settings in the open card and in the popped-out window's title bar), the menu-bar icon's **Games…**, or Settings →
-Games. When the catalog has a newer version of an installed game, the Games button gets a small dot, its row says
-**Update available** with an **Update to …** button (approved like an install), and the menu says **Games… (1
-update)**. A catalog
+Anyone can write a game for Token Games, and players install them inside the app, in the **Games window**: a
+normal, resizable window of its own (about 960 × 680, centred on the screen the game is on, never bigger than it),
+opened by the **Games** button (next to Settings in the open card and in the popped-out window's title bar), the
+menu-bar icon's **Games…**, or **Open Games…** in Settings → Games. Opening it leaves the game as it is; Esc or the
+close button closes it, and Games again brings the same window forward. When the catalog has a newer version of an
+installed game, the Games button gets a small dot, the game's card says **Update available** with an **Update to …**
+button (approved like an install), and the menu says **Games… (1 update)**. A catalog
 game is a small web page the app runs sandboxed (no Node, no files, no network unless you approve its hosts); it sees
 usage counts and its own save, nothing else. Check for games, read the permission sheet, approve, press Play. One game
 is active at a time; the Ant Farm stays built in. The Community tier (games only CI has checked) is off until you
@@ -53,7 +55,7 @@ npm start
 
 It starts as an orb in the bottom-right corner. Click it to open the card, **Pop out ↗** for the window, drag it
 to move it to another corner. The menu-bar icon has everything (show, open, pop out, back to the corner, the corner,
-Games…, Settings, size, docking, click-through, Reduced motion, Reset to defaults, quit), and **Alt+Cmd+T** (Alt+Ctrl+T)
+Games… (the Games window), Settings, size, docking, click-through, Reduced motion, Reset to defaults, quit), and **Alt+Cmd+T** (Alt+Ctrl+T)
 works anywhere: it shows a hidden game, in the corner it opens and closes the card, popped out it switches
 click-through. Settings are saved as you change them; Settings → Display → Presentation
 chooses where it starts. Settings closes with its **×** at the top right, **Close** at the bottom, Esc, or a click

@@ -68,3 +68,12 @@ export function resizeFromGrip(start: Bounds, grip: Corner, dx: number, dy: numb
   const y = sy > 0 ? start.y : start.y + start.height - height;
   return { x, y, width, height };
 }
+
+// The Games window: a normal window, about 960 × 680, never larger than the work area (less a margin) nor smaller than
+// its minimum unless the work area itself is, centred on the display the game is on.
+export const GAMES_WINDOW = { width: 960, height: 680, minWidth: 640, minHeight: 480 };
+export function gamesWindowBounds(area: Area): Bounds {
+  const fit = (want: number, min: number, room: number) => Math.min(room, Math.max(Math.min(want, room - 2 * MARGIN * 2), min));
+  const width = fit(GAMES_WINDOW.width, GAMES_WINDOW.minWidth, area.width), height = fit(GAMES_WINDOW.height, GAMES_WINDOW.minHeight, area.height);
+  return { x: area.x + Math.round((area.width - width) / 2), y: area.y + Math.round((area.height - height) / 2), width, height };
+}

@@ -108,7 +108,10 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   panel.hidden = true;
   const ownSettings = game.settingsPanel ? Array.from(game.settingsPanel.children) : [];
   if (game.settingsPanel) { game.settingsPanel.hidden = false; panel.append(...ownSettings); }
-  const games = gamesPanel(api, (r) => pulse(`${r.action === 'remove' ? 'Remove' : 'Install'} ${r.name}? An agent asked: see Games`, 'task'), showUpdates);
+  const games = gamesPanel(api, {
+    layout: 'summary', onUpdates: showUpdates, openWindow: () => api.openGames(),
+    onAgentRequest: (r) => pulse(`${r.action === 'remove' ? 'Remove' : 'Install'} ${r.name}? An agent asked: see Games`, 'task'),
+  });
   const display = el('section', 'tg-display', DISPLAY_HTML);
   const foot = el('section', 'tg-foot', '<div class="tg-chips"><button id="tg-reset">Reset to defaults</button><button id="tg-close">Close</button></div><p class="tg-note tg-keys" id="tg-keys"></p>');
   // the sheet's header stays in view as it scrolls: its name, and × to close it
@@ -130,8 +133,6 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   let shown: ShellState = 'orb'; // the layout on screen (lags the state by the fade while flying)
   let scale: Scale = 'mini', flyT = 0, evtT = 0, sizeT = 0, grab = false, started = false;
   let hosted: HostedBoot | null = null, placeRaf = 0;
-  // the sheet shows either all of Settings or only the Games view (the Games button, the tray's Games…)
-  let sheetView: 'settings' | 'games' = 'settings';
   const status = { count: '', title: '', lead: '', line: '', warm: false };
 
   const topInset = (): number => (scale === 'window' ? (full ? BAR_FULL : BAR) : 0);
@@ -348,29 +349,17 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
     for (const id of ['alwaysOnTop', 'clickThrough', 'reducedMotion'] as const) $<HTMLInputElement>('tg-' + id).checked = S[id];
   }
 
-  function togglePanel(open = panel.hidden, view = sheetView): void {
+  function togglePanel(open = panel.hidden): void {
     if (open && scale === 'mini') { intent('toggle'); open = true; } // open the card first
-    if (open) {
-      sheetView = view;
-      panel.dataset.view = view;
-      $('tg-ptitle').textContent = view === 'games' ? 'Games' : 'Settings';
-    }
     panel.hidden = !open;
     body.classList.toggle('tg-open', open);
     renderPanel();
     if (open) {
       games.refresh();
-      if (view === 'games') panel.scrollTop = 0;
-      else if (games.view()?.pending.length) games.el.scrollIntoView({ block: 'start' }); // a request waits: show it
+      if (games.view()?.pending.length) games.el.scrollIntoView({ block: 'start' }); // a request waits: show it
     }
     placeHosted();
     game.onPanel?.(open);
-  }
-
-  // The Settings and Games buttons: open that view, switch to it from the other one, or close it when it shows.
-  function sheet(view: 'settings' | 'games'): void {
-    if (!panel.hidden && sheetView === view) togglePanel(false);
-    else togglePanel(true, view);
   }
 
   // An installed game has a newer version in the catalog: a dot on the Games buttons.
@@ -424,12 +413,13 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   shape.addEventListener('pointercancel', (e) => release(e, true));
   shrinkBtn.onclick = (e) => { e.stopPropagation(); intent('escape'); };
   popBtn.onclick = (e) => { e.stopPropagation(); intent('pop'); };
-  setBtn.onclick = (e) => { e.stopPropagation(); sheet('settings'); };
-  gamesBtn.onclick = (e) => { e.stopPropagation(); sheet('games'); };
+  // The Games buttons open the Games window (or bring it to the front); the card and the game stay as they are.
+  setBtn.onclick = (e) => { e.stopPropagation(); togglePanel(); };
+  gamesBtn.onclick = (e) => { e.stopPropagation(); api.openGames(); };
   dockBtn.onclick = () => intent('dock');
   fullBtn.onclick = () => toggleFull();
-  gearBtn.onclick = () => sheet('settings');
-  gamesWBtn.onclick = () => sheet('games');
+  gearBtn.onclick = () => togglePanel();
+  gamesWBtn.onclick = () => api.openGames();
   hideBtn.onclick = () => hideWindow();
 
   // Settings closes like any sheet: ×, Close, Esc, or a click anywhere outside it. Only a press that started outside
@@ -450,7 +440,7 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
 
   window.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'q') { api.quit(); return; }
-    if ((e.metaKey || e.ctrlKey) && e.key === ',') { sheet('settings'); return; }
+    if ((e.metaKey || e.ctrlKey) && e.key === ',') { togglePanel(); return; }
     if (e.metaKey || e.ctrlKey || e.altKey || !S) return;
     const tgt = e.target as HTMLInputElement;
     if (tgt.tagName === 'INPUT' && tgt.type === 'range' && e.key.startsWith('Arrow')) return;
@@ -459,7 +449,7 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
       if (!panel.hidden) togglePanel(false);
       else if (full) toggleFull(false);
       else if (shown === 'expanded' || shown === 'hover') intent('escape');
-    } else if (k === ',') sheet('settings');
+    } else if (k === ',') togglePanel();
     else if (k === 'o') intent(inWin ? 'dock' : 'pop');
     else if (k === 'h') hideWindow();
     else if (inWin && k === '1') set({ size: 'small' } as Partial<S>);
@@ -512,7 +502,7 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
     api.onEvent((ev) => game.onEvent(ev));
     api.onFeed((f) => { feed = f; game.onFeed?.(f); });
     api.onCommand((c: ShellCommand) => {
-      if (c === 'settings' || c === 'games') togglePanel(true, c);
+      if (c === 'settings') togglePanel(true);
       else setFull(c === 'fullscreen-on');
     });
     api.onMode((m) => { mode = m; showMode(); });
@@ -527,7 +517,7 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
       shape.dispatchEvent(new PointerEvent(type, { pointerId: 7, button: 0, screenX: x, screenY: y, bubbles: true }));
     window.shellTest = {
       state: () => ({
-        state: mode.state, shown, scale, corner: body.dataset.corner, panelOpen: !panel.hidden, view: sheetView, update: body.classList.contains('tg-update'), full, thru: body.classList.contains('tg-thru'),
+        state: mode.state, shown, scale, corner: body.dataset.corner, panelOpen: !panel.hidden, update: body.classList.contains('tg-update'), full, thru: body.classList.contains('tg-thru'),
         shape: { w: shape.offsetWidth, h: shape.offsetHeight }, root: { w: game.root.clientWidth, h: game.root.clientHeight },
         rootIn: game.root.parentElement?.className || '', count: badge.textContent, line: cardLine.textContent, topInset: topInset(),
         warm: orb.classList.contains('warm'), pill: pill.innerText,

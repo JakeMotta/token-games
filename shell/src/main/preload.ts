@@ -29,6 +29,7 @@ const api: ShellApi = {
   games: () => ipcRenderer.invoke(CH.games),
   gamesDo: (op) => ipcRenderer.invoke(CH.gamesDo, op),
   onGames: on(CH.gamesChanged),
+  openGames: () => ipcRenderer.send(CH.gamesOpen),
   hostedRect: (r, scale) => ipcRenderer.send(CH.hostedRect, r, scale),
   onHostedStatus: on(CH.hostedStatus),
   onHostedKey: on(CH.hostedKey),

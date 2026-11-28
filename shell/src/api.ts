@@ -31,7 +31,7 @@ export interface ShellBoot<S extends ShellSettings = ShellSettings> {
 // The catalog game the shell hosts in place of its own (docs/catalog.md).
 export interface HostedBoot { id: string; name: string; version: string; tier: Tier; icon: string } // icon: a data: URL or ''
 
-// The Games view (the Games button, the tray's Games…, Settings → Games): what is installed, what the catalog offers,
+// The Games window (the Games buttons, the tray's Games…, Settings → Games): what is installed, what the catalog offers,
 // and requests waiting for the player.
 export interface GamesView {
   rows: GameRow[];
@@ -39,6 +39,7 @@ export interface GamesView {
   allowCommunity: boolean;
   catalog: { fetchedAt: string | null; games: number; error: string | null; signed: boolean };
   canAddLocal: boolean; // a folder picker is available (not in the smoke test)
+  icons: Record<string, string>; // game id → its icon as a data: URL, for the games on this computer
 }
 // How many installed games the catalog has a newer version of (the Games button's dot, the tray's "Games… (1 update)").
 export const updatesIn = (rows: GameRow[]): number => rows.filter((r) => r.installed && !!r.update && !r.blocked).length;
@@ -52,7 +53,7 @@ export interface GameRect { x: number; y: number; width: number; height: number;
 export interface FeedStatus { watching: boolean; files: number; root: string; error?: string }
 
 // Commands the main process sends the page (tray menu, global shortcut, window changes).
-export type ShellCommand = 'settings' | 'games' | 'fullscreen-on' | 'fullscreen-off';
+export type ShellCommand = 'settings' | 'fullscreen-on' | 'fullscreen-off';
 
 export interface ResizeDrag { phase: 'start' | 'move' | 'end'; x: number; y: number } // screen coordinates
 export type OrbDrag = ResizeDrag; // the orb dragged to another corner, the same way
@@ -82,13 +83,22 @@ export interface ShellApi<S extends ShellSettings = ShellSettings> {
   onFeed(fn: (f: FeedStatus) => void): void;
   onCommand(fn: (c: ShellCommand) => void): void;
   onMode(fn: (m: ModeInfo) => void): void;
-  // the catalog (Settings → Games) and a hosted catalog game
+  // the catalog (the Games window, Settings → Games) and a hosted catalog game
   games(): Promise<GamesView>;
-  gamesDo(op: GamesOp): Promise<GamesResult>; // approving is only possible here, in the app
+  gamesDo(op: GamesOp): Promise<GamesResult>; // approving is only possible in the app: here or in the Games window
   onGames(fn: (v: GamesView) => void): void;
+  openGames(): void; // open the Games window, or bring it to the front
   hostedRect(r: GameRect | null, scale: Scale): void; // where the hosted game goes in the window; null hides it
   onHostedStatus(fn: (s: HostedStatus) => void): void;
   onHostedKey(fn: (k: { key: string; meta: boolean; ctrl: boolean }) => void): void; // a shell key pressed in the game
+}
+
+// The catalog calls, all the Games window's page gets (window.tokenGames, games-window-preload.ts).
+export type GamesApi = Pick<ShellApi, 'games' | 'gamesDo' | 'onGames'>;
+export interface GamesBoot { name: string; smoke: boolean } // name: the app's built-in game
+export interface GamesWindowApi extends GamesApi {
+  boot(): Promise<GamesBoot>;
+  close(): void;
 }
 
 export const CH = {
@@ -97,5 +107,6 @@ export const CH = {
   settings: 'shell:settings', dark: 'shell:dark', sleep: 'shell:sleep', event: 'shell:event', feed: 'shell:feed', command: 'shell:command', mode: 'shell:mode',
   save: 'shell:save', saveNow: 'shell:save-now', load: 'shell:load',
   games: 'shell:games', gamesDo: 'shell:games-do', gamesChanged: 'shell:games-changed',
+  gamesOpen: 'shell:games-open', gamesBoot: 'shell:games-boot', gamesClose: 'shell:games-close',
   hostedRect: 'shell:hosted-rect', hostedStatus: 'shell:hosted-status', hostedKey: 'shell:hosted-key',
 } as const;

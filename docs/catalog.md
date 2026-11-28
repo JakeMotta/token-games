@@ -1,7 +1,7 @@
 # The game catalog
 
-Other people can write Token Games games, and players can install them from inside the app: the **Games** button next to Settings (in the open card and the popped-out
-window's title bar), the menu-bar icon's **Games…**, or **Settings → Games**.
+Other people can write Token Games games, and players can install them from inside the app, in the **Games window**: the **Games** button next to Settings (in the
+open card and the popped-out window's title bar), the menu-bar icon's **Games…**, or **Open Games…** in **Settings → Games**.
 This page is how it works as built. The original proposal, with diagrams and a clickable mock, is
 [game-catalog.html](game-catalog.html) and [game-catalog-design.md](game-catalog-design.md). Writing a game for the
 catalog: [publishing-a-game.md](publishing-a-game.md).
@@ -168,18 +168,26 @@ app shows the permission sheet and the agent tells you to approve it there.
 choices, `tokengames install <id>` to ask, then it tells the player to approve in the app, and `tokengames status
 --json` for something to say about the active game. It never approves.
 
-## The Games view
+## The Games window
 
-The **Games** button (next to Settings in the open card and in the popped-out window's title bar) and the tray's
-**Games…** open the Settings sheet on its Games view: just the games, full width, with larger text and buttons;
-Settings switches to the whole sheet and Games again closes it. Settings → Games is the same list. The view
-(`shell/src/page/games-panel.ts`) lists the built-in game, installed,
-local and available games with their tier and state; Play, Install, Update, Remove; "Check for games"; "Add local
-folder…"; the Community switch; and pending requests with Approve and Deny. When an agent asks, the orb's pill says
-so ("An agent asked: see Games"), and opening Settings scrolls to the waiting request.
+The **Games** button (next to Settings in the open card and in the popped-out window's title bar), the tray's
+**Games…** and **Open Games…** in Settings → Games open the **Games window**: a normal window of its own with a title
+bar, resizable, always dark. It opens centred on the display the game is on, about 960 × 680 and never bigger than
+that display's work area (`gamesWindowBounds` in `shell/src/geometry.ts`), at least 640 × 480. There is only ever one:
+Games again brings it to the front. Esc, Cmd+W (Ctrl+W), its Close button or the window's close button close it.
+Opening it changes nothing about the game: not the active game, not where it is or whether it shows.
+
+It lists (`shell/src/page/games-panel.ts`, layout `window`) the built-in game, installed, local and available games as
+cards, each with its icon, name, version, tier and description; Play, Install, Update, Remove and the Playing mark;
+"Check for games"; "Add local folder…"; the Community switch; and pending requests at the top with Approve and Deny.
+Its page (`games-page.ts`) runs isolated and sandboxed like the shell's own, and its bridge (`window.tokenGames`,
+`shell/src/main/games-window-preload.ts`) has only the catalog calls; the main process answers them only from the
+shell's page and this window. Settings → Games in the card (layout `summary`) is a line about the games, any request
+waiting with Approve and Deny, and Open Games…. When an agent asks, the orb's pill says so ("An agent asked: see
+Games"), and opening Settings scrolls to the waiting request.
 
 **Update available.** When the cached index lists a newer version of an installed game (and it is not blocked), its
-row gets an **Update available** tag and an **Update to <version>** button, the Games buttons get a small dot, and the
+card gets an **Update available** tag and an **Update to <version>** button, the Games buttons get a small dot, and the
 tray says **Games… (1 update)**. Updating asks like an install: the permission sheet, then Approve. The index is
 still only fetched when the player presses "Check for games" (or an agent asks); the badge reads the cached one.
 

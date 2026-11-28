@@ -38,7 +38,7 @@ Settings: a game describes its own with a `GameSettingsSchema` (`defaults(seed)`
 ## Catalog games
 
 The shell can also run a **catalog game** (`"kind": "web"` in `game.json`) in place of its own: installed from the
-signed registry, a zip, or a local folder, chosen in the Games view (the Games button, the tray's Games…, or Settings → Games), and run in a sandboxed `WebContentsView` whose
+signed registry, a zip, or a local folder, chosen in the Games window (the Games button, the tray's Games…, or Open Games… in Settings → Games), and run in a sandboxed `WebContentsView` whose
 only bridge is `window.tokenGame`. The built-in game (the one whose app this is) keeps its own code and save. One game
 is active at a time. While the app runs it also listens on a local control socket for the `tokengames` CLI and the
 `token-games-mcp` server, which can ask but never approve. All of it: [docs/catalog.md](../docs/catalog.md).
@@ -55,7 +55,7 @@ the hosted adapter (`src/page/hosted-shell.ts`), which runs the same `mountShell
 | `src/main/preload.ts` | The page's bridge (`window.tokenShell`) |
 | `src/main/smoke.ts`, `scripts/smoke.mjs` | The hidden end-to-end test and its runner; a game adds a `GameSmoke` |
 | `src/main/pixel-icon.ts` | A menu-bar icon from a 16 × 16 pixel map |
-| `src/page/shell-page.ts`, `shell.css` | `mountShell`: the orb, its pill and card, dragging, window title bar, the Games button, the Settings sheet (its Games and Settings views), keys |
+| `src/page/shell-page.ts`, `shell.css` | `mountShell`: the orb, its pill and card, dragging, window title bar, the Games button (opens the Games window), the Settings sheet, keys |
 | `src/orb.ts` | Corners, display choice, the orb's window bounds and shapes, the nearest corner after a drag (pure) |
 | `src/modes.ts` | The states `orb → hover → expanded → popping → popped → docking` and their scale and shape (pure) |
 | `src/settings.ts` | Shared settings, `settingsKit` |
@@ -70,7 +70,8 @@ the hosted adapter (`src/page/hosted-shell.ts`), which runs the same `mountShell
 | `src/catalog/permissions.ts` | The permission sheet, the game's CSP and which requests it may make |
 | `src/catalog/control.ts`, `commands.ts` | The local control socket and the commands it accepts (no approve) |
 | `src/main/catalog-host.ts`, `game-preload.ts`, `src/hosted.ts` | Runs a catalog game sandboxed; `window.tokenGame`; what of the feed, save and status it gets |
-| `src/page/games-panel.ts` | The Games view: the games, Update available, permission sheets, requests |
+| `src/page/games-panel.ts` | The game picker: the Games window's layout (game cards, Update available, permission sheets, requests) and Settings → Games' summary (waiting requests, Open Games…) |
+| `src/page/games-page.ts`, `games.html`, `games.css`, `src/main/games-window-preload.ts` | The Games window: a normal, resizable, always-dark window of its own (`openGames()` in `shell.ts`; `gamesWindowBounds` in `geometry.ts` centres it on the game's display, about 960 × 680, inside the work area, at least 640 × 480). Only one is ever open; Esc or Cmd+W closes it. Isolated and sandboxed like the shell's page; its bridge `window.tokenGames` has only the catalog calls (`games`, `gamesDo`, `onGames`, `boot`, `close`) |
 | `src/page/hosted-shell.ts`, `hosted-shell.css`, `src/hosted-game.ts` | The hosted adapter: a shell game run as a sandboxed catalog game |
 | `scripts/build-web.mjs` | Builds a game's catalog bundle (`<game>/catalog/`), or `--check`s the committed one matches its source |
 | `src/main/smoke-catalog.ts`, `smoke-registry.ts` | The smoke test's `catalog` and `catalog-game` runs and their signed test registry |
@@ -78,11 +79,11 @@ the hosted adapter (`src/page/hosted-shell.ts`), which runs the same `mountShell
 ## Testing
 
 `test/*.test.ts` runs with every game's `npm test`. `npm run test:smoke` in a game runs the shell's checks (the orb's
-corner, the pill, the card, dragging, hiding and the hotkey, pop out, docking, sizes, tray, hotkey, display changes, the Games button and the tray's Games…, Settings, Reset, restart) and then the
+corner, the pill, the card, dragging, hiding and the hotkey, pop out, docking, sizes, tray, hotkey, display changes, the Games window from the Games buttons, the tray and Settings (its size and place, one window, its isolation, large type, the game left as it was, Esc, Cmd+W and Close), Settings, Reset, restart) and then the
 game's. Settings' closing is checked with real mouse input: its ×, Esc, a click outside, and a slider dragged past
 the sheet's edge (which must not close it). A third run, `catalog`, installs the sample Token Garden from a signed test
-registry, proves it has no Node, files or network, feeds it a transcript line, lists a newer version and checks the update badge, the tray's count and the approved update, switches back and
-removes it. A fourth, `catalog-game` (when the game has a `catalog/` bundle), does the same for the game's own bundle through the
+registry through the Games window (an agent asks, the player approves there), proves it has no Node, files or network, feeds it a transcript line, lists a newer version and checks the update badge, the tray's count and the approved update, switches back and
+removes it (approved in the card's Settings → Games). A fourth, `catalog-game` (when the game has a `catalog/` bundle), does the same for the game's own bundle through the
 real `tokengames` CLI and checks it saves in its own slot. `node ../shell/scripts/smoke.mjs --only <run>` runs one.
 Windows are never shown in the smoke test: showing and hiding only flip a flag there. `npm run perf` (`smoke.mjs
 --perf [--profile <folder>]`) is a single hidden run that measures what frames cost in each mode (`GameSmoke.perf`,

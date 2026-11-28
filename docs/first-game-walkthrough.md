@@ -84,7 +84,7 @@ those seven files with no Node, Electron or local paths in `app.js`.
 
 On the player's Mac, with Token Games running (shell 1.3.0 or newer):
 
-- **In the app:** click the orb → Settings → **Games** → **Check for games** → **Install** on *Ant Farm (web)* →
+- **In the app:** click the orb → **Games** (the Games window opens) → **Check for games** → **Install** on *Ant Farm (web)* →
   read the permission sheet (it reads only the token counts your Claude Code sessions use, no network) →
   **Approve** → **Play**.
 - **From an agent or a terminal** (they can only ask; the player still approves in the app):
@@ -103,14 +103,14 @@ executables, no zip-slip, a `web` game with that id), and swaps it in atomically
 
 ## 4. Uninstall
 
-Settings → Games → **Remove** on *Ant Farm (web)* → Approve, or `tokengames remove ant-farm-web` and Approve in the
+**Games** → **Remove** on *Ant Farm (web)* → Approve, or `tokengames remove ant-farm-web` and Approve in the
 app. Its files go; **its save stays**, so installing it again brings the same colony back. To forget the colony too,
 delete `~/Library/Application Support/Token Games/saves/ant-farm-web/`.
 
 ## 5. Update
 
 Release a newer version (steps 1 to 5 of Publish with a higher `version`) and change the pointer's `commit`, `tag` and
-`bundle`. Players see **Update available** and **Update to …** in the Games view
+`bundle`. Players see **Update available** and **Update to …** in the Games window
 once their app has the new index (Check for games), a dot on the Games button and **Games… (1 update)** in the tray,
 and approve it like an install. The save
 carries over. A released zip is never replaced: `release-bundle.yml` refuses an existing tag.
