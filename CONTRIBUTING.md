@@ -29,7 +29,7 @@ inside your game is up to you, as long as only real agent usage moves it forward
    `feed(ev: UsageEvent)`, `save()` and `load()`. Write tests in `test/` (`npm test`).
 4. **Your view.** In `src/game/app.ts`, draw into `#game` sized from its own `clientWidth`/`clientHeight` (minus
    `ctx.topInset` in the window). Use `onScale` to switch between the orb, the card and the window.
-5. **Talk to the shell.** `ctx.setStatus({ count, title, lead, line, warm })` for the orb, its pill and the title bar (`warm` tints
+5. **Talk to the shell.** `ctx.setStatus({ count, title, lead, line, warm })` for the circle, its name tag, the card's status line and the window's top bar (`warm` tints
    the orb's ring when the game needs the player),
    `ctx.pulse('+3 grains')` for a quiet moment of news, `ctx.setTheme(...)` for your colours, `ctx.save(...)` /
    `ctx.load()` for your save file, `ctx.set(...)` to change a setting.
@@ -56,8 +56,8 @@ under your game's folder.
 
 - Unit tests: `test/*.test.ts` in your game, run with the shell's own tests by `npm test`.
 - The smoke test (`npm run test:smoke`) starts the real app with a temporary profile and a fake Claude Code
-  folder, walks every mode (the orb in its corner, the pill, the card, dragging to
-  another corner, the hotkey, pop out, dock back, the window's sizes and corners, Settings,
+  folder, walks every mode (the circle in its corner, its name tag, the card, the size switch, the menu, dragging to
+  another corner, the hotkey, the window and back, the window's sizes and corners, Settings,
   Reset, a restart), runs your game's checks, and **never shows a window**. Feed your game in it only with
   `k.transcript(...)`, which writes a real transcript line.
 - Run one at a time; don't start a second Electron test while one runs.

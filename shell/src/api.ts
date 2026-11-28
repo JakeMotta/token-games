@@ -73,7 +73,8 @@ export interface ShellApi<S extends ShellSettings = ShellSettings> {
   resizeDrag(d: ResizeDrag): void;
   setGrab(on: boolean): void; // while click-through is on: take the mouse back (Alt held)
   orbDrag(d: OrbDrag): void; // the orb is being dragged; the main process moves the window and settles it in a corner
-  intent(ev: ShellEvent): void; // click, escape, toggle, pop, dock
+  intent(ev: ShellEvent): void; // click, escape, toggle, pop, card, dock
+  menu(): void; // a right-click: the game's menu beside the pointer
   status(s: GameStatus): void;
   hide(): void;
   saveGame(data: unknown): Promise<boolean>; // the game's state, to its save file in the app's data folder
@@ -126,7 +127,7 @@ export interface HubWindowApi extends GamesApi {
 
 export const CH = {
   state: 'shell:state', set: 'shell:set', reset: 'shell:reset', fullscreen: 'shell:fullscreen', resize: 'shell:resize',
-  grab: 'shell:grab', orbDrag: 'shell:orb-drag', intent: 'shell:intent', status: 'shell:status', hide: 'shell:hide', quit: 'shell:quit',
+  grab: 'shell:grab', orbDrag: 'shell:orb-drag', intent: 'shell:intent', status: 'shell:status', hide: 'shell:hide', menu: 'shell:menu', quit: 'shell:quit',
   settings: 'shell:settings', dark: 'shell:dark', sleep: 'shell:sleep', event: 'shell:event', feed: 'shell:feed', command: 'shell:command', mode: 'shell:mode',
   save: 'shell:save', saveNow: 'shell:save-now', load: 'shell:load',
   games: 'shell:games', gamesDo: 'shell:games-do', gamesChanged: 'shell:games-changed',

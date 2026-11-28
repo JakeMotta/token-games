@@ -38,6 +38,7 @@ export interface GameHostOptions {
   pop(): void;
   dock(): void;
   key(k: { key: string; meta: boolean; ctrl: boolean }): void;
+  menu(): void; // a right-click the game didn't take for itself: the shell's menu
 }
 
 export class GameHost {
@@ -161,6 +162,10 @@ export class GameHost {
       latest = c;
       if (!timer) timer = setTimeout(flush, Math.max(0, 100 - (Date.now() - last)));
     });
+    // Electron only asks for a context menu when the page didn't cancel the right-click (a game may use it)
+    const onMenu = () => this.o.menu();
+    this.view.webContents.on('context-menu', onMenu);
+    this.disposers.push(() => { if (!this.view.webContents.isDestroyed()) this.view.webContents.off('context-menu', onMenu); });
     on(GAME_CH.pop, () => this.o.pop());
     on(GAME_CH.dock, () => this.o.dock());
     on(GAME_CH.key, (k) => {

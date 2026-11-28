@@ -21,7 +21,7 @@ boss takes five). Build towers anywhere on the paper:
   24-pixel grid. A dashed ghost fits; a red, hatched one says why not (*that is the road*, *something is there*, *not
   enough gold*). Towers take 2 × 2 or 3 × 3 cells, never overlap and never sit on the road, except the Thumbtack, which
   only goes on it. A click near a spot that doesn't fit takes the closest one that does. Clicking empty paper offers to
-  build right there. Esc or a right-click puts the ghost away.
+  build right there. Esc or a right-click puts the ghost away; with nothing open, a right-click is the shell's menu.
 - **A tower's card** (click a tower): its damage, rate, reach, damage a second and kills, **+1**, **+10** and **max**
   upgrades, **aim** (first, strongest, nearest, last), **move** and **sell** (70 % of what it cost back).
 - **Levels never end.** Each level costs 18 % more than the last and adds damage; every 10th level is a milestone that

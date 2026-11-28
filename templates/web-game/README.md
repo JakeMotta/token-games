@@ -30,7 +30,7 @@ and back to see the change.
 - Know where it is drawn: `env()` and `onEnv()` give `scale` (`'mini'` in the orb: draw nothing or very little),
   `dark` and `reducedMotion`.
 - Put a number and a line on the orb: `setStatus({ count, title, line, warm })`.
-- Ask to pop out or dock back: `popOut()`, `dock()`.
+- Ask to go to the window or back to the circle: `popOut()`, `dock()`.
 
 It has no Node, no files and no network (unless its manifest names hosts and the player approves them). The full
 API, the rules and how to publish: [docs/publishing-a-game.md](../../docs/publishing-a-game.md).

@@ -1,5 +1,5 @@
 // The preload of a hosted catalog game (catalog-host.ts): a sandboxed page with no Node. It exposes window.tokenGame
-// (hosted.ts) and nothing else. The shell's own keys (Esc, Settings, Pop out, …) are passed on to the shell's page, so
+// (hosted.ts) and nothing else. The shell's own keys (Esc, the sizes, Games, Settings, …) are passed on to the shell's page, so
 // they work while the game has focus.
 import { contextBridge, ipcRenderer } from 'electron';
 import { GAME_CH, HOSTED_API_VERSION, type HostedEnv, type TokenGameApi } from '../hosted';
@@ -31,8 +31,8 @@ const api: TokenGameApi = {
 };
 contextBridge.exposeInMainWorld('tokenGame', api);
 
-// Esc, ',' settings, O pop out, H hide, popped out 1 2 F T D, and Cmd/Ctrl+, and +Q.
-const SHELL_KEYS = new Set(['Escape', ',', 'o', 'h', '1', '2', 'f', 't', 'd']);
+// Esc, 1 2 3 (Circle, Card, Window), G games, ',' settings, F full screen, H hide, and Cmd/Ctrl+, and +Q.
+const SHELL_KEYS = new Set(['Escape', '1', '2', '3', 'g', ',', 'f', 'h']);
 window.addEventListener('keydown', (e) => {
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   const mod = e.metaKey || e.ctrlKey;

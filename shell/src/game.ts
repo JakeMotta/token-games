@@ -1,6 +1,7 @@
 // The game interface: what a game hands the shell's page (mountShell in page/shell-page.ts), and what the shell
-// gives the game back. Every game in this repo is a Game; the shell owns everything around it (the corner orb, its
-// hover pill and open card, the popped-out window, the tray, the settings file, the Claude Code feed).
+// gives the game back. Every game in this repo is a Game; the shell owns everything around it (the circle in the
+// corner and its name tag, the card, the window, their top bar and size switch, the menu, the settings file, the Claude
+// Code feed). A game's own buttons, if it needs any, go inside its root, below topInset: never in the shell's bar.
 import type { FeedStatus } from './api';
 import type { UsageEvent } from './events';
 import type { Scale, ShellState } from './modes';
@@ -13,9 +14,8 @@ export interface Game<S extends ShellSettings = ShellSettings> {
   // The game's view: an element (usually holding one canvas) that the shell moves between the orb's round eye, the
   // open card and the window. Size it from its own clientWidth / clientHeight, never from the window.
   root: HTMLElement;
-  icon?: string; // a tiny inline SVG (or a character) beside the game's name in the orb's hover pill
+  icon?: string; // a tiny inline SVG (or a character) beside the game's name in the card's bar and the circle's name tag
   settingsPanel?: HTMLElement; // the game's own <section>s for the Settings sheet, shown above the shell's
-  barButtons?: HTMLElement[]; // small buttons for the window's title bar (shown popped out only)
   keysHelp?: string; // the game's own keys, for the help line at the bottom of Settings
 
   start(ctx: GameContext<S>): void | Promise<void>; // the settings have arrived: load the save and begin
@@ -36,7 +36,7 @@ export interface GameStatusLine {
   count: string; // the number on the orb's badge and in the menu-bar tooltip ("42")
   title: string; // what it counts ("ants")
   lead?: string; // a short bold part of the status line ("⚡ 31")
-  line?: string; // the status line in the hover pill, the open card and the window's title bar
+  line?: string; // the status line at the bottom of the card and in the window's title bar
   warm?: boolean; // the game needs the player (hungry, over): the orb's ring turns warm, quietly
 }
 
@@ -64,6 +64,6 @@ export interface GameContext<S extends ShellSettings = ShellSettings> {
   quit(): void;
 }
 
-// The window's colours, usually from the game's palette. The orb, the pill and the card keep the shell's own quiet
+// The window's colours, usually from the game's palette. The circle, its name tag and the card keep the shell's own quiet
 // colours (light or dark with the system), so every game looks at home in the corner.
 export interface Theme { back: string; bar: string; ink: string; dim: string; hot: string; task?: string; line: string; panel?: string }

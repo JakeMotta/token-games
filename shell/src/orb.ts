@@ -1,9 +1,9 @@
-// Where the orb goes: which display, which corner, and the orb's, the hover pill's and the card's place in each
+// Where the orb goes: which display, which corner, and the orb's and the card's place in each
 // state. Pure, so it can be tested without Electron.
 //
 // The orb rests in a corner of a display's work area (so never under the menu bar or the Dock). One see-through
-// window, as big as the open card, sits in that corner; the orb, the pill and the card are drawn inside it and grow
-// out of the corner. Everything outside them lets clicks pass to what is underneath.
+// window, as big as the open card, sits in that corner; the orb (with its name tag beside it on hover) and the card are
+// drawn inside it and grow out of the corner. Everything outside them lets clicks pass to what is underneath.
 
 export interface Rect { x: number; y: number; width: number; height: number }
 export interface DisplayLike { id?: number; bounds: Rect; workArea: Rect }
@@ -14,10 +14,9 @@ export type Corner = (typeof CORNERS)[number];
 export const ORB = 64; // the orb's diameter
 export const EYE = 54; // the live view inside it
 export const EDGE = 16; // the window's distance from the work area's edges (also the room for the card's shadow)
-export const PILL = 250; // the hover pill's width (as tall as the orb)
 export const CARD = { width: 440, height: 330 }; // the open card, less on a very small display
 
-export type Shape = 'orb' | 'pill' | 'card';
+export type Shape = 'orb' | 'card';
 
 export interface OrbGeo {
   corner: Corner;
@@ -58,7 +57,6 @@ export function orbWindowBounds(g: OrbGeo): Rect {
 // A shape inside the window (window coordinates): each one hugs the window's corner, so it grows out of the orb.
 export function shapeSize(shape: Shape, g: OrbGeo): { width: number; height: number } {
   if (shape === 'card') return { ...g.card };
-  if (shape === 'pill') return { width: Math.min(PILL, g.card.width), height: ORB };
   return { width: ORB, height: ORB };
 }
 

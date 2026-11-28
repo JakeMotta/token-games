@@ -74,8 +74,8 @@ The only bridge is `shell/src/main/game-preload.ts`, `window.tokenGame`:
 | `load()`, `save(data)` | The game's own save, JSON, at most 1 MB |
 | `getSettings()`, `setSettings(data)` | Its own settings, JSON, at most 64 KB |
 | `env()`, `onEnv(fn)` | `{ scale: 'mini' \| 'expanded' \| 'window', dark, reducedMotion, feed }`; `feed` is `{ watching, files }`: whether Claude Code's transcripts are watched and how many (version 2) |
-| `setStatus({ count, title, line?, warm? })` | The orb's number (8 chars), the pill's title (24) and line (80) |
-| `popOut()`, `dock()` | Ask the shell to pop the game out into its window, or dock it back |
+| `setStatus({ count, title, line?, warm? })` | The circle's number (8 chars), the title (24) and line (80) in its name tag, the card and the window's bar |
+| `popOut()`, `dock()` | Ask the shell to take the game to its window, or back to the circle |
 | `onHide(fn)` | Called before the game is closed (switched away from, removed, or the app quits); return a promise to finish a save first. The shell waits up to 1 s (`HIDE_WAIT_MS`), then closes it anyway (version 2) |
 | `version` | The bridge's version: `2`. A change only ever adds, so a game written for version 1 runs unchanged |
 
@@ -88,7 +88,7 @@ web game without a fork. `shell/scripts/build-web.mjs` bundles the game's own so
 (`shell/src/page/hosted-shell.ts`, its pure parts in `shell/src/hosted-game.ts`) into a folder of plain files:
 `index.html`, `app.js`, the shell's and the game's CSS, `game.json` and `icon.svg`. The adapter runs the same
 `mountShell(game)` page over `window.tokenGame`: usage, status, settings (its own only, never the shell's), its save,
-pop out and dock, a gear for the game's own Settings, and `onHide` to save before it is closed. It tells the game the
+the window and back (the same top bar and size switch as a built-in game), a gear for the game's own Settings, and `onHide` to save before it is closed. It tells the game the
 page is always visible, because shell games assume that and the view is hidden in the orb, not unloaded.
 
 Ink Tower Defense's bundle is `tower-defense/catalog/` (id `tower-defense-web`, since a catalog game can't take a
@@ -210,7 +210,7 @@ approved: …**, and offers "Add local folder…".
 Its page (`hub-page.ts`) runs isolated and sandboxed like the shell's own, and its bridge (`window.tokenHub`,
 `shell/src/main/hub-window-preload.ts`) has only the catalog, tab and Settings calls; the main process answers the
 catalog calls only from the shell's page and this window. Settings → Games (on the Settings tab, layout `summary`) is a line about the games,
-the **Show developer and unapproved games** switch, any request waiting with Approve and Deny, and Open Games…. When an agent asks, the orb's pill says so ("An agent asked: see
+the **Show developer and unapproved games** switch, any request waiting with Approve and Deny, and Open Games…. When an agent asks, the circle's ring pulses and the card's status line and the window's bar say so ("An agent asked: see
 Games"), and opening Settings scrolls to the waiting request.
 
 **Update available.** When the cached index lists a newer version of an installed game (and it is not blocked), its

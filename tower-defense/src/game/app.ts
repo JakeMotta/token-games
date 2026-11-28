@@ -378,7 +378,12 @@ canvas.addEventListener('pointerup', (e) => {
 });
 canvas.addEventListener('pointercancel', () => { pointerDown = false; });
 canvas.addEventListener('pointerleave', () => { pointerDown = false; });
-canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); closeAll(); });
+// a right-click puts away whatever is open; with nothing open it is the shell's menu, as in every game
+canvas.addEventListener('contextmenu', (e) => {
+  if (sel === null && ghost === null && buildAt === null) return;
+  e.preventDefault();
+  closeAll();
+});
 
 // the Thumbtack is small and round on the road: a tap near it counts
 function tackAt(p: [number, number]): Tower | null {

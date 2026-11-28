@@ -1,4 +1,4 @@
-// The shared settings, how a game adds its own, the settings file and the tray menu (with its Games… entry).
+// The shared settings, how a game adds its own, the settings file and the game's menu (the menu-bar icon's and the right-click's).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -7,6 +7,7 @@ import path from 'node:path';
 import { num, oneOf, settingsKit, shellDefaults, type GameSettingsSchema } from '../src/settings';
 import { SaveFile, SettingsStore } from '../src/main/store';
 import { trayMenu, type TrayItem } from '../src/tray';
+import type { ShellState } from '../src/modes';
 import { updatesIn } from '../src/api';
 import type { GameRow } from '../src/catalog/catalog';
 
@@ -105,22 +106,33 @@ test('the save file: round trip, nothing or broken means a new game', () => {
 const flat = (items: TrayItem[]): TrayItem[] => items.flatMap((i) => [i, ...(i.submenu ? flat(i.submenu) : [])]);
 const find = (items: TrayItem[], label: string) => flat(items).find((i) => i.label === label);
 
-test('the tray in the corner: open the game, pop out, move the orb, settings, reset, quit', () => {
-  const m = trayMenu(kit.defaults(1), { name: 'Demo', visible: true, state: 'orb', shortcut: 'Alt+CommandOrControl+T' });
-  assert.equal(m[0].label, 'Hide Demo');
-  assert.deepEqual(find(m, 'Open Demo')!.action, { do: 'open' });
-  assert.equal(find(m, 'Open Demo')!.accelerator, 'Alt+CommandOrControl+T');
-  assert.deepEqual(find(m, 'Pop out')!.action, { do: 'pop' });
-  assert.ok(!find(m, 'Back to the corner'));
-  assert.equal(find(m, 'In the corner')!.checked, true);
-  const corner = find(m, 'Corner')!.submenu!;
+test('the menu: the name, the three sizes, Games and Settings, the Window and Circle corner menus, hide, quit', () => {
+  const m = trayMenu(kit.defaults(1), { name: 'Demo', visible: true, state: 'orb', shortcut: 'Alt+CommandOrControl+T', status: '12 ants' });
+  assert.deepEqual([m[0].label, m[0].enabled], ['Demo · 12 ants', false]);
+  assert.deepEqual(m.slice(1, 4).map((i) => [i.label, i.type, i.checked, i.accelerator]), [['Circle', 'radio', true, '1'], ['Card', 'radio', false, '2'], ['Window', 'radio', false, '3']]);
+  assert.deepEqual(m.slice(1, 4).map((i) => i.action), [{ do: 'size', to: 'circle' }, { do: 'size', to: 'card' }, { do: 'size', to: 'window' }]);
+  const win = m.find((i) => i.label === 'Window' && i.submenu)!.submenu!;
+  assert.deepEqual(win.filter((i) => i.label).map((i) => i.label), ['Small (320 × 180)', 'Large (640 × 360)', 'Full screen', 'Always on top', 'Click-through']);
+  assert.equal(find(win, 'Full screen')!.enabled, false, 'full screen only in the window');
+  assert.deepEqual(find(win, 'Click-through')!.action, { do: 'set', patch: { clickThrough: true } });
+  assert.equal(find(win, 'Click-through')!.accelerator, undefined, 'the shortcut shows and hides, it is not click-through');
+  const corner = find(m, 'Circle corner')!.submenu!;
   assert.deepEqual(corner.map((i) => [i.label, i.checked]), [['Top left', false], ['Top right', false], ['Bottom left', false], ['Bottom right', true]]);
   assert.deepEqual(corner[0].action, { do: 'set', patch: { corner: 'tl' } });
-  assert.equal(find(m, 'Full screen')!.enabled, false, 'full screen only popped out');
-  assert.equal(find(m, 'Click-through')!.accelerator, undefined, 'in the corner the shortcut opens the game');
-  assert.deepEqual(find(m, 'Reset to defaults')!.action, { do: 'reset' });
-  assert.equal(find(trayMenu(kit.defaults(1), { name: 'Demo', visible: true, state: 'expanded', shortcut: '' }), 'Close Demo')!.action!.do, 'open');
-  assert.equal(trayMenu(kit.defaults(1), { name: 'Demo', visible: false, state: 'orb', shortcut: '' })[0].label, 'Show Demo');
+  assert.deepEqual([find(m, 'Hide Demo')!.action, find(m, 'Hide Demo')!.accelerator], [{ do: 'toggle-window' }, 'Alt+CommandOrControl+T']);
+  assert.deepEqual(m[m.length - 1].action, { do: 'quit' });
+  assert.equal(m[m.length - 1].label, 'Quit Demo');
+  for (const gone of ['Pop out', 'Back to the corner', 'Reset to defaults', 'Open Demo', 'In the corner']) assert.ok(!find(m, gone), gone);
+});
+
+test('the menu lights the size the game is at, and nothing while it is hidden', () => {
+  const lit = (state: ShellState, visible = true) => trayMenu(kit.defaults(1), { name: 'Demo', visible, state, shortcut: '' }).slice(1, 4).filter((i) => i.checked).map((i) => i.label);
+  assert.deepEqual(lit('hover'), ['Circle']);
+  assert.deepEqual(lit('expanded'), ['Card']);
+  assert.deepEqual(lit('returning'), ['Card']);
+  assert.deepEqual(lit('popping'), ['Window']);
+  assert.deepEqual(lit('orb', false), []);
+  assert.equal(trayMenu(kit.defaults(1), { name: 'Demo', visible: false, state: 'orb', shortcut: '' }).find((i) => i.action?.do === 'toggle-window')!.label, 'Show Demo');
 });
 
 test('the tray opens Games, right above Settings, and says when an update is waiting', () => {
@@ -141,16 +153,14 @@ test('updatesIn counts installed games with a newer version that may run', () =>
   assert.equal(updatesIn([row('a', { update: '1.0.1' }), row('b', { update: '2.0.0', blocked: 'pulled' }), row('c', { installed: false, update: '1.1.0' })]), 1);
 });
 
-test('the tray popped out: back to the corner, the window\'s settings, the shortcut on click-through', () => {
+test('the menu in the window: full screen, the window\'s size and click-through ticked', () => {
   const s = kit.applyPatch(kit.defaults(1), { presentation: 'floating', clickThrough: true, size: 'large' });
   const m = trayMenu(s, { name: 'Demo', visible: true, state: 'popped', shortcut: 'X' });
-  assert.deepEqual(find(m, 'Back to the corner')!.action, { do: 'dock' });
-  assert.ok(!find(m, 'Pop out'));
-  assert.equal(find(m, 'Floating window')!.type, 'radio');
+  assert.equal(find(m, 'Full screen')!.enabled, true);
+  assert.deepEqual(find(m, 'Full screen')!.action, { do: 'fullscreen' });
   assert.equal(find(m, 'Large (640 × 360)')!.checked, true);
   assert.deepEqual(find(m, 'Click-through')!.action, { do: 'set', patch: { clickThrough: false } });
-  assert.equal(find(m, 'Click-through')!.accelerator, 'X');
-  const dock = find(m, 'Dock')!.submenu!;
-  assert.equal(dock.find((i) => i.label === 'Bottom right')!.checked, true);
+  assert.equal(find(m, 'Click-through')!.checked, true);
+  assert.ok(find(trayMenu(s, { name: 'Demo', visible: true, state: 'popped', shortcut: 'X', full: true }), 'Leave full screen'));
   assert.ok(!flat(m).some((i) => /Claude Code|feed/i.test(i.label || '')), 'no switch to stop watching Claude Code, no feed buttons');
 });

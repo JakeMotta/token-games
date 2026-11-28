@@ -1,6 +1,6 @@
 // The automated smoke test, run inside the real app (TG_SMOKE=<folder>) with no window ever shown: it drives the
-// shell like a player would (the orb, its hover pill, the open card, dragging it to another corner, popping out and
-// docking back, the window's sizes, full screen, click-through, the tray and the shortcut), hands over to the game's
+// shell like a player would (the circle and its name tag, the card, the size switch, Esc, dragging the circle to another
+// corner, the window's sizes, full screen, click-through, the menu and the shortcut), hands over to the game's
 // own checks, saves screenshots, writes result-<mode>.json and quits. shell/scripts/smoke.mjs starts it up to four
 // times: a full run, a 'reopen' run that checks everything survived the restart, a 'catalog' run, and for a game with
 // a catalog/ bundle a 'catalog-game' run (both in smoke-catalog.ts). With --perf it starts a single 'perf' run
@@ -30,7 +30,8 @@ export interface SmokeContext<S extends ShellSettings> {
   geo(): OrbGeo;
   trayItems(): TrayItem[];
   tray(a: TrayAction): void; // as if that tray menu item was chosen
-  hotkey(): void;
+  hotkey(): void; // the global shortcut: show or hide
+  menus(): number; // right-click menus asked for (the smoke test never shows one)
   status(): GameStatus;
   visible(): boolean;
   show(): void;
@@ -103,7 +104,8 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     await wait(700); // the shape's grow and fade
     const sh = shapeOf(c.state()), b = c.win.getBounds();
     let rect: Electron.Rectangle | undefined;
-    if (sh) {
+    // pointing at the circle, the whole corner window, so its name tag shows beside it
+    if (sh && c.state() !== 'hover') {
       const r = shapeRect(sh, c.geo());
       rect = { x: r.x - b.x, y: r.y - b.y, width: r.width, height: r.height };
     }
@@ -176,6 +178,7 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     return until(async () => { const p = await page(); return shapeOf(p.shown) === sh && p.shape.w === s.width && p.shape.h === s.height; }, 3000);
   };
   const labels = (items: TrayItem[]): string[] => items.flatMap((i) => [i.label || '', ...(i.submenu ? labels(i.submenu) : [])]);
+  const lit = () => c.trayItems().filter((i) => i.type === 'radio' && i.checked && !i.submenu).map((i) => i.label || '');
   const settled = (st: ShellState) => until(() => c.state() === st, 3000);
 
   try {
@@ -220,23 +223,42 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     check('the orb shows the game\'s count', await until(async () => (await page()).count !== '' && (await page()).count === c.status().count), { page: (await page()).count, status: c.status() });
     await shots('orb');
     let items = labels(c.trayItems());
-    check('the tray offers the card and Pop out', items.some((l) => l.startsWith('Open ')) && items.includes('Pop out') && items.includes('Reset to defaults'), items);
+    check('the menu: Circle, Card and Window, Games…, Settings…, the Window and Circle corner menus, Hide and Quit', ['Circle', 'Card', 'Window', 'Games…', 'Settings…',
+      'Small (320 × 180)', 'Full screen', 'Always on top', 'Click-through', 'Top left', 'Bottom right'].every((l) => items.includes(l))
+      && items.some((l) => l.startsWith('Hide ')) && items.some((l) => l.startsWith('Quit ')) && !items.includes('Pop out') && !items.includes('Reset to defaults'), items);
+    check('the menu lights Circle', lit().join() === 'Circle', lit());
+    const bare = `(() => { const card = getComputedStyle(document.querySelector('.tg-card'));
+      return { orbButtons: [...document.querySelectorAll('.tg-orb button')].filter((b) => !b.closest('.tg-root')).length, opacity: parseFloat(card.opacity), events: card.pointerEvents }; })()`;
+    const hidden = async () => { const b = await js<{ orbButtons: number; opacity: number; events: string }>(bare); return b.orbButtons === 0 && b.opacity < 0.01 && b.events === 'none'; };
+    check('the circle has no buttons, and the card\'s are out of sight', await until(hidden), await js(bare));
 
     c.dispatch('enter');
-    check('pointing at the orb grows the pill with the name and the status', await shows('pill') && /tg-eye/.test((await page()).rootIn) && (await page()).pill.length > 3, await page());
+    check('pointing at the circle shows its name tag beside it, the circle keeps its size', await shows('orb') && await until(async () => (await page()).tagShown)
+      && /Click to open/.test((await page()).tag) && (await page()).tag.length > 20, await page());
+    const tr = await js<{ x: number; y: number; w: number; h: number; W: number; H: number; ox: number }>(`(() => { const r = document.getElementById('tg-tag').getBoundingClientRect(),
+      o = document.querySelector('.tg-orb').getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, W: innerWidth, H: innerHeight, ox: o.x }; })()`);
+    check('…inside the window, on the screen side of the circle, never over it', tr.x >= 0 && tr.y >= 0 && tr.x + tr.w <= tr.W && tr.y + tr.h <= tr.H && tr.x + tr.w <= tr.ox, tr);
     await shots('orb-hover');
     c.dispatch('leave');
-    check('moving away shrinks it back', await shows('orb'));
+    check('moving away hides the tag', await shows('orb') && await until(async () => !(await page()).tagShown));
+    let mc = c.menus();
+    await js('shellTest.rightClick(".tg-orb")');
+    check('a right-click on the circle opens the menu', await until(() => c.menus() === mc + 1) && c.state() === 'orb', c.menus());
 
     await js('shellTest.clickOrb()');
     check('a click opens the card', await shows('card') && (await page()).scale === 'expanded' && /tg-big/.test((await page()).rootIn), await page());
     check('open, the window takes the clicks', !c.ignoresMouse());
     check('the card shows the game big', (await page()).root.w > 380, (await page()).root);
     await shots('orb-expanded');
-    await settingsWindow(k, 'the card', 'tg-set', 'settings-window');
-    await gamesWindow(k, 'the card', 'tg-gamesbtn', 'games-window');
+    await sizeSwitch(k, 'the card', 'card');
+    check('the menu lights Card', lit().join() === 'Card', lit());
+    mc = c.menus();
+    await js('shellTest.rightClick(".tg-big")');
+    check('a right-click on the game in the card opens the menu, the card stays open', await until(() => c.menus() === mc + 1) && c.state() === 'expanded');
+    await settingsWindow(k, 'the card', 'tg-card-settings', 'settings-window');
+    await gamesWindow(k, 'the card', 'tg-card-games', 'games-window');
     // Settings → Games: a line about the games, the developer switch, any request waiting, and Open Games… for the window
-    await js('shellTest.click("tg-set")');
+    await js('shellTest.click("tg-card-settings")');
     await k.settingsReady();
     const sum = await k.sjs<string>('settingsTest.text()');
     check('Settings → Games sums the games up, with the developer switch off, and offers Open Games…', /Playing/.test(sum) && /Open Games…/.test(sum) && !/Check for games/.test(sum)
@@ -248,17 +270,34 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     await k.gjs('gamesTest.key("w", true)');
     check('Cmd+W closes the Games and Settings window', await until(async () => !c.hubWin() && !(await page()).panelOpen));
     await hubTabs(k);
-    await js('shellTest.click("tg-shrink")');
-    check('– folds the card back into the orb', await shows('orb') && c.ignoresMouse());
+    await js('shellTest.click("tg-card-circle")');
+    check('the switch\'s Circle folds the card back into the circle', await shows('orb') && c.ignoresMouse());
 
-    c.hotkey();
-    check('the shortcut opens the card…', await shows('card'));
-    c.hotkey();
-    check('…and closes it', await shows('orb'));
+    // the keys: 2 opens the card, Esc and 1 fold it, G opens Games, H and the shortcut hide and show
+    await js('shellTest.key("2")');
+    check('2 opens the card', await shows('card'));
+    await js('shellTest.key("Escape")');
+    check('Esc in the card folds it into the circle', await shows('orb') && c.state() === 'orb');
+    await js('shellTest.key("2")');
+    await shows('card');
+    await js('shellTest.key("1")');
+    check('1 folds it too', await shows('orb'));
+    await js('shellTest.key("g")');
+    check('G opens the window on Games', await k.gamesReady());
+    await k.gjs('gamesTest.key("w", true)');
+    await until(() => !c.hubWin());
     c.dispatch('toggle');
     await shows('card');
+    c.hotkey();
+    check('the shortcut hides the game, folding the card', await until(() => !c.visible()) && c.state() === 'orb');
+    c.hotkey();
+    check('…and shows it again, in the circle', await until(() => c.visible()) && c.state() === 'orb' && await shows('orb'));
+    await js('shellTest.key("h")');
+    check('H hides it too', await until(() => !c.visible()));
+    c.tray({ do: 'size', to: 'card' });
+    check('hidden, the menu\'s Card shows it as the card', await until(() => c.visible()) && await shows('card'));
     await js('shellTest.key("Escape")');
-    check('Esc folds the card', await shows('orb'));
+    await shows('orb');
 
     // the tray's Games… and Settings… open the one window on their tab and leave the orb in its corner
     check('the tray offers Games… next to Settings…', labels(c.trayItems()).join('|').includes('Games…|Settings…'), labels(c.trayItems()));
@@ -308,24 +347,31 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     // ---------- pop out ----------
     c.dispatch('toggle');
     await shows('card');
-    await js('shellTest.click("tg-pop")');
-    check('Pop out flies it into the floating window', await settled('popped') && docked('br', 320, 180), { state: c.state(), bounds: c.win.getBounds() });
+    await js('shellTest.click("tg-card-window")');
+    check('the switch\'s Window flies it into the floating window', await settled('popped') && docked('br', 320, 180), { state: c.state(), bounds: c.win.getBounds() });
     check('…and remembers it', c.store.get().presentation === 'floating');
-    check('the page shows the window, the game under the title bar', await until(async () => { const p = await page(); return p.shown === 'popped' && /tg-host/.test(p.rootIn) && p.topInset === 20; }), await page());
+    check('the page shows the window, the game under the 40 px bar', await until(async () => { const p = await page(); return p.shown === 'popped' && /tg-host/.test(p.rootIn) && p.topInset === 40; }), await page());
     check('popped out, the window takes the clicks', !c.ignoresMouse());
-    items = labels(c.trayItems());
-    check('the tray offers the way back', items.includes('Back to the corner') && !items.includes('Pop out'), items);
+    check('the menu lights Window, and offers Full screen', lit().join() === 'Window' && labels(c.trayItems()).includes('Full screen'), lit());
+    await sizeSwitch(k, 'the window', 'window');
+    const fit = await js<{ name: string; lbl: string; right: number; W: number }>(`(() => ({ name: getComputedStyle(document.querySelector('.tg-bar .tg-name')).display,
+      lbl: getComputedStyle(document.querySelector('#tg-win-games .tg-lbl')).display, right: document.getElementById('tg-win-window').getBoundingClientRect().right, W: innerWidth }))()`);
+    check('the small window shows icons only, and the whole switch fits', (await page()).narrow && fit.name === 'none' && fit.lbl === 'none' && fit.right <= fit.W, fit);
+    mc = c.menus();
+    await js('shellTest.rightClick(".tg-host")');
+    check('a right-click on the game in the window opens the menu', await until(() => c.menus() === mc + 1) && c.state() === 'popped');
     await shot('window-small');
-    await gamesWindow(k, 'the window', 'tg-gamesw');
-    await settingsWindow(k, 'the window', 'tg-gear');
+    await gamesWindow(k, 'the window', 'tg-win-games');
+    await settingsWindow(k, 'the window', 'tg-win-settings');
 
     await game.full?.(k);
 
     // the window's own controls: sizes, the grip, click-through, full screen, opacity, on top, dock
     if (c.state() !== 'popped') { c.dispatch('pop'); await settled('popped'); }
-    await js('shellTest.key("2")');
-    check('2 makes it large (640 × 360) in its corner', await until(() => docked(c.store.get().dock as 'br', 640, 360)), c.win.getBounds());
+    c.tray({ do: 'set', patch: { size: 'large' } });
+    check('the menu\'s Window → Large makes it large (640 × 360) in its corner', await until(() => docked(c.store.get().dock as 'br', 640, 360)), c.win.getBounds());
     check('the game follows the window size', await until(async () => (await page()).root.w === 640));
+    check('large, the bar shows the labels again', await until(async () => !(await page()).narrow));
     c.update({ dock: 'br' } as Partial<S>);
     await until(() => docked('br', 640, 360));
     const b0 = c.win.getBounds();
@@ -334,24 +380,45 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     c.resize({ phase: 'end', x: b0.x - 160, y: b0.y - 90 });
     const s1 = c.store.get();
     check('the grip resizes at 16:9 and remembers the size', s1.size === 'custom' && s1.width === 800 && docked('br', 800, 450), c.win.getBounds());
-    await js('shellTest.key("t")');
-    check('T turns click-through on', await until(async () => c.store.get().clickThrough && (await page()).thru && c.ignoresMouse()));
+    c.tray({ do: 'set', patch: { clickThrough: true } });
+    check('the menu\'s Click-through turns it on', await until(async () => c.store.get().clickThrough && (await page()).thru && c.ignoresMouse()));
+    check('…and shows it ticked', c.trayItems().flatMap((i) => i.submenu || [i]).some((i) => i.label === 'Click-through' && i.checked));
+    c.tray({ do: 'set', patch: { clickThrough: false } });
+    check('…and off again', await until(() => !c.store.get().clickThrough && !c.ignoresMouse()));
     c.hotkey();
-    check('popped out, the shortcut turns it off again', await until(() => !c.store.get().clickThrough && !c.ignoresMouse()));
+    check('popped out, the shortcut hides the window…', await until(() => !c.visible()) && c.state() === 'popped');
+    c.hotkey();
+    check('…and shows it again, still the window', await until(() => c.visible()) && c.state() === 'popped' && docked('br', 800, 450));
     await js('shellTest.key("f")');
     const d = screen.getDisplayMatching(c.win.getBounds()).bounds;
     check('F fills the screen', await until(() => { const b = c.win.getBounds(); return c.isFullscreen() && b.width === d.width && b.height === d.height; }), c.win.getBounds());
-    check('the title bar grows in full screen', await until(async () => (await page()).topInset === 26));
+    check('the bar keeps its 40 px in full screen, and the menu offers Leave full screen', (await page()).topInset === 40 && labels(c.trayItems()).includes('Leave full screen'));
     await js('shellTest.key("Escape")');
-    check('Esc leaves full screen', await until(() => !c.isFullscreen() && docked('br', 800, 450)), c.win.getBounds());
+    check('Esc leaves full screen, and only that', await until(() => !c.isFullscreen() && docked('br', 800, 450)) && c.state() === 'popped', c.win.getBounds());
+    c.tray({ do: 'fullscreen' });
+    check('the menu\'s Full screen fills it too', await until(() => c.isFullscreen()));
+    c.tray({ do: 'fullscreen' });
+    await until(() => !c.isFullscreen() && docked('br', 800, 450));
     c.update({ opacity: 0.6, alwaysOnTop: false } as Partial<S>);
     check('opacity and always-on-top apply to the window', Math.abs(c.win.getOpacity() - 0.6) < 0.02 && !c.win.isAlwaysOnTop());
-    c.update({ opacity: 1, alwaysOnTop: true, dock: 'tl', clickThrough: true } as Partial<S>);
+    c.update({ opacity: 1, alwaysOnTop: true, dock: 'tl' } as Partial<S>);
     check('docking moves it to the chosen corner', docked('tl', 800, 450) && c.win.isAlwaysOnTop(), c.win.getBounds());
 
-    // ---------- back to the corner ----------
-    await js('shellTest.click("tg-dock")');
-    check('↩ Corner flies it home', await settled('orb') && inCorner() && c.store.get().presentation === 'orb', { state: c.state(), bounds: c.win.getBounds() });
+    // ---------- back: Esc goes one size down, the switch's Circle all the way ----------
+    await shot('steps-1-window');
+    await js('shellTest.key("Escape")');
+    check('Esc in the window brings it back to the card in the circle\'s corner', await settled('expanded') && inCorner() && await shows('card')
+      && c.store.get().presentation === 'orb', { state: c.state(), bounds: c.win.getBounds() });
+    check('…the game in the card, the switch lighting Card', /tg-big/.test((await page()).rootIn) && (await page()).size.join() === 'tg-card-card,tg-win-card', await page());
+    await shot('steps-2-esc-card');
+    await js('shellTest.key("Escape")');
+    check('Esc in the card folds it into the circle', await shows('orb') && c.state() === 'orb');
+    await shot('steps-3-esc-circle');
+    await js('shellTest.key("3")');
+    check('3 goes straight from the circle to the window where it was', await settled('popped') && docked('tl', 800, 450), c.win.getBounds());
+    c.update({ clickThrough: true } as Partial<S>);
+    await js('shellTest.click("tg-win-circle")');
+    check('the window\'s Circle flies it home', await settled('orb') && inCorner() && c.store.get().presentation === 'orb', { state: c.state(), bounds: c.win.getBounds() });
     check('…the page shows the orb again, the game in its eye', await shows('orb') && /tg-eye/.test((await page()).rootIn));
     check('…in the corner the window is on top and opaque, and click-through stays with the floating window', c.win.isAlwaysOnTop() && c.win.getOpacity() === 1 && c.ignoresMouse());
     await js('shellTest.clickOrb()');
@@ -361,20 +428,17 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     check('the floating window keeps its own settings', c.store.get().dock === 'tl' && c.store.get().width === 800 && c.store.get().clickThrough, c.store.get());
     c.update({ clickThrough: false } as Partial<S>);
 
-    // Settings' presentation switch, and reduced motion: no flight
-    c.dispatch('toggle');
-    await shows('card');
-    await js('shellTest.key(",")');
-    check(', opens the window on Settings', await k.settingsReady());
-    await k.sjs(`settingsTest.click('[data-pres="floating"]')`);
-    check('Settings → Floating window pops it out', await settled('popped') && c.store.get().presentation === 'floating');
-    await k.sjs('settingsTest.key("Escape")');
-    await until(() => !c.hubWin());
+    // the menu's sizes, and reduced motion: no flight
+    c.tray({ do: 'size', to: 'window' });
+    check('the menu\'s Window pops it out', await settled('popped') && c.store.get().presentation === 'floating');
     c.update({ reducedMotion: true } as Partial<S>);
     c.dispatch('dock');
     check('with reduced motion it docks at once', c.state() === 'orb');
     c.dispatch('pop');
-    check('…and pops out at once', c.state() === 'popped');
+    check('…pops out at once', c.state() === 'popped');
+    c.dispatch('card');
+    check('…and goes back to the card at once', c.state() === 'expanded');
+    c.dispatch('pop');
     c.update({ reducedMotion: false } as Partial<S>);
 
     // ---------- reset ----------
@@ -407,6 +471,23 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
 
 const same = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) =>
   a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+
+// The size switch in the card or the window's bar: Circle, Card and Window, in that order at the far right, each a
+// real button with a tooltip and an accessible name, the current size lit and marked aria-current.
+async function sizeSwitch<S extends ShellSettings>(c: SmokeKit<S>, where: string, now: 'card' | 'window'): Promise<void> {
+  const w = now === 'card' ? 'card' : 'win';
+  const ids = ['circle', 'card', 'window'].map((z) => `tg-${w}-${z}`);
+  const ls = await c.js<({ aria: string; title: string; current: string | null } | null)[]>(`[${ids.map((i) => `shellTest.label(${JSON.stringify(i)})`).join(',')}]`);
+  c.check(`${where}: the switch has Circle, Card and Window, each with a tooltip and an accessible name`, ls.every((l) => !!l && !!l.title && !!l.aria)
+    && /circle/i.test(ls[0]!.aria) && /card/i.test(ls[1]!.aria) && /window/i.test(ls[2]!.aria) && /\(1\)/.test(ls[0]!.title) && /\(3\)/.test(ls[2]!.title), ls);
+  const lit = ls.map((l) => l?.current === 'true');
+  c.check(`${where}: ${now === 'card' ? 'Card' : 'Window'} is lit, and only that`, lit.join() === [false, now === 'card', now === 'window'].join(), ls);
+  const order = await c.js<{ x: number; right: number; W: number; games: number; sets: number }>(`(() => {
+    const r = (id) => document.getElementById(id).getBoundingClientRect(), bar = document.getElementById(${JSON.stringify(ids[2])}).closest('.tg-cbar, .tg-bar').getBoundingClientRect();
+    return { x: [${ids.map((i) => `r(${JSON.stringify(i)}).x`).join(',')}].every((x, n, a) => n === 0 || x > a[n - 1]) ? 1 : 0, right: bar.right - r(${JSON.stringify(ids[2])}).right, W: bar.width,
+      games: r('tg-${w}-games').x, sets: r('tg-${w}-settings').x }; })()`);
+  c.check(`${where}: Games and Settings, then the switch at the far right`, order.x === 1 && order.right >= 0 && order.right < 16 && order.games < order.sets, order);
+}
 
 // How many Games and Settings windows there are: never more than one.
 const hubWindows = () => BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed() && w.webContents.getURL().endsWith('/hub.html')).length;
@@ -481,8 +562,8 @@ async function settingsWindow<S extends ShellSettings>(c: SmokeKit<S>, where: st
   { min, title: w.getTitle() });
   await isolated(c, where);
   const text = await sjs<string>('settingsTest.text()');
-  check(`${where}: it shows Display (the corner, the floating window), Games with the developer switch, and Reset`, /In the corner/.test(text)
-    && /Floating window/.test(text) && /Corner/.test(text) && /Show developer and unapproved games/.test(text) && /Reset to defaults/.test(text), text.slice(0, 600));
+  check(`${where}: it shows Display (the circle's corner, the window), Games with the developer switch, and Reset`, /Circle corner/.test(text)
+    && /Window size/.test(text) && /Click-through/.test(text) && /Show developer and unapproved games/.test(text) && /Reset to defaults/.test(text), text.slice(0, 600));
   const look = await sjs<{ body: number; back: string; sections: number }>('settingsTest.look()');
   const dark = await sjs<boolean>('hubTest.look().dark');
   check(`${where}: in large type on the page in the system's light or dark`, look.body >= 15 && look.back === hubBack(dark) && look.sections >= 2, { look, dark });
@@ -536,7 +617,7 @@ async function hubTabs<S extends ShellSettings>(c: SmokeKit<S>): Promise<void> {
     return !!ts && c.hubTab() === t && ts.every((x) => (x.tab === t) === (x.selected === 'true') && (x.tab === t) === x.shown && (x.tab === t) === (x.tabIndex === 0))
       && (await panel()) === (t === 'settings');
   }, 3000);
-  await js('shellTest.click("tg-set")');
+  await js('shellTest.click("tg-card-settings")');
   check('tabs: Settings opens the window on its Settings tab', await c.settingsReady() && await on('settings'));
   const w = c.hubWin();
   if (!w) return;
@@ -550,13 +631,13 @@ async function hubTabs<S extends ShellSettings>(c: SmokeKit<S>): Promise<void> {
   const one = () => c.hubWin()?.id === w.id && hubWindows() === 1;
 
   // every way in, while it is open, switches the same window
-  await js('shellTest.click("tg-gamesbtn")');
+  await js('shellTest.click("tg-card-games")');
   check('tabs: the Games button switches the open window to Games, the same window', await c.gamesReady() && await on('games') && one(), hubWindows());
   check('tabs: the title follows the tab', await until(() => /^Games · /.test(w.getTitle()), 2000), w.getTitle());
-  await js('shellTest.click("tg-set")');
+  await js('shellTest.click("tg-card-settings")');
   check('tabs: the Settings button switches it back to Settings, the same window', await c.settingsReady() && await on('settings') && one());
   check('tabs: …and the title follows', await until(() => /^Settings · /.test(w.getTitle()), 2000), w.getTitle());
-  await js('shellTest.click("tg-gamesbtn")');
+  await js('shellTest.click("tg-card-games")');
   await on('games');
   await js('shellTest.key(",")');
   check('tabs: , switches the open window to Settings', await on('settings') && one());
@@ -597,11 +678,11 @@ async function hubTabs<S extends ShellSettings>(c: SmokeKit<S>): Promise<void> {
   // closed on Settings, the next Games opens on Games: nothing is remembered beyond the tab asked for
   await gjs('hubTest.key("Escape")');
   check('tabs: Esc closes the window from either tab', await until(async () => !c.hubWin() && !(await panel()), 3000));
-  await js('shellTest.click("tg-gamesbtn")');
+  await js('shellTest.click("tg-card-games")');
   check('tabs: closed on Settings, Games opens it on Games', await c.gamesReady() && await on('games'));
   await gjs('hubTest.key("w", true)');
   await until(() => !c.hubWin());
-  await js('shellTest.click("tg-set")');
+  await js('shellTest.click("tg-card-settings")');
   check('tabs: closed on Games, Settings opens it on Settings', await c.settingsReady() && await on('settings'));
   await gjs('hubTest.click("games")');
   await on('games');

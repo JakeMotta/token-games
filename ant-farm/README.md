@@ -18,28 +18,29 @@ Already running an older Ant Farm? Quit it first: only one runs at a time. Your 
 
 In the corner ([../docs/presentation.md](../docs/presentation.md)):
 
-- **Point at the orb** and a pill grows out of it with the farm's name, the ants and a line of energy, tokens and food.
-- **Click it** (or press Alt+Cmd+T anywhere) for a card with the whole farm, large, with **Pop out ↗**, **Settings** and **–**. Esc, –, a click elsewhere or the shortcut closes it.
-- **Drag it** to another corner, on any display; it settles in the nearest corner and stays there. Settings → Display → Corner and the menu-bar menu move it too.
-- **Pop out**: **Pop out ↗** (or O) turns it into the floating window below; **↩ Corner** in the title bar, or O, sends the farm back to its orb. It remembers which you chose.
-- Hidden (H, or the menu), Alt+Cmd+T or the menu-bar menu brings it back. Over full-screen apps the orb stays out of the way.
+- **Point at the circle** and a small tag beside it shows the farm's name and the ants.
+- **Click it** for a card with the whole farm, large. Its top bar has **Games**, **Settings** and the size switch, **Circle · Card · Window**, at the far right. Esc, Circle or a click elsewhere folds it back.
+- **Drag it** to another corner, on any display; it settles in the nearest corner and stays there. Settings → Display → Circle corner and the menu move it too.
+- **Window** (or 3) turns it into the floating window below; Circle (or 1) sends the farm back to its corner, Card (2, or Esc) back to the card. It starts at the size you left it at.
+- **Right-click** the farm or the circle, or use the menu-bar icon, for the menu: the sizes, Games… and Settings…, the window's size, full screen, always on top and click-through, the circle's corner, hide and quit.
+- Hidden (H, or the menu), Alt+Cmd+T (Alt+Ctrl+T) or the menu-bar menu brings it back. Over full-screen apps the circle stays out of the way.
 
-Popped out, in the floating window:
+In the floating window:
 
-- **Move it**: drag the title bar. Dropped near a corner, it docks there.
-- **Resize it**: drag the grip on the corner away from its dock (it stays 16:9), or press 1 for small (320 × 180) and 2 for large (640 × 360).
-- **Full screen**: F, or the square button. Esc comes back.
-- **Click-through**: T, or the setting, lets clicks pass through to whatever is behind. To get the window back, hold Alt over it, use the menu-bar menu, or press Alt+Cmd+T (Alt+Ctrl+T on Windows) anywhere.
-- Opacity, always on top and click-through apply to the popped-out window only; the orb is always solid and always answers a click.
-- **Settings**: the gear button, or the , key (Cmd+, works too).
+- **Move it**: drag the top bar. Dropped near a corner, it docks there.
+- **Resize it**: drag the grip on the corner away from its dock (it stays 16:9), or choose Small (320 × 180) or Large (640 × 360) in the menu's Window.
+- **Full screen**: F, or the menu. Esc comes back.
+- **Click-through**: in the menu or Settings, lets clicks pass through to whatever is behind. To get the window back, hold Alt over it or use the menu-bar menu.
+- Opacity, always on top and click-through apply to the floating window only; the circle is always solid and always answers a click.
+- **Settings**: the Settings button, or the , key (Cmd+, works too).
 - **Camera** (in the card and the window; in the orb it always shows the whole colony): it follows the colony by itself, until you move it:
   - two fingers on a trackpad pan, 1:1 with your fingers and with no easing;
   - pinch to zoom around the pointer (a mouse wheel zooms too);
   - drag with the mouse to pan; let go while moving and it glides on and slows down;
   - arrow keys pan, + and − zoom.
-  Panning covers more of the map per pixel when zoomed out. Moving the camera yourself pauses the auto camera for 30 seconds; double-click, A, or the target button in the title bar gives it back at once. Reduced motion turns off the zoom easing and the glide. Zoom out stops at a view of about 768 × 432 cells (at most about a hundred chunks on screen, on any map), zoom in at 12 cells on the short side, and the view never leaves the world.
+  Panning covers more of the map per pixel when zoomed out. Moving the camera yourself pauses the auto camera for 30 seconds; double-click, A, or the **Follow** chip that shows at the top of the farm gives it back at once. Reduced motion turns off the zoom easing and the glide. Zoom out stops at a view of about 768 × 432 cells (at most about a hundred chunks on screen, on any map), zoom in at 12 cells on the short side, and the view never leaves the world.
 - **Stats**: I shows what a frame costs: draw time, ticks, chunks on screen, painted and loaded, tile memory and the JS heap.
-- Other keys: H hides it, P cycles palettes, D cycles docking corners (popped out), M cycles map sizes.
+- Other keys: H hides it, P cycles palettes, M cycles map sizes.
 
 ## Settings
 
@@ -150,7 +151,7 @@ Resting in the orb it draws 2 frames a second (4 while tokens arrive, 1 with red
 ```sh
 npm test            # unit tests: simulation, chunks and culling, life on a fake clock, camera input, tokens, palettes, settings, and the shell's
 npm run typecheck
-npm run test:smoke  # launches the app hidden and drives it: the orb, its pill and card, dragging to a corner, pop out and back, the big map, camera, settings, sizes, full screen, feed, saving, game over and a new farm, restart
+npm run test:smoke  # launches the app hidden and drives it: the circle, its name tag and the card, the size switch and the menu, the Follow chip, dragging to a corner, the window and back, the big map, camera, settings, sizes, full screen, feed, saving, game over and a new farm, restart
 npm run shots       # the same, and saves screenshots to shots/
 npm run build:catalog   # the catalog bundle in catalog/; npm run check:catalog checks it is up to date
 npm run bench       # frame time and memory at each map size (-- --save <colony.json> for a saved farm, read only)

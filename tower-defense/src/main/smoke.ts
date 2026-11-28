@@ -82,6 +82,14 @@ export const gameSmoke: GameSmoke<Settings> = {
     check('the ghost never sits on another tower', st.ghost && (st.ghost.why !== '' || Math.abs(st.ghost.cx * CELL + CELL - fx) >= 2 * CELL || Math.abs(st.ghost.cy * CELL + CELL - fy) >= 2 * CELL), st.ghost);
     await js('window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))');
     check('Esc puts the ghost away', !(await state(k)).ghost);
+    // a right-click puts the ghost away too, and only with nothing open is it the shell's menu
+    await click(k, '#bBuild'); await click(k, '#buildTiles [data-t="quill"]');
+    let mc = k.menus();
+    await js('shellTest.rightClick("#view")');
+    check('a right-click puts the ghost away, without the menu', !(await state(k)).ghost && k.menus() === mc, { menus: k.menus() - mc });
+    mc = k.menus();
+    await js('shellTest.rightClick("#view")');
+    check('with nothing open, a right-click on the paper opens the menu', await until(() => k.menus() === mc + 1, 2000), { menus: k.menus() - mc });
 
     // usage: tokens fill the bucket and send wave 1; the finished turn pays gold
     k.transcript({ input_tokens: 1000, output_tokens: 600, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }, 'msg_td_smoke_1');

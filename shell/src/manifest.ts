@@ -21,7 +21,7 @@ export type GameKind = (typeof KINDS)[number];
 export interface GameManifest {
   manifestVersion: 1;
   id: string; // the folder name, lowercase-with-dashes; also the app's name (its settings folder)
-  name: string; // shown in the orb's pill, the window and the menu bar
+  name: string; // shown in the circle's name tag, the top bar of the card and the window, and the menu
   description: string; // one sentence
   author: string;
   version: string; // the game's own version, x.y.z

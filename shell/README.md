@@ -1,7 +1,8 @@
 # The shell
 
-The wrapper every Token Game runs in. It owns everything around the game: where it lives (the corner orb, its
-card, the popped-out window), the menu-bar icon and its menu, the global hotkey, the settings file and the
+The wrapper every Token Game runs in. It owns everything around the game: where it lives (the corner circle, its
+card, the floating window, and the top bar with the size switch they share), the menu-bar icon and its menu (also on a
+right-click), the global hotkey, the settings file and the
 Display settings, the save file, the Claude Code usage feed, the game catalog, the build and the hidden smoke test. A
 game hands it a view and reacts to usage. How it looks and behaves: [docs/presentation.md](../docs/presentation.md).
 
@@ -55,11 +56,11 @@ the hosted adapter (`src/page/hosted-shell.ts`), which runs the same `mountShell
 | `src/main/preload.ts` | The page's bridge (`window.tokenShell`) |
 | `src/main/smoke.ts`, `scripts/smoke.mjs` | The hidden end-to-end test and its runner; a game adds a `GameSmoke` |
 | `src/main/pixel-icon.ts` | A menu-bar icon from a 16 × 16 pixel map |
-| `src/page/shell-page.ts`, `shell.css` | `mountShell`: the orb, its pill and card, dragging, window title bar, the Games and Settings buttons, the Settings sheet (hidden; mirrored into the window's Settings tab), keys |
+| `src/page/shell-page.ts`, `shell.css` | `mountShell`: the circle and its name tag, the card, dragging, the top bar the card and the window share (the name, Games, Settings, the size switch Circle · Card · Window at the far right, the lit one `aria-current`), the Settings sheet (hidden; mirrored into the window's Settings tab), keys, the right-click menu |
 | `src/orb.ts` | Corners, display choice, the orb's window bounds and shapes, the nearest corner after a drag (pure) |
-| `src/modes.ts` | The states `orb → hover → expanded → popping → popped → docking` and their scale and shape (pure) |
+| `src/modes.ts` | The states `orb → hover → expanded → popping → popped → docking`, and `returning` (window → card), their scale, shape and size (`sizeOf`), and what each size button sends (`goTo`) (pure) |
 | `src/settings.ts` | Shared settings, `settingsKit` |
-| `src/tray.ts` | The menu-bar menu (pure, so it's testable) |
+| `src/tray.ts` | The one menu, for the menu-bar icon and a right-click (pure, so it's testable) |
 | `src/feed/claude-code.ts`, `src/events.ts` | Watches Claude Code transcripts; the `UsageEvent` format (counts only) |
 | `src/geometry.ts` | Floating window sizes, corners, docking |
 | `src/manifest.ts` | `game.json` checker ([docs/manifest.md](../docs/manifest.md)) |
@@ -79,7 +80,7 @@ the hosted adapter (`src/page/hosted-shell.ts`), which runs the same `mountShell
 ## Testing
 
 `test/*.test.ts` runs with every game's `npm test`. `npm run test:smoke` in a game runs the shell's checks (the orb's
-corner, the pill, the card, dragging, hiding and the hotkey, pop out, docking, sizes, tray, hotkey, display changes, the Games and Settings window from the Games buttons, the tray and Settings (its size and place, one window, its isolation, large type, light and dark, the game left as it was, Esc, Cmd+W and Close), its Settings tab the same way (from the Settings buttons, `,` and the tray; a click and a slider in it change the real settings), its tabs (roles and names, the active tab's look, every way in switching the one window, clicks, Cmd+1/Cmd+2, the arrows, Home and End, no tab remembered), Reset, restart) and then the
+corner, the name tag, the card, the size switch in both bars (lit, tooltips, accessible names, its place), the menu's items and right-clicks, the keys 1/2/3, Esc, G, H and F, dragging, hiding and the hotkey, the window, docking, sizes, display changes, the Games and Settings window from the Games buttons, the tray and Settings (its size and place, one window, its isolation, large type, light and dark, the game left as it was, Esc, Cmd+W and Close), its Settings tab the same way (from the Settings buttons, `,` and the tray; a click and a slider in it change the real settings), its tabs (roles and names, the active tab's look, every way in switching the one window, clicks, Cmd+1/Cmd+2, the arrows, Home and End, no tab remembered), Reset, restart) and then the
 game's. A third run, `catalog`, installs the sample Token Garden from a signed test
 registry through the Games tab (an agent asks, the player approves there), proves it has no Node, files or network, feeds it a transcript line, lists a newer version and checks the update badge, the tray's count and the approved update, switches back and
 removes it (approved in the Settings tab's Games section). A fourth, `catalog-game` (when the game has a `catalog/` bundle), does the same for the game's own bundle through the

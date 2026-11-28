@@ -131,7 +131,7 @@
 
   // ../shell/src/page/hosted-shell.ts
   var SLIDERS = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1 3h10M1 9h10"/><circle cx="4" cy="3" r="1.4" fill="currentColor"/><circle cx="8" cy="9" r="1.4" fill="currentColor"/></svg>';
-  var SHELL_KEYS2 = /* @__PURE__ */ new Set(["Escape", ",", "o", "h", "1", "2", "f", "t", "d"]);
+  var SHELL_KEYS2 = /* @__PURE__ */ new Set(["Escape", "1", "2", "3", "g", ",", "f", "h"]);
   var kit = settingsKit({ defaults: () => ({}), sanitize: () => ({}), reset: () => ({}) });
   function configureHosted(o) {
     kit = o.settings;
@@ -161,7 +161,7 @@
     const gear = el("button", "tg-wbtn tgh-gear", SLIDERS);
     gear.id = "tgh-gear";
     gear.title = `${game.name} settings`;
-    tools.append(...game.barButtons || [], gear);
+    tools.append(gear);
     const panel = el("div", "tg-panel tgh-panel");
     panel.id = "tgh-panel";
     panel.hidden = true;
@@ -2973,6 +2973,7 @@
     pointerDown = false;
   });
   canvas.addEventListener("contextmenu", (e) => {
+    if (sel === null && ghost === null && buildAt === null) return;
     e.preventDefault();
     closeAll();
   });

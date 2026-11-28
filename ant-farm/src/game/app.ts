@@ -79,6 +79,7 @@ function target(w: number, h: number): Cam {
 function manual(): void {
   auto = false;
   pausedUntil = performance.now() + FOLLOW_PAUSE_MS;
+  placeFollow();
   followBtn.hidden = false;
 }
 function follow(): void {
@@ -434,7 +435,7 @@ function panScreen(dx: number, dy: number): void {
   wake(true);
 }
 
-// The keys the shell leaves to the game (it keeps Esc , O H, and 1 2 F T D in the window).
+// The keys the shell leaves to the game (it keeps Esc, 1 2 3, G , H, and F in the window).
 function onKey(k: string): boolean {
   const step = Math.min(vw(), vh()) * 0.2;
   if (k === 'p') C.set({ palette: cycle(PALETTE_IDS, S.palette) });
@@ -451,11 +452,20 @@ function onKey(k: string): boolean {
   return true;
 }
 
+// Follow: a small chip in the farm itself, at the top in the middle (clear of the shell's bar and its resize grip),
+// shown only while the camera has wandered off the colony.
 const followBtn = document.createElement('button');
-followBtn.className = 'tg-wbtn'; followBtn.id = 'bFollow'; followBtn.hidden = true;
+followBtn.className = 'af-follow'; followBtn.id = 'bFollow'; followBtn.hidden = true;
 followBtn.title = 'Follow the colony again (A, or double-click)';
-followBtn.innerHTML = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6" cy="6" r="3.2"/><circle cx="6" cy="6" r=".9" fill="currentColor"/><path d="M6 .8v1.8M6 9.4v1.8M.8 6h1.8M9.4 6h1.8"/></svg>';
-followBtn.onclick = () => follow();
+followBtn.setAttribute('aria-label', 'Follow the colony again');
+followBtn.innerHTML = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6" cy="6" r="3.2"/><circle cx="6" cy="6" r=".9" fill="currentColor"/><path d="M6 .8v1.8M6 9.4v1.8M.8 6h1.8M9.4 6h1.8"/></svg>Follow';
+followBtn.onclick = (e) => { e.stopPropagation(); follow(); };
+followBtn.addEventListener('pointerdown', (e) => e.stopPropagation()); // a press on the chip is not a pan
+followBtn.addEventListener('dblclick', (e) => e.stopPropagation());
+farm.append(followBtn);
+function placeFollow(): void {
+  followBtn.style.top = (C ? C.topInset : 0) + 8 + 'px';
+}
 
 // Two fingers on a trackpad pan, 1:1 and at once; a pinch zooms around the pointer; a mouse wheel zooms; dragging pans
 // and glides on when let go. Double-click (or A) lets the camera follow the colony again. In the orb the farm is
@@ -510,7 +520,6 @@ mountShell<Settings>({
   root: farm,
   icon: ANT,
   settingsPanel: $('afPanel'),
-  barButtons: [followBtn],
   keysHelp: 'Two fingers pan · pinch or wheel zooms · drag pans · double-click follows the colony · arrows pan · + − zoom · A follow · P palette · M map size · I stats',
   async start(ctx) {
     C = ctx; S = ctx.settings; dark = ctx.dark; feed = ctx.feed; smoke = ctx.smoke; scale = ctx.scale;
@@ -519,7 +528,7 @@ mountShell<Settings>({
   },
   onEvent,
   onSettings(s) { S = s; if (C) applySettings(); },
-  onScale(s) { scale = s; farm.classList.toggle('mini', s === 'mini'); if (shownOver) overEl.hidden = s === 'mini'; snap = true; if (C) wake(true); },
+  onScale(s) { scale = s; farm.classList.toggle('mini', s === 'mini'); placeFollow(); if (shownOver) overEl.hidden = s === 'mini'; snap = true; if (C) wake(true); },
   onDark(d) { dark = d; wake(); },
   onFeed(f) { feed = f; if (C.panelOpen) renderPanel(); },
   onPanel(open) { if (open) { renderPanel(); lastThumbs = 0; } wake(); },

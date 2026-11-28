@@ -23,7 +23,7 @@ stops on any problem. Change this page, the checker and its test together.
 |---|---|
 | `manifestVersion` | `1` |
 | `id` | lowercase letters, digits and single dashes, starting with a letter; equals the folder name; at most 40 characters |
-| `name` | shown in the orb's pill, the window and the menu bar; at most 40 characters |
+| `name` | shown in the circle's name tag, the card's and the window's top bar and the menu; at most 40 characters |
 | `description` | one sentence, at most 200 characters |
 | `author` | a name, at most 80 characters |
 | `version` | the game's version, `x.y.z` |

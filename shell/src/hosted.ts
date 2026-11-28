@@ -34,7 +34,7 @@ export interface TokenGameApi {
   save(data: unknown): Promise<boolean>; // a JSON object, at most 1 MB
   getSettings(): Promise<Record<string, unknown>>;
   setSettings(s: Record<string, unknown>): Promise<boolean>; // a JSON object, at most 64 KB
-  setStatus(s: HostedStatus): void; // the number on the orb and the line in its pill
+  setStatus(s: HostedStatus): void; // the number on the circle and the status line in the card and the window
   popOut(): void;
   dock(): void;
   // The game is about to be closed: save now. The shell waits for the handlers (and the saves they start) for up to

@@ -2,9 +2,9 @@
 // in a corner of the screen and becomes the floating overlay window when it pops out; the menu-bar icon; the global
 // shortcut; the settings and save files; and the Claude Code feed.
 //
-// There is only ever one window running the game, so one game instance: the orb, its hover pill, the open card and
-// the popped-out window are the same page moving its game between places. In the corner the window is as big as the
-// open card and lets every click through except over the orb (or the pill, or the open card).
+// There is only ever one window running the game, so one game instance: the circle (the orb), the open card and the
+// popped-out window are the same page moving its game between places. In the corner the window is as big as the open
+// card and lets every click through except over the circle or the open card.
 //
 // It also hosts the game catalog (docs/catalog.md): the shell's own game is the built-in one, and a catalog game the
 // player installed and chose runs in its place, sandboxed (catalog-host.ts). The catalog and Settings share one
@@ -33,8 +33,8 @@ import { smokeRegistry, type SmokeRegistry } from './smoke-registry';
 import { normalizeEvent, type UsageEvent } from '../events';
 import { watchClaudeCode, type Feed } from '../feed/claude-code';
 import { boundsFor, clampToArea, GAMES_WINDOW, gamesWindowBounds, gripCorner, nearestDock, resizeFromGrip, type Area } from '../geometry';
-import { initialState, next, PAGE_EVENTS, presentationOf, type Scale, type ShellEvent, type ShellState } from '../modes';
-import { contains, nearestCorner, onOrb, orbCenter, orbGeo, orbWindowBounds, pickDisplay, shapeRect, type Corner, type OrbGeo } from '../orb';
+import { goTo, initialState, next, PAGE_EVENTS, presentationOf, type Scale, type ShellEvent, type ShellState, type Size } from '../modes';
+import { nearestCorner, onOrb, orbCenter, orbGeo, orbWindowBounds, pickDisplay, type Corner, type OrbGeo } from '../orb';
 import { ENTRY_TAB, HUB_LABELS, isHubTab, openHub, pickTab, settingsShowing, type HubState, type HubTab } from '../hub';
 import { settingsKit, type Bounds, type GameSettingsSchema, type ShellSettings } from '../settings';
 import { trayMenu, type TrayAction, type TrayItem } from '../tray';
@@ -42,7 +42,7 @@ import { runSmoke, type GameSmoke } from './smoke';
 import { SaveFile, SettingsStore } from './store';
 
 export interface ShellConfig<G extends object> {
-  name: string; // shown in the menu, the tray and the orb's pill
+  name: string; // shown in the menu, the tray and the circle's name tag
   dir: string; // the built game: index.html, preload.js, shell.css (usually __dirname)
   settings: GameSettingsSchema<G>; // the game's own settings, stored beside the shell's
   icon(scale: 1 | 2): Buffer; // the menu-bar icon: 16 × 16 (× scale) BGRA pixels, black on clear (a template image)
@@ -79,7 +79,8 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
   let lastPlaced: Bounds | null = null; // the bounds we set last, so our own moves aren't taken for the player's
   let fullPrev: Bounds | null = null; // the window before full screen
   let moveTimer: NodeJS.Timeout | null = null, flyTimer: NodeJS.Timeout | null = null, poll: NodeJS.Timeout | null = null;
-  let inside = false; // the pointer is over the orb (or the pill)
+  let inside = false; // the pointer is over the circle
+  let menus = 0; // right-click menus asked for (the smoke test counts them: it never shows one)
   let drag: { start: Bounds; x: number; y: number; grip: Corner; area: Area; last: Bounds } | null = null;
   let orbDrag: { start: Bounds; x: number; y: number } | null = null;
   let ignoring = false; // clicks pass through the window
@@ -192,8 +193,8 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     };
     if (now === 'popping') fly(setupFloating);
     else if (now === 'popped' && prev !== 'popping') setupFloating(); // reduced motion: no flight
-    else if (now === 'docking') { setFullscreen(false); fly(setupOrb); }
-    else if (now === 'orb' && prev === 'popped') { setFullscreen(false); setupOrb(); }
+    else if (now === 'docking' || now === 'returning') { setFullscreen(false); fly(setupOrb); }
+    else if ((now === 'orb' || now === 'expanded') && prev === 'popped') { setFullscreen(false); setupOrb(); } // reduced motion
     if (now === 'orb' && prev !== 'hover') inside = false; // the pointer is looked at afresh
     if (now !== 'popping' && now !== 'popped') applyMouse();
     if (now === 'expanded' && !SMOKE) win?.focus();
@@ -238,7 +239,8 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
   // ---------- the pointer over the orb ----------
 
   // Electron can't tell when the pointer is over a see-through, click-through window, so while the orb rests in its
-  // corner the pointer is checked ten times a second (only then: never with the card open, popped out or hidden).
+  // corner the pointer is checked ten times a second (only then: never with the card open, popped out or hidden). Over
+  // the circle a name tag shows beside it; the circle itself doesn't change shape.
   function syncPoll(): void {
     const want = !SMOKE && visible() && (state === 'orb' || state === 'hover') && !orbDrag;
     if (want && !poll) poll = setInterval(pointer, POLL_MS);
@@ -248,7 +250,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
   function pointer(): void {
     if (!win) return;
     const p = screen.getCursorScreenPoint();
-    const over = state === 'hover' ? contains(shapeRect('pill', geo), p, 4) : onOrb(geo, p);
+    const over = onOrb(geo, p);
     if (over === inside) return;
     inside = over;
     applyMouse();
@@ -373,6 +375,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
       pop: () => { if (!floating()) dispatch('pop'); },
       dock: () => { if (floating()) dispatch('dock'); },
       key: (k) => send(CH.hostedKey, k),
+      menu: contextMenu,
     });
   }
 
@@ -501,6 +504,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
       win.setAlwaysOnTop(true, 'screen-saver');
       place({ x: d.x, y: d.y, width: d.width, height: d.height });
       send(CH.command, 'fullscreen-on' satisfies ShellCommand);
+      refreshTray();
     } else if (!on && fullPrev) {
       const back = fullPrev;
       fullPrev = null;
@@ -508,6 +512,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
       place(back);
       placeForSettings();
       send(CH.command, 'fullscreen-off' satisfies ShellCommand);
+      refreshTray();
     }
     return !!fullPrev;
   }
@@ -575,27 +580,34 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     });
   }
 
-  const trayItems = (): TrayItem[] => trayMenu(store.get(), { name: cfg.name, visible: visible(), state, shortcut: SHORTCUT, updates: catalog ? updatesIn(catalog.shown()) : 0 });
+  const trayItems = (): TrayItem[] => trayMenu(store.get(), {
+    name: cfg.name, visible: visible(), state, shortcut: SHORTCUT, full: !!fullPrev,
+    status: status.count ? status.count + ' ' + status.title : '', updates: catalog ? updatesIn(catalog.shown()) : 0,
+  });
+
+  // Circle, Card or Window, from the menu: shows a hidden game first, then goes to that size.
+  function goSize(to: Size): void {
+    if (!visible()) showWindow(to !== 'circle');
+    const ev = goTo(state, to);
+    if (ev) dispatch(ev);
+  }
 
   function runAction(a: TrayAction): void {
     if (a.do === 'toggle-window') toggleWindow();
-    else if (a.do === 'open') { showWindow(); dispatch('toggle'); }
-    else if (a.do === 'pop') { showWindow(); dispatch('pop'); }
-    else if (a.do === 'dock') { showWindow(); dispatch('dock'); }
+    else if (a.do === 'size') goSize(a.to);
     else if (a.do === 'games') showHub(ENTRY_TAB['tray-games']);
     else if (a.do === 'settings') showHub(ENTRY_TAB['tray-settings']);
     else if (a.do === 'fullscreen') { if (state === 'popped') { showWindow(true); setFullscreen(!fullPrev); } }
-    else if (a.do === 'reset') resetAll();
     else if (a.do === 'quit') app.quit();
     else if (a.do === 'set') { if (a.patch.dock || a.patch.size) setFullscreen(false); update(a.patch as Partial<S>); }
   }
 
-  // The shortcut: shows a hidden game; in the corner it opens and closes the card; popped out it switches
-  // click-through (the way back when the window lets every click pass).
-  function hotkey(): void {
-    if (!visible()) showWindow(floating());
-    else if (floating()) update({ clickThrough: !store.get().clickThrough } as Partial<S>);
-    else dispatch('toggle');
+  // A right-click on the circle, the card or the window: the same menu as the menu-bar icon's, beside the pointer.
+  function contextMenu(): void {
+    if (!win) return;
+    menus++;
+    if (SMOKE) return; // never on screen in the smoke test
+    Menu.buildFromTemplate(toElectron(trayItems())).popup({ window: win });
   }
 
   function refreshTray(): void {
@@ -619,6 +631,8 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     syncPoll(); refreshTray();
   }
 
+  // The shortcut (and the menu's Hide or Show) shows or hides the game, whatever its size. Click-through is in the
+  // menu; holding Alt (Option) over a click-through window still takes it back.
   function toggleWindow(): void {
     if (visible()) hideWindow(); else showWindow(true);
   }
@@ -680,9 +694,10 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
       const clean = { count: String(st?.count ?? '').slice(0, 12), title: String(st?.title ?? '').slice(0, 24) };
       if (clean.count === status.count && clean.title === status.title) return;
       status = clean;
-      tray?.setToolTip(cfg.name + (status.count ? ` · ${status.count} ${status.title}` : ''));
+      refreshTray(); // the menu's first line and the tooltip
     });
     on(CH.hide, hideWindow);
+    on(CH.menu, contextMenu);
     on(CH.quit, () => app.quit());
     // The built-in game's save: untouched while a catalog game is hosted in its place.
     handle(CH.save, (data: unknown) => !hosted && save.save(data));
@@ -738,7 +753,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     if (SMOKE) {
       runSmoke<S>({
         win: win!, store, outDir: SMOKE, claudeDir: CLAUDE_DIR, update: (p) => update(p), resize: onResizeDrag, orbDrag: onOrbDrag,
-        isFullscreen: () => !!fullPrev, dispatch, displays: onDisplays, state: () => state, geo: () => geo, trayItems, tray: runAction, hotkey, status: () => status,
+        isFullscreen: () => !!fullPrev, dispatch, displays: onDisplays, state: () => state, geo: () => geo, trayItems, tray: runAction, hotkey: toggleWindow, menus: () => menus, status: () => status,
         visible, show: () => showWindow(), hide: hideWindow, ignoresMouse: () => ignoring, hubWin: () => (hubOpen() ? hubWin : null),
         hubTab: () => hub.tab,
         catalog: {
@@ -752,7 +767,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     tray.setToolTip(cfg.name);
     if (!IS_MAC) tray.on('click', toggleWindow);
     refreshTray();
-    globalShortcut.register(SHORTCUT, hotkey);
+    globalShortcut.register(SHORTCUT, toggleWindow);
   });
   app.on('window-all-closed', () => app.quit());
   // A hosted game saves before the app goes (its onHide): quitting waits for it, briefly (HIDE_WAIT_MS at most).

@@ -15,6 +15,7 @@ const api: ShellApi = {
   intent: (ev) => ipcRenderer.send(CH.intent, ev),
   status: (st) => ipcRenderer.send(CH.status, st),
   hide: () => ipcRenderer.send(CH.hide),
+  menu: () => ipcRenderer.send(CH.menu),
   quit: () => ipcRenderer.send(CH.quit),
   saveGame: (d) => ipcRenderer.invoke(CH.save, d),
   saveGameNow: (d) => ipcRenderer.sendSync(CH.saveNow, d),

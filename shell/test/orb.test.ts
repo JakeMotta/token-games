@@ -1,7 +1,7 @@
 // Where the orb goes: the display it picks, its corner, the shapes that grow out of it, and where a dropped orb settles.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CARD, cardSize, contains, CORNERS, EDGE, nearestCorner, ORB, orbCenter, orbGeo, orbWindowBounds, onOrb, pickDisplay, PILL, shapeRect, type DisplayLike } from '../src/orb';
+import { CARD, cardSize, contains, CORNERS, EDGE, nearestCorner, ORB, orbCenter, orbGeo, orbWindowBounds, onOrb, pickDisplay, shapeRect, type DisplayLike } from '../src/orb';
 
 // A 14" MacBook Pro (37 pt menu bar, Dock at the bottom) and a 27" display to its left and a little higher.
 const mbp: DisplayLike = { id: 1, bounds: { x: 0, y: 0, width: 1512, height: 982 }, workArea: { x: 0, y: 37, width: 1512, height: 870 } };
@@ -27,19 +27,17 @@ test('the window sits EDGE in from each corner of the work area, never under the
   for (const c of CORNERS) assert.ok(inside(at[c], a), c);
 });
 
-test('the orb, the pill and the card all hug the same corner, so each grows out of the orb', () => {
+test('the orb and the card hug the same corner, so the card grows out of the orb', () => {
   for (const c of CORNERS) {
-    const g = orbGeo(ext, c), w = orbWindowBounds(g), orb = shapeRect('orb', g), pill = shapeRect('pill', g), card = shapeRect('card', g);
-    assert.deepEqual([orb.width, orb.height, pill.width, pill.height], [ORB, ORB, PILL, ORB]);
+    const g = orbGeo(ext, c), w = orbWindowBounds(g), orb = shapeRect('orb', g), card = shapeRect('card', g);
+    assert.deepEqual([orb.width, orb.height], [ORB, ORB]);
     assert.deepEqual(card, w, 'the open card fills the window');
     const left = c[1] === 'l', top = c[0] === 't';
-    for (const r of [orb, pill]) {
-      assert.equal(left ? r.x : r.x + r.width, left ? w.x : w.x + w.width, c + ' side');
-      assert.equal(top ? r.y : r.y + r.height, top ? w.y : w.y + w.height, c + ' top or bottom');
-    }
+    assert.equal(left ? orb.x : orb.x + orb.width, left ? w.x : w.x + w.width, c + ' side');
+    assert.equal(top ? orb.y : orb.y + orb.height, top ? w.y : w.y + w.height, c + ' top or bottom');
     // the orb's corner of the screen is the corner its shapes share
     const ctr = orbCenter(g);
-    assert.ok(contains(orb, ctr) && contains(pill, ctr) && contains(card, ctr), c);
+    assert.ok(contains(orb, ctr) && contains(card, ctr), c);
   }
 });
 

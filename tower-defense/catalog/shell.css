@@ -1,23 +1,24 @@
-/* The shell's page: the orb in a corner of the screen (its hover pill and open card), the popped-out window's frame
-   and the Settings sheet. The window's colours come from the game (ctx.setTheme) as --g-* variables; the orb keeps
-   the shell's own quiet colours, light or dark with the system. Sizes match orb.ts, which the main process uses to
-   know where the orb is. */
+/* The shell's page: the circle in a corner of the screen (the orb, with a name tag on hover), the open card, the
+   popped-out window's frame and the Settings sheet. The card and the window share one top bar: Games, Settings and
+   the size switch (Circle · Card · Window) at the far right. The window's colours come from the game (ctx.setTheme)
+   as --g-* variables; the circle and the card keep the shell's own quiet colours, light or dark with the system.
+   Sizes match orb.ts, which the main process uses to know where the circle is. */
 html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; }
 body.tg {
   --g-back: #1b1c1f; --g-bar: rgba(30, 31, 35, 0.7); --g-ink: #a2a5ab; --g-dim: #76797f; --g-hot: #8f8671; --g-task: #8f8671;
   --g-line: rgba(255, 255, 255, 0.07); --g-panel: rgba(27, 28, 31, 0.94);
   --o-back: rgba(244, 243, 239, 0.96); --o-ink: #3b3d42; --o-dim: #7b7e85; --o-edge: rgba(0, 0, 0, 0.09); --o-btn: #ffffff;
-  --o-ring: #8fa67b; --o-warm: #c39a66; --o-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
+  --o-ring: #8fa67b; --o-warm: #c39a66; --o-shadow: 0 6px 18px rgba(0, 0, 0, 0.16); --o-well: rgba(0, 0, 0, 0.06); --o-lit: #d9c995; --o-on: #2b2a26;
   --tg-ease: cubic-bezier(0.25, 0.9, 0.3, 1); /* calm: no overshoot */
   font: 11px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   transition: opacity 0.12s;
 }
 body.tg.tg-dark { --o-back: rgba(24, 25, 28, 0.95); --o-ink: #d9dadf; --o-dim: #92959c; --o-edge: rgba(255, 255, 255, 0.08); --o-btn: #222327;
-  --o-ring: #7f9670; --o-warm: #b58d5c; --o-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); }
+  --o-ring: #7f9670; --o-warm: #b58d5c; --o-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); --o-well: rgba(0, 0, 0, 0.3); --o-lit: #cbbb88; }
 body.tg-flying { opacity: 0; }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--g-hot); outline-offset: 1px; }
 
-/* ---------- the orb, the pill and the card: one shape hugging the window's corner ---------- */
+/* ---------- the circle and the card: one shape hugging the window's corner ---------- */
 .tg-shape { position: absolute; width: 64px; height: 64px; box-sizing: border-box; overflow: hidden; border-radius: 32px;
   background: var(--o-back); color: var(--o-ink); border: 1px solid var(--o-edge); box-shadow: var(--o-shadow); cursor: pointer;
   transition: width 0.32s var(--tg-ease), height 0.32s var(--tg-ease), border-radius 0.32s var(--tg-ease); }
@@ -25,7 +26,7 @@ body[data-corner="tl"] .tg-shape { top: 0; left: 0; }
 body[data-corner="tr"] .tg-shape { top: 0; right: 0; }
 body[data-corner="bl"] .tg-shape { bottom: 0; left: 0; }
 body[data-corner="br"] .tg-shape, body:not([data-corner]) .tg-shape { bottom: 0; right: 0; }
-body[data-state="expanded"] .tg-shape { border-radius: 26px; cursor: default; }
+body[data-state="expanded"] .tg-shape, body[data-state="returning"] .tg-shape { border-radius: 18px; cursor: default; }
 body[data-state="popping"] .tg-shape, body[data-state="popped"] .tg-shape { display: none; }
 body.tg-dragging .tg-shape { cursor: grabbing; }
 
@@ -44,39 +45,61 @@ body[data-corner="br"] .tg-orb, body:not([data-corner]) .tg-orb { bottom: 0; rig
   background: rgba(0, 0, 0, 0.55); color: #e6e7ea; font: 600 9.5px/13px -apple-system, system-ui, sans-serif; text-align: center;
   font-variant-numeric: tabular-nums; pointer-events: none; }
 .tg-badge:empty { display: none; }
-body[data-state="expanded"] .tg-orb { opacity: 0; pointer-events: none; transition: opacity 0.15s; }
+body[data-state="expanded"] .tg-orb, body[data-state="returning"] .tg-orb { opacity: 0; pointer-events: none; transition: opacity 0.15s; }
 
-/* the hover pill: the name and the status beside the orb */
-.tg-pillc { position: absolute; top: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0;
-  opacity: 0; pointer-events: none; transition: opacity 0.15s; white-space: nowrap; }
-body[data-corner$="l"] .tg-pillc { left: 70px; right: 14px; }
-body[data-corner$="r"] .tg-pillc, body:not([data-corner]) .tg-pillc { left: 16px; right: 70px; text-align: right; }
-body[data-state="hover"] .tg-pillc { opacity: 1; transition: opacity 0.2s 0.12s; }
-.tg-pname { display: flex; align-items: center; gap: 5px; font-size: 12px; min-width: 0; }
-body[data-corner$="r"] .tg-pname, body:not([data-corner]) .tg-pname { justify-content: flex-end; }
-.tg-pname b { font-weight: 600; }
-.tg-pcount { color: var(--o-dim); font-variant-numeric: tabular-nums; }
-.tg-pillc .tg-line { color: var(--o-dim); font-size: 10.5px; font-variant-numeric: tabular-nums; }
-.tg-pillc .tg-line b { color: var(--o-ink); font-weight: 600; }
+/* the name tag: beside the circle while the pointer is over it (the circle keeps its shape; only it takes clicks) */
+.tg-tag { position: absolute; max-width: calc(100% - 84px); box-sizing: border-box; padding: 6px 11px; border-radius: 11px; white-space: nowrap;
+  background: var(--o-back); color: var(--o-ink); border: 1px solid var(--o-edge); box-shadow: var(--o-shadow);
+  opacity: 0; pointer-events: none; transition: opacity 0.15s; }
+body[data-corner^="t"] .tg-tag { top: 11px; }
+body[data-corner^="b"] .tg-tag, body:not([data-corner]) .tg-tag { bottom: 11px; }
+body[data-corner$="l"] .tg-tag { left: 74px; }
+body[data-corner$="r"] .tg-tag, body:not([data-corner]) .tg-tag { right: 74px; text-align: right; }
+body[data-state="hover"]:not(.tg-dragging) .tg-tag { opacity: 1; transition: opacity 0.2s 0.12s; }
+.tg-tname { display: flex; align-items: center; gap: 6px; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; }
+body[data-corner$="r"] .tg-tname, body:not([data-corner]) .tg-tname { justify-content: flex-end; }
+.tg-tn { display: flex; align-items: center; gap: 5px; }
+.tg-tn b, .tg-cname b { font-weight: 600; }
+/* a long name gives way to the buttons with an ellipsis (its full text is the tooltip) */
+.tg-cname b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tg-tcount { color: var(--o-dim); font-variant-numeric: tabular-nums; }
+.tg-tcount:not(:empty)::before { content: '· '; }
+.tg-thint { color: var(--o-dim); font-size: 10.5px; margin-top: 1px; }
 .tg-icon { display: flex; align-items: center; }
 .tg-icon:empty { display: none; }
 .tg-icon svg { display: block; }
 
-/* the open card: the game big, a row of buttons on the side of the orb's corner */
-.tg-card { position: absolute; inset: 0; padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;
+/* the open card: the top bar (the name, Games, Settings, the size switch), the game, the status line at the bottom */
+.tg-card { position: absolute; inset: 0; padding: 0 8px; box-sizing: border-box; display: flex; flex-direction: column;
   opacity: 0; pointer-events: none; transition: opacity 0.15s; }
-body[data-corner^="t"] .tg-card { flex-direction: column-reverse; }
 body[data-state="expanded"] .tg-card { opacity: 1; pointer-events: auto; transition: opacity 0.25s 0.14s; }
-.tg-big { flex: 1; min-height: 0; border-radius: 17px; overflow: hidden; position: relative; background: var(--g-back); }
-.tg-cbar { flex: none; height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 4px; color: var(--o-dim); white-space: nowrap; overflow: hidden;
-  font-variant-numeric: tabular-nums; }
-.tg-cbar b { color: var(--o-ink); font-weight: 600; }
+.tg-cbar { flex: none; height: 44px; display: flex; align-items: center; gap: 6px; padding: 0 0 0 6px; color: var(--o-ink); white-space: nowrap; min-width: 0; }
+.tg-cname { display: flex; align-items: center; gap: 6px; font-size: 13.5px; min-width: 0; overflow: hidden; }
+.tg-big { flex: 1; min-height: 0; border-radius: 12px; overflow: hidden; position: relative; background: var(--g-back); }
+.tg-cline { flex: none; height: 30px; line-height: 30px; padding: 0 6px; color: var(--o-dim); white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 11.5px; }
+.tg-cline b { color: var(--o-ink); font-weight: 600; }
 .tg-line { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.tg-sp { flex: 1; }
-.tg-pill { font: inherit; font-size: 11.5px; border: 1px solid var(--o-edge); background: var(--o-btn); color: var(--o-ink); border-radius: 7px; padding: 3px 9px; cursor: pointer; flex: none; }
-.tg-pill:hover { border-color: var(--o-dim); }
-.tg-shrink { width: 24px; padding: 3px 0; text-align: center; }
-body.tg-news .tg-cbar .tg-line::after, body.tg-news .tg-pillc .tg-line::after { content: "  ·  " attr(data-news); }
+.tg-sp { flex: 1; min-width: 0; }
+body.tg-news .tg-cline::after { content: "  ·  " attr(data-news); }
+
+/* the controls the card and the window share: Games, Settings, a separator, the size switch at the far right */
+.tg-ctl { display: flex; align-items: center; gap: 2px; flex: none; -webkit-app-region: no-drag;
+  --c-ink: var(--o-ink); --c-dim: var(--o-dim); --c-hover: var(--o-well); --c-well: var(--o-well); --c-lit: var(--o-lit); --c-on: var(--o-on); --c-line: var(--o-edge); --c-dot: var(--o-warm); }
+.tg-bar .tg-ctl { --c-ink: var(--g-ink); --c-dim: var(--g-dim); --c-hover: var(--g-line); --c-well: rgba(0, 0, 0, 0.22); --c-lit: var(--g-hot); --c-on: var(--g-back);
+  --c-line: var(--g-line); --c-dot: var(--g-hot); }
+.tg-btn { height: 32px; min-width: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 9px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--c-ink); font: 500 14px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif; cursor: pointer; flex: none; }
+.tg-btn:hover { background: var(--c-hover); }
+.tg-btn svg { width: 15px; height: 15px; display: block; flex: none; }
+.tg-sep { width: 1px; height: 22px; margin: 0 6px; background: var(--c-line); flex: none; }
+.tg-switch { display: flex; gap: 2px; padding: 2px; border-radius: 10px; background: var(--c-well); flex: none; }
+.tg-switch .tg-btn { width: 34px; min-width: 34px; height: 30px; padding: 0; border-radius: 8px; color: var(--c-dim); }
+.tg-switch .tg-btn:hover { color: var(--c-ink); }
+.tg-switch .tg-btn.on { background: var(--c-lit); color: var(--c-on); cursor: default; }
+/* a small window shows icons only: no name, no labels */
+body.tg-narrow .tg-bar .tg-lbl, body.tg-narrow .tg-bar .tg-name { display: none; }
+body.tg-narrow .tg-bar .tg-btn:not(.tg-switch .tg-btn) { padding: 0; }
+body.tg-narrow .tg-bar .tg-sep { margin: 0 3px; }
 
 /* ---------- the popped-out window ---------- */
 .tg-win { position: fixed; inset: 0; border-radius: 10px; overflow: hidden; background: var(--g-back); outline: 1px solid var(--g-line); outline-offset: -1px;
@@ -86,41 +109,36 @@ body.tg-full .tg-win { border-radius: 0; outline: none; }
 .tg-host { position: absolute; inset: 0; }
 /* the game's root fills whichever host holds it */
 .tg-root { position: absolute; inset: 0; overflow: hidden; }
-.tg-bar { position: absolute; left: 0; right: 0; top: 0; height: 20px; display: flex; align-items: center; gap: 6px; padding: 0 4px 0 8px;
-  background: var(--g-bar); color: var(--g-ink); -webkit-app-region: drag; font: 10.5px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  transition: opacity 0.25s; z-index: 3; }
-body.tg-full .tg-bar { height: 26px; font-size: 12px; }
-body.tg-calm .tg-bar { opacity: 0.55; }
-.tg-win:hover .tg-bar, body.tg-grab .tg-bar, body.tg-open .tg-bar { opacity: 1; }
+.tg-bar { position: absolute; left: 0; right: 0; top: 0; height: 40px; box-sizing: border-box; display: flex; align-items: center; gap: 7px; padding: 0 4px 0 12px;
+  background: var(--g-bar); color: var(--g-ink); -webkit-app-region: drag; font: 12px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  transition: opacity 0.25s; z-index: 3; white-space: nowrap; }
+/* the bar fades while the pointer is away (more so when nothing is happening), and comes back when pointed at */
+.tg-bar { opacity: 0.6; }
+body.tg-calm .tg-bar { opacity: 0.35; }
+.tg-win:hover .tg-bar, body.tg-grab .tg-bar, body.tg-open .tg-bar, .tg-bar:focus-within { opacity: 1; }
 body.tg-thru .tg-bar { opacity: 0; }
 body.tg-thru.tg-grab .tg-bar { opacity: 1; }
 .tg-pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--g-dim); opacity: 0.6; flex: none; transition: background 0.3s, box-shadow 0.3s; }
 .tg-pulse.hot { background: var(--g-hot); box-shadow: 0 0 6px var(--g-hot); opacity: 1; }
 .tg-pulse.task { background: var(--g-task); box-shadow: 0 0 6px var(--g-task); opacity: 1; }
-.tg-name { font-weight: 600; white-space: nowrap; }
+.tg-name { font: 600 13px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; white-space: nowrap; }
 .tg-meter { color: var(--g-dim); white-space: nowrap; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .tg-meter b { color: var(--g-hot); font-weight: 600; }
 .tg-evt { color: var(--g-hot); white-space: nowrap; opacity: 0; transition: opacity 0.4s; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .tg-evt.show { opacity: 1; }
-.tg-wbtns { margin-left: auto; display: flex; gap: 1px; flex: none; -webkit-app-region: no-drag; }
 .tg-wbtn { min-width: 18px; height: 16px; display: grid; place-items: center; border: 0; border-radius: 3px; background: transparent; color: var(--g-dim);
   font: 600 9.5px/1 ui-monospace, Menlo, monospace; cursor: pointer; padding: 0; }
-.tg-wbtn.tg-text { padding: 0 5px; white-space: nowrap; }
-.tg-wbtn.tg-gamesbtn { display: flex; align-items: center; }
-body.tg-full .tg-wbtn { min-width: 24px; height: 20px; font-size: 11px; }
 .tg-wbtn:hover { background: var(--g-line); color: var(--g-ink); }
 .tg-wbtn.on { color: var(--g-hot); }
 .tg-wbtn svg { width: 11px; height: 11px; display: block; }
-body.tg-full .tg-wbtn svg { width: 13px; height: 13px; }
 .tg-wbtn[hidden] { display: none; }
-
 /* the resize grip sits on the corner away from the dock */
 .tg-grip { position: absolute; width: 14px; height: 14px; cursor: nwse-resize; touch-action: none; opacity: 0; transition: opacity 0.2s; z-index: 2; -webkit-app-region: no-drag; }
 .tg-grip::before { content: ''; position: absolute; inset: 3px; border: 0 solid var(--g-ink); opacity: 0.6; }
 .tg-grip.br { right: 0; bottom: 0; } .tg-grip.br::before { border-width: 0 2px 2px 0; border-bottom-right-radius: 4px; }
-.tg-grip.tl { left: 0; top: 20px; } .tg-grip.tl::before { border-width: 2px 0 0 2px; border-top-left-radius: 4px; }
+.tg-grip.tl { left: 0; top: 40px; } .tg-grip.tl::before { border-width: 2px 0 0 2px; border-top-left-radius: 4px; }
 .tg-grip.bl { left: 0; bottom: 0; cursor: nesw-resize; } .tg-grip.bl::before { border-width: 0 0 2px 2px; border-bottom-left-radius: 4px; }
-.tg-grip.tr { right: 0; top: 20px; cursor: nesw-resize; } .tg-grip.tr::before { border-width: 2px 2px 0 0; border-top-right-radius: 4px; }
+.tg-grip.tr { right: 0; top: 40px; cursor: nesw-resize; } .tg-grip.tr::before { border-width: 2px 2px 0 0; border-top-right-radius: 4px; }
 .tg-win:hover .tg-grip, body.tg-grab .tg-grip { opacity: 1; }
 body.tg-full .tg-grip, body.tg-thru:not(.tg-grab) .tg-grip { display: none; }
 .tg-sizetag { position: absolute; right: 6px; bottom: 5px; font: 10px ui-monospace, Menlo, monospace; color: var(--g-ink);
@@ -131,8 +149,7 @@ body.tg-full .tg-grip, body.tg-thru:not(.tg-grab) .tg-grip { display: none; }
 .tg-panel { position: absolute; top: 0; right: 0; bottom: 0; width: min(100%, 300px); box-sizing: border-box; overflow-y: auto; z-index: 4;
   padding: 6px 10px 10px; background: var(--g-panel); border-left: 1px solid var(--g-line); color: var(--g-ink); cursor: default;
   -webkit-app-region: no-drag; scrollbar-width: thin; scrollbar-color: var(--g-line) transparent; }
-.tg-win > .tg-panel { top: 20px; }
-body.tg-full .tg-win > .tg-panel { top: 26px; }
+.tg-win > .tg-panel { top: 40px; }
 .tg-panel[hidden] { display: none; }
 .tg-panel section + section { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--g-line); }
 .tg-panel h4 { margin: 0 0 5px; font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--g-dim); }
@@ -178,6 +195,4 @@ body.tg-rm, body.tg-rm * { transition: none !important; animation: none !importa
 .tg-chips button.tg-yes { border-color: var(--g-hot); color: var(--g-hot); }
 
 /* the Games buttons (the card's and the title bar's): a quiet dot when an installed game has an update */
-body.tg-update .tg-gamesbtn::after { content: ''; display: inline-block; width: 6px; height: 6px; margin-left: 5px; vertical-align: 1px; border-radius: 50%;
-  background: var(--o-warm); }
-body.tg-update .tg-wbtn.tg-gamesbtn::after { width: 5px; height: 5px; margin-left: 4px; background: var(--g-hot); }
+body.tg-update .tg-gamesbtn::after { content: ''; display: inline-block; width: 6px; height: 6px; margin-left: -1px; border-radius: 50%; background: var(--c-dot); }

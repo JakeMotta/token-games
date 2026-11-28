@@ -131,7 +131,7 @@
 
   // ../shell/src/page/hosted-shell.ts
   var SLIDERS = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1 3h10M1 9h10"/><circle cx="4" cy="3" r="1.4" fill="currentColor"/><circle cx="8" cy="9" r="1.4" fill="currentColor"/></svg>';
-  var SHELL_KEYS2 = /* @__PURE__ */ new Set(["Escape", ",", "o", "h", "1", "2", "f", "t", "d"]);
+  var SHELL_KEYS2 = /* @__PURE__ */ new Set(["Escape", "1", "2", "3", "g", ",", "f", "h"]);
   var kit = settingsKit({ defaults: () => ({}), sanitize: () => ({}), reset: () => ({}) });
   function configureHosted(o) {
     kit = o.settings;
@@ -161,7 +161,7 @@
     const gear = el("button", "tg-wbtn tgh-gear", SLIDERS);
     gear.id = "tgh-gear";
     gear.title = `${game.name} settings`;
-    tools.append(...game.barButtons || [], gear);
+    tools.append(gear);
     const panel = el("div", "tg-panel tgh-panel");
     panel.id = "tgh-panel";
     panel.hidden = true;
@@ -3344,6 +3344,7 @@
   function manual() {
     auto = false;
     pausedUntil = performance.now() + FOLLOW_PAUSE_MS;
+    placeFollow();
     followBtn.hidden = false;
   }
   function follow() {
@@ -3712,12 +3713,22 @@
     return true;
   }
   var followBtn = document.createElement("button");
-  followBtn.className = "tg-wbtn";
+  followBtn.className = "af-follow";
   followBtn.id = "bFollow";
   followBtn.hidden = true;
   followBtn.title = "Follow the colony again (A, or double-click)";
-  followBtn.innerHTML = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6" cy="6" r="3.2"/><circle cx="6" cy="6" r=".9" fill="currentColor"/><path d="M6 .8v1.8M6 9.4v1.8M.8 6h1.8M9.4 6h1.8"/></svg>';
-  followBtn.onclick = () => follow();
+  followBtn.setAttribute("aria-label", "Follow the colony again");
+  followBtn.innerHTML = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6" cy="6" r="3.2"/><circle cx="6" cy="6" r=".9" fill="currentColor"/><path d="M6 .8v1.8M6 9.4v1.8M.8 6h1.8M9.4 6h1.8"/></svg>Follow';
+  followBtn.onclick = (e) => {
+    e.stopPropagation();
+    follow();
+  };
+  followBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  followBtn.addEventListener("dblclick", (e) => e.stopPropagation());
+  farm.append(followBtn);
+  function placeFollow() {
+    followBtn.style.top = (C ? C.topInset : 0) + 8 + "px";
+  }
   view.addEventListener("wheel", (e) => {
     if (mini()) return;
     e.preventDefault();
@@ -3780,7 +3791,6 @@
     root: farm,
     icon: ANT,
     settingsPanel: $("afPanel"),
-    barButtons: [followBtn],
     keysHelp: "Two fingers pan · pinch or wheel zooms · drag pans · double-click follows the colony · arrows pan · + − zoom · A follow · P palette · M map size · I stats",
     async start(ctx) {
       C = ctx;
@@ -3800,6 +3810,7 @@
     onScale(s) {
       scale = s;
       farm.classList.toggle("mini", s === "mini");
+      placeFollow();
       if (shownOver) overEl.hidden = s === "mini";
       snap = true;
       if (C) wake(true);

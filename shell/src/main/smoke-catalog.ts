@@ -442,7 +442,7 @@ function gamesWindow<S extends ShellSettings>(k: SmokeKit<S>) {
     games: async () => { const view = await gj<any>('gamesTest.view()'); return view ? { view, text: (await gj<string>('gamesTest.text()')) || '' } : null; },
     click: (name: string) => gj<boolean>(`gamesTest.click(${JSON.stringify(name)})`),
     openGames: async () => {
-      if (!k.hubWin() || k.hubTab() !== 'games') await k.js('shellTest.click("tg-gamesw")').catch(() => null);
+      if (!k.hubWin() || k.hubTab() !== 'games') await k.js('shellTest.click("tg-win-games")').catch(() => null);
       return k.gamesReady();
     },
   };

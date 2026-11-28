@@ -159,8 +159,10 @@ dropped) is kept in `colony.json` on this computer only and never uploaded. The 
 
 ## The always-on window
 
-Since the shared shell, the farm starts as an orb in a corner of the screen and this window is what **Pop out** gives
-([presentation.md](presentation.md)); everything below still describes the popped-out window.
+Since the shared shell, the farm starts as a circle in a corner of the screen and this window is what **Window** in the
+size switch gives ([presentation.md](presentation.md)); the shell now draws the top bar and its controls (Games, Settings,
+Circle · Card · Window), full screen and click-through are in the menu, and the farm's own **Follow** chip sits at
+the top of the farm. The rest below describes the first overlay's window.
 
 The farm is meant to sit in a corner of the screen while an agent works, like a small desktop widget. In the real app this is a native window that is transparent, frameless and always on top, and does not take focus. `prototype/ant-farm/overlay.html` mocks it up over a fake Mac desktop:
 

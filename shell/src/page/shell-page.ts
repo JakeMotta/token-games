@@ -1,12 +1,15 @@
-// The shell's side of a game's page: builds the corner orb (its round live view, the hover pill, the open card), the
-// popped-out window's frame (title bar, grip, size tag) and the Settings sheet, moves the game's root between them,
+// The shell's side of a game's page: builds the circle in the corner (its round live view and the name tag beside it
+// on hover), the open card, the popped-out window's frame (title bar, grip, size tag) and the Settings sheet, moves the game's root between them,
 // and handles the keys and settings every game shares. The Settings sheet stays hidden in this page: the Settings
 // tab of the Games and Settings window, one window centred on the screen, shows a copy of it and sends the player's
 // input back (mirror.ts). A game's page calls mountShell(game) once and does the rest through the GameContext it gets
 // back in start().
 //
-// The main process decides the state (modes.ts); this page only shows it and sends intents (click, Esc, Pop out, …)
-// and, while the orb is dragged, the pointer in screen coordinates.
+// The main process decides the state (modes.ts); this page only shows it and sends intents (click, Esc, the size
+// switch, …) and, while the circle is dragged, the pointer in screen coordinates. The card and the window share one
+// top bar: Games and Settings, then the size switch, Circle · Card · Window, always at the far right and lit on the
+// size it is. Everything else (hide, full screen, window size, corner, always on top, click-through, quit) is in the
+// game's menu: the menu-bar icon, or a right-click on the game or the circle.
 //
 // When the player chose a catalog game (docs/catalog.md), the page hosts it instead of its own game: the built-in game
 // never starts (its save stays as it is), the orb shows the catalog game's icon and count, and in the card and the
@@ -16,31 +19,36 @@ import type { Game, GameContext, GameStatusLine, Theme } from '../game';
 import { gripCorner } from '../geometry';
 import { gamesPanel } from './games-panel';
 import { replay, snapshot } from './mirror';
-import { scaleOf, shapeOf, type Scale, type ShellEvent, type ShellState } from '../modes';
+import { goTo, scaleOf, shapeOf, sizeOf, type Scale, type ShellEvent, type ShellState, type Size } from '../modes';
 import { CARD, shapeSize } from '../orb';
-import { DOCKS, type ShellSettings } from '../settings';
+import type { ShellSettings } from '../settings';
 
 declare global { interface Window { tokenShell: ShellApi<any>; shellTest?: Record<string, unknown>; gameTest?: Record<string, unknown> } }
 
-const BAR = 20, BAR_FULL = 26, GRIP = 14;
+const BAR = 40, GRIP = 14, NARROW = 420; // the window's bar; below NARROW px wide it shows icons only
 const FADE_MS = 130; // the page fades out this long before the window flies (main waits a little longer)
 const DRAG_PX = 4; // the orb follows the pointer only once it has moved this far, so a click stays a click
 const MIRROR_MS = 80, THUMBS_MS = 1000; // the Settings tab's copy follows changes this soon; canvases once a second
-const SHELL_KEYS = 'Esc closes · , settings · O pop out / back to the corner · H hide · popped out: 1 small · 2 large · F full screen · T click-through · D dock';
+const SHELL_KEYS = '1 circle · 2 card · 3 window · Esc one size down · G games · , settings · H hide · in the window: F full screen · right-click for the menu';
 
 const GEAR = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6" cy="6" r="1.8"/><path d="M6 .8v1.6M6 9.6v1.6M.8 6h1.6M9.6 6h1.6M2.3 2.3l1.1 1.1M8.6 8.6l1.1 1.1M2.3 9.7l1.1-1.1M8.6 3.4l1.1-1.1"/></svg>';
-const FULL = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 4.5V1h3.5M11 4.5V1H7.5M1 7.5V11h3.5M11 7.5V11H7.5"/></svg>';
-const HIDE = '<svg viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.5"><path d="M2.5 6h7"/></svg>';
+const GRID = '<svg viewBox="0 0 16 16" fill="currentColor" shape-rendering="crispEdges"><rect x="2" y="2" width="5" height="5"/><rect x="9" y="2" width="5" height="5"/><rect x="2" y="9" width="5" height="5"/><rect x="9" y="9" width="5" height="5" opacity=".55"/></svg>';
+// The size switch: the same three buttons, in the same place, in the card and the window
+const SIZES: { to: Size; label: string; tip: string; say: string; icon: string }[] = [
+  { to: 'circle', label: 'Circle', tip: 'Minimize to circle (1)', say: 'minimize to circle', icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="3.6"/></svg>' },
+  { to: 'card', label: 'Card', tip: 'Show as card (2)', say: 'show as card', icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="4" width="11" height="8.5" rx="2.2"/><path d="M2.5 6.8h11"/></svg>' },
+  { to: 'window', label: 'Window', tip: 'Expand to window (3)', say: 'expand to window', icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x=".9" y="1.8" width="14.2" height="12.4" rx="1.4"/><path d="M.9 5h14.2" stroke-width="2.4"/></svg>' },
+];
 
 const DISPLAY_HTML = `
 <h4>Display</h4>
-<div class="tg-row">Lives <span class="tg-chips" id="tg-pres"><button data-pres="orb">In the corner</button><button data-pres="floating">Floating window</button></span></div>
-<div class="tg-row">Corner <span class="tg-docks" id="tg-corners">
+<div class="tg-row">Circle corner <span class="tg-docks" id="tg-corners">
   <button data-corner="tl" title="Top left">◰</button><button data-corner="tr" title="Top right">◳</button>
   <button data-corner="bl" title="Bottom left">◱</button><button data-corner="br" title="Bottom right">◲</button></span></div>
 <p class="tg-note" id="tg-presNote"></p>
+<h4>Window</h4>
 <div class="tg-floatset">
-  <div class="tg-chips" id="tg-sizes"><button data-size="small">Small</button><button data-size="large">Large</button><button id="tg-pFull">Full screen</button></div>
+  <div class="tg-row">Window size <span class="tg-chips" id="tg-sizes"><button data-size="small">Small</button><button data-size="large">Large</button></span></div>
   <p class="tg-note" id="tg-sizeNote"></p>
   <div class="tg-row">Dock <span class="tg-docks" id="tg-docks">
     <button data-dock="tl" title="Top left">◰</button><button data-dock="tr" title="Top right">◳</button>
@@ -65,44 +73,66 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
 
   // ---------- the DOM ----------
 
-  // In the corner: one shape that is the orb at rest, the pill on hover and the card when open, always hugging the
-  // corner of the screen, so each grows out of the orb.
+  // The game's name, its icon and the controls every size shares: Games and Settings, a separator, and the size
+  // switch at the far right. The card and the window each get their own copy, at the same place.
+  const names: HTMLElement[] = []; // the name in the tag and the card (a hosted catalog game puts its own in them)
+  const nameEl = (cls: string) => {
+    const n = el('span', cls), t = el('b');
+    names.push(n);
+    t.textContent = game.name;
+    n.title = game.name;
+    n.append(el('span', 'tg-icon', game.icon || ''), t);
+    return n;
+  };
+  const sizeBtns: HTMLButtonElement[] = [], gamesBtns: HTMLButtonElement[] = [];
+  function controls(where: 'card' | 'win'): HTMLElement {
+    const box = el('span', 'tg-ctl');
+    const btn = (id: string, tip: string, html: string, cls = '') => {
+      const b = el<HTMLButtonElement>('button', 'tg-btn' + (cls ? ' ' + cls : ''), html);
+      b.id = `tg-${where}-${id}`; b.title = tip; b.setAttribute('aria-label', tip);
+      return b;
+    };
+    const games = btn('games', 'Games: switch, install and update games (G)', GRID + '<span class="tg-lbl">Games</span>', 'tg-gamesbtn');
+    const sets = btn('settings', 'Settings (,)', GEAR + '<span class="tg-lbl">Settings</span>');
+    games.onclick = (e) => { e.stopPropagation(); api.openGames(); };
+    sets.onclick = (e) => { e.stopPropagation(); togglePanel(true); };
+    gamesBtns.push(games);
+    const sw = el('span', 'tg-switch');
+    sw.setAttribute('role', 'group');
+    sw.setAttribute('aria-label', 'Size');
+    for (const z of SIZES) {
+      const b = btn(z.to, z.tip, z.icon);
+      b.setAttribute('aria-label', z.label + ': ' + z.say);
+      b.dataset.go = z.to;
+      b.onclick = (e) => { e.stopPropagation(); go(z.to); };
+      sizeBtns.push(b);
+      sw.append(b);
+    }
+    box.append(games, sets, el('span', 'tg-sep'), sw);
+    return box;
+  }
+
+  // In the corner: one shape that is the circle at rest and the card when open, always hugging the corner of the
+  // screen, so the card grows out of the circle. Pointing at the circle shows a name tag beside it.
   const shape = el('div', 'tg-shape');
   shape.id = 'tg-shape';
   const orb = el('div', 'tg-orb'), eye = el('div', 'tg-eye'), badge = el('span', 'tg-badge');
   orb.append(eye, badge);
-  const pill = el('div', 'tg-pillc'), pillName = el('div', 'tg-pname'), pillLine = el('div', 'tg-line');
-  const pillTitle = el('b'), pillCount = el('span', 'tg-pcount');
-  pillTitle.textContent = game.name;
-  pillName.append(el('span', 'tg-icon', game.icon || ''), pillTitle, pillCount);
-  pill.append(pillName, pillLine);
-  const card = el('div', 'tg-card'), big = el('div', 'tg-big'), cardBar = el('div', 'tg-cbar');
-  const popBtn = el<HTMLButtonElement>('button', 'tg-pill', 'Pop out ↗'), setBtn = el<HTMLButtonElement>('button', 'tg-pill', 'Settings');
-  const gamesBtn = el<HTMLButtonElement>('button', 'tg-pill tg-gamesbtn', 'Games');
-  const shrinkBtn = el<HTMLButtonElement>('button', 'tg-pill tg-shrink', '–');
-  popBtn.id = 'tg-pop'; popBtn.title = 'Pop out into a floating window (O)';
-  setBtn.id = 'tg-set'; setBtn.title = 'Settings (,)';
-  gamesBtn.id = 'tg-gamesbtn'; gamesBtn.title = 'Games: switch, install and update games';
-  shrinkBtn.id = 'tg-shrink'; shrinkBtn.title = 'Back to the orb (Esc)';
-  const cardLine = el('span', 'tg-line');
-  cardBar.append(cardLine, el('span', 'tg-sp'), popBtn, gamesBtn, setBtn, shrinkBtn);
-  card.append(big, cardBar);
-  shape.append(card, pill, orb);
+  const tag = el('div', 'tg-tag'), tagName = el('div', 'tg-tname'), tagCount = el('span', 'tg-tcount');
+  tag.id = 'tg-tag';
+  tagName.append(nameEl('tg-tn'), tagCount);
+  tag.append(tagName, el('div', 'tg-thint', 'Click to open · drag to move'));
+  const card = el('div', 'tg-card'), big = el('div', 'tg-big'), cardBar = el('div', 'tg-cbar'), cardLine = el('div', 'tg-line tg-cline');
+  cardBar.append(nameEl('tg-cname'), el('span', 'tg-sp'), controls('card'));
+  card.append(cardBar, big, cardLine);
+  shape.append(card, orb);
 
   const win = el('div', 'tg-win');
   win.id = 'tg-win';
   const bar = el('div', 'tg-bar'), pulseDot = el('span', 'tg-pulse'), name = el('span', 'tg-name'), meter = el('span', 'tg-meter'), evt = el('span', 'tg-evt');
   bar.id = 'tg-bar';
   name.textContent = game.name;
-  const wbtns = el('span', 'tg-wbtns');
-  const wbtn = (id: string, title: string, html: string) => { const b = el<HTMLButtonElement>('button', 'tg-wbtn', html); b.id = id; b.title = title; return b; };
-  const dockBtn = wbtn('tg-dock', 'Back to the corner (O)', '↩ Corner');
-  dockBtn.classList.add('tg-text');
-  const fullBtn = wbtn('tg-full', 'Full screen (F; Esc leaves)', FULL), gearBtn = wbtn('tg-gear', 'Settings (,)', GEAR), hideBtn = wbtn('tg-hide', 'Hide to the menu bar (H)', HIDE);
-  const gamesWBtn = wbtn('tg-gamesw', 'Games: switch, install and update games', 'Games');
-  gamesWBtn.classList.add('tg-text', 'tg-gamesbtn');
-  wbtns.append(...(game.barButtons || []), dockBtn, fullBtn, gamesWBtn, gearBtn, hideBtn);
-  bar.append(pulseDot, name, meter, evt, wbtns);
+  bar.append(pulseDot, name, meter, evt, el('span', 'tg-sp'), controls('win'));
   const host = el('div', 'tg-host'), grip = el('div', 'tg-grip br'), sizetag = el('div', 'tg-sizetag');
   grip.title = 'Drag to resize (keeps 16:9)';
   win.append(host, bar, grip, sizetag);
@@ -119,7 +149,7 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   const display = el('section', 'tg-display', DISPLAY_HTML);
   const foot = el('section', 'tg-foot', '<div class="tg-chips"><button id="tg-reset">Reset to defaults</button><button id="tg-close">Close</button></div><p class="tg-note tg-keys" id="tg-keys"></p>');
   panel.append(games.el, display, foot);
-  body.append(shape, win, panel);
+  body.append(shape, tag, win, panel);
   body.classList.add('tg');
   game.root.classList.add('tg-root');
 
@@ -135,7 +165,7 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   let hosted: HostedBoot | null = null, placeRaf = 0, settingsOpen = false;
   const status = { count: '', title: '', lead: '', line: '', warm: false };
 
-  const topInset = (): number => (scale === 'window' ? (full ? BAR_FULL : BAR) : 0);
+  const topInset = (): number => (scale === 'window' ? BAR : 0);
   const intent = (ev: ShellEvent) => api.intent(ev);
 
   const ctx: GameContext<S> = {
@@ -178,11 +208,13 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   function showMode(): void {
     const st = mode.state;
     body.dataset.corner = mode.geo.corner;
-    body.classList.toggle('tg-flying', st === 'popping' || st === 'docking');
+    const flying = st === 'popping' || st === 'docking' || st === 'returning';
+    body.classList.toggle('tg-flying', flying);
     clearTimeout(flyT);
+    showSize();
     placeHosted();
     // flying: fade out, then swap the layout while the window moves (with reduced motion there is no flight)
-    if ((st === 'popping' || st === 'docking') && !S?.reducedMotion) flyT = window.setTimeout(() => layout(st), FADE_MS);
+    if (flying && !S?.reducedMotion) flyT = window.setTimeout(() => layout(st), FADE_MS);
     else layout(st);
   }
 
@@ -195,7 +227,7 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
       shape.style.width = s.width + 'px';
       shape.style.height = s.height + 'px';
     }
-    const sc = scaleOf(st === 'docking' ? 'orb' : st);
+    const sc = scaleOf(st === 'docking' ? 'orb' : st === 'returning' ? 'expanded' : st);
     const where = sc === 'window' ? host : sc === 'expanded' ? big : eye;
     if (game.root.parentElement !== where) where.appendChild(game.root);
     if (sc !== 'window' && full) setFull(false);
@@ -212,9 +244,8 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
     hosted = h;
     builtIn.root.remove();
     for (const n of ownSettings) n.remove();
-    for (const b of builtIn.barButtons || []) b.remove();
-    pillTitle.textContent = name.textContent = h.name;
-    (pillName.querySelector('.tg-icon') as HTMLElement).textContent = '';
+    name.textContent = h.name;
+    for (const n of names) { n.querySelector('b')!.textContent = h.name; n.querySelector('.tg-icon')!.textContent = ''; }
     $('tg-keys').textContent = 'Keys: ' + SHELL_KEYS;
     const root = el('div', 'tg-hosted');
     if (h.icon) { const img = el<HTMLImageElement>('img', 'tg-hicon'); img.src = h.icon; img.alt = ''; root.append(img); }
@@ -254,13 +285,13 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
     if (s.count !== status.count || s.title !== status.title) {
       status.count = s.count; status.title = s.title;
       badge.textContent = s.count;
-      pillCount.textContent = s.count ? s.count + ' ' + s.title : '';
+      tagCount.textContent = s.count ? s.count + ' ' + s.title : '';
       orb.title = game.name + (s.count ? ': ' + s.count + ' ' + s.title : '');
       api.status({ count: s.count, title: s.title });
     }
     if (lead === status.lead && line === status.line) return;
     status.lead = lead; status.line = line;
-    for (const host of [meter, pillLine, cardLine]) {
+    for (const host of [meter, cardLine]) {
       host.textContent = '';
       if (lead) { const b = document.createElement('b'); b.textContent = lead; host.append(b, line ? ' · ' : ''); }
       host.append(line);
@@ -272,7 +303,7 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
     evt.textContent = text;
     evt.classList.add('show');
     body.classList.add('tg-news');
-    pillLine.dataset.news = cardLine.dataset.news = text;
+    cardLine.dataset.news = text;
     clearTimeout(evtT);
     evtT = window.setTimeout(() => {
       evt.classList.remove('show');
@@ -309,7 +340,6 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   }
 
   function buildPanel(): void {
-    for (const b of $('tg-pres').querySelectorAll<HTMLButtonElement>('[data-pres]')) b.onclick = () => set({ presentation: b.dataset.pres } as Partial<S>);
     for (const b of $('tg-sizes').querySelectorAll<HTMLButtonElement>('[data-size]')) b.onclick = () => set({ size: b.dataset.size } as Partial<S>);
     for (const b of $('tg-docks').querySelectorAll<HTMLButtonElement>('[data-dock]')) b.onclick = () => set({ dock: b.dataset.dock } as Partial<S>);
     for (const b of $('tg-corners').querySelectorAll<HTMLButtonElement>('[data-corner]')) b.onclick = () => set({ corner: b.dataset.corner } as Partial<S>);
@@ -319,23 +349,16 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
       const c = $<HTMLInputElement>('tg-' + id);
       c.onchange = () => set({ [id]: c.checked } as Partial<S>);
     }
-    $('tg-pFull').onclick = () => toggleFull();
     $('tg-reset').onclick = () => { void ctx.reset(); };
     $('tg-close').onclick = () => togglePanel(false);
   }
 
   function renderPanel(): void {
     if (!S || !settingsOpen) return;
-    const floating = scale === 'window';
-    for (const b of $('tg-pres').querySelectorAll<HTMLButtonElement>('[data-pres]')) b.classList.toggle('on', b.dataset.pres === S.presentation);
     for (const b of $('tg-corners').querySelectorAll<HTMLButtonElement>('[data-corner]')) b.classList.toggle('on', b.dataset.corner === S.corner);
-    $('tg-presNote').textContent = S.presentation === 'orb'
-      ? 'An orb in a corner of the screen: hover for the status, click to open, drag it to another corner. Pop out for a window you can move and resize.'
-      : 'A floating window. ↩ Corner puts it back in its corner.';
+    $('tg-presNote').textContent = 'Drag the circle to another corner, or pick one here. The size switch (Circle, Card, Window) is at the top right of the card and the window.';
     for (const b of $('tg-sizes').querySelectorAll<HTMLButtonElement>('[data-size]')) b.classList.toggle('on', !full && b.dataset.size === S.size);
-    $('tg-pFull').classList.toggle('on', full);
-    ($('tg-pFull') as HTMLButtonElement).disabled = !floating;
-    $('tg-sizeNote').textContent = full ? 'Full screen: Esc or F to leave.'
+    $('tg-sizeNote').textContent = full ? 'Full screen: Esc or F to leave. Full screen is in the menu (right-click the game).'
       : S.size === 'custom' ? `Your size: ${S.width} × ${Math.round((S.width * 9) / 16)} (drag the corner grip)` : 'Drag the corner grip for any size in between.';
     for (const b of $('tg-docks').querySelectorAll<HTMLButtonElement>('[data-dock]')) b.classList.toggle('on', b.dataset.dock === S.dock);
     const op = $<HTMLInputElement>('tg-opacity');
@@ -387,7 +410,7 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   function showUpdates(n: number): void {
     body.classList.toggle('tg-update', n > 0);
     const t = n ? `Games: ${n === 1 ? 'an update is' : n + ' updates are'} available` : 'Games: switch, install and update games';
-    gamesBtn.title = gamesWBtn.title = t;
+    for (const b of gamesBtns) { b.title = t + ' (G)'; b.setAttribute('aria-label', t); }
   }
 
   function toggleFull(on = !full): void {
@@ -405,7 +428,7 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
 
   // ---------- input ----------
 
-  // The orb and the pill: a click opens the card; a drag (past DRAG_PX) carries the orb to another corner, the main
+  // The circle: a click opens the card; a drag (past DRAG_PX) carries it to another corner, the main
   // process moving the window under the pointer and settling it in the nearest corner on release.
   let press: { id: number; x: number; y: number; dragging: boolean } | null = null;
   shape.addEventListener('pointerdown', (e) => {
@@ -432,19 +455,30 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   };
   shape.addEventListener('pointerup', (e) => release(e, false));
   shape.addEventListener('pointercancel', (e) => release(e, true));
-  shrinkBtn.onclick = (e) => { e.stopPropagation(); intent('escape'); };
-  popBtn.onclick = (e) => { e.stopPropagation(); intent('pop'); };
-  // The Games buttons open the Games and Settings window on its Games tab (or bring it to the front and switch to it);
-  // the card and the game stay as they are.
-  setBtn.onclick = (e) => { e.stopPropagation(); togglePanel(true); };
-  gamesBtn.onclick = (e) => { e.stopPropagation(); api.openGames(); };
-  dockBtn.onclick = () => intent('dock');
-  fullBtn.onclick = () => toggleFull();
-  gearBtn.onclick = () => togglePanel(true);
-  gamesWBtn.onclick = () => api.openGames();
-  hideBtn.onclick = () => hideWindow();
 
-  const cycle = <T,>(list: readonly T[], cur: T): T => list[(list.indexOf(cur) + 1) % list.length];
+  // The size switch, the keys 1 2 3 and the menu: Circle, Card or Window from wherever it is.
+  function go(to: Size): void {
+    const ev = goTo(mode.state, to);
+    if (ev) intent(ev);
+  }
+  function showSize(): void {
+    const now = sizeOf(mode.state);
+    for (const b of sizeBtns) {
+      const on = b.dataset.go === now;
+      b.classList.toggle('on', on);
+      if (on) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+    }
+  }
+
+  // A right-click anywhere on the circle, the card or the window opens the game's menu (the menu-bar icon's), unless
+  // the game took the right-click for itself (preventDefault in its own handler, which runs first).
+  let menus = 0;
+  window.addEventListener('contextmenu', (e) => {
+    if (e.defaultPrevented) return;
+    e.preventDefault();
+    menus++;
+    api.menu();
+  });
 
   window.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'q') { api.quit(); return; }
@@ -453,17 +487,17 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
     const tgt = e.target as HTMLInputElement;
     if (tgt.tagName === 'INPUT' && tgt.type === 'range' && e.key.startsWith('Arrow')) return;
     const k = e.key.length === 1 ? e.key.toLowerCase() : e.key, inWin = scale === 'window';
+    // Esc closes the top thing first: full screen, then one size down (the window to the card, the card to the circle)
     if (k === 'Escape') {
       if (full) toggleFull(false);
-      else if (shown === 'expanded' || shown === 'hover') intent('escape');
-    } else if (k === ',') togglePanel(true);
-    else if (k === 'o') intent(inWin ? 'dock' : 'pop');
+      else if (shown === 'expanded' || shown === 'popped') intent('escape');
+    } else if (k === '1') go('circle');
+    else if (k === '2') go('card');
+    else if (k === '3') go('window');
+    else if (k === 'g') api.openGames();
+    else if (k === ',') togglePanel(true);
     else if (k === 'h') hideWindow();
-    else if (inWin && k === '1') set({ size: 'small' } as Partial<S>);
-    else if (inWin && k === '2') set({ size: 'large' } as Partial<S>);
     else if (inWin && k === 'f') toggleFull();
-    else if (inWin && k === 't') set({ clickThrough: !S.clickThrough } as Partial<S>);
-    else if (inWin && k === 'd') set({ dock: cycle(DOCKS, S.dock) } as Partial<S>);
     else if (!(game.onKey && game.onKey(k, e))) return;
     e.preventDefault();
   });
@@ -475,7 +509,9 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   const endResize = (e: PointerEvent) => { if (!resizing) return; resizing = false; api.resizeDrag({ phase: 'end', x: e.screenX, y: e.screenY }); };
   grip.addEventListener('pointerup', endResize);
   grip.addEventListener('pointercancel', endResize);
+  const narrow = () => body.classList.toggle('tg-narrow', window.innerWidth < NARROW);
   window.addEventListener('resize', () => {
+    narrow();
     placeHosted();
     if (scale !== 'window') return;
     sizetag.textContent = window.innerWidth + ' × ' + window.innerHeight;
@@ -495,6 +531,7 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   // ---------- start ----------
 
   buildPanel();
+  narrow();
   api.getState().then(async (st: ShellBoot<S>) => {
     S = st.settings; dark = st.dark; feed = st.feed; smoke = st.smoke; mode = st.mode;
     if (st.hosted) hostIn(st.hosted);
@@ -527,7 +564,8 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
         state: mode.state, shown, scale, corner: body.dataset.corner, panelOpen: settingsOpen, update: body.classList.contains('tg-update'), full, thru: body.classList.contains('tg-thru'),
         shape: { w: shape.offsetWidth, h: shape.offsetHeight }, root: { w: game.root.clientWidth, h: game.root.clientHeight },
         rootIn: game.root.parentElement?.className || '', count: badge.textContent, line: cardLine.textContent, topInset: topInset(),
-        warm: orb.classList.contains('warm'), pill: pill.innerText,
+        warm: orb.classList.contains('warm'), tag: tag.innerText, tagShown: getComputedStyle(tag).opacity === '1', menus,
+        size: sizeBtns.filter((b) => b.getAttribute('aria-current') === 'true').map((b) => b.id), narrow: body.classList.contains('tg-narrow'),
         presentation: S.presentation, back: getComputedStyle(document.documentElement).getPropertyValue('--g-back').trim(),
       }),
       key: (key: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key })),
@@ -540,7 +578,17 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
         for (let i = 1; i <= 4; i++) ptr('pointermove', x + (dx * i) / 4, y + (dy * i) / 4);
         ptr('pointerup', x + dx, y + dy);
       },
-      text: () => panel.innerText + '\n' + bar.innerText,
+      text: () => panel.innerText + '\n' + bar.innerText + '\n' + cardBar.innerText,
+      // what a control says to a screen reader and on hover
+      label: (id: string) => { const b = document.getElementById(id); return b ? { aria: b.getAttribute('aria-label'), title: b.title, current: b.getAttribute('aria-current') } : null; },
+      // a right-click at the middle of an element, as the player would
+      rightClick: (sel: string) => {
+        const t = document.querySelector(sel) as HTMLElement | null;
+        if (!t) return false;
+        const r = t.getBoundingClientRect();
+        t.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }));
+        return true;
+      },
       // where an element is in the window (CSS pixels), for real mouse input from the main process
       rect: (sel: string) => { const r = document.querySelector(sel)?.getBoundingClientRect(); return r ? { x: r.x, y: r.y, w: r.width, h: r.height } : null; },
       // Settings → Games: what it shows, and its buttons by their data-games name ("refresh", "approve:<request>", …)

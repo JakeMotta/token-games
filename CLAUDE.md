@@ -39,10 +39,11 @@ the **shell** (`shell/`); a game only draws itself and reacts to usage.
 | Path | What |
 |---|---|
 | `shell/` | The wrapper every game runs in ([shell/README.md](shell/README.md)). Version in `shell/package.json` and `SHELL_VERSION` (`shell/src/manifest.ts`); keep them equal |
-| `shell/src/main/shell.ts` | Electron main: windows, orb placement and dragging, modes, tray, hotkey, settings file, save file, feed |
-| `shell/src/page/shell-page.ts` | The page side: `mountShell(game)`, the orb, its pill and card, the window's title bar, the Games and Settings buttons (open the Games and Settings window on that tab); the Settings sheet itself stays in the page, hidden, and the Settings tab shows a copy of it |
+| `shell/src/main/shell.ts` | Electron main: windows, orb placement and dragging, modes, the menu (tray and right-click), hotkey (show or hide), settings file, save file, feed |
+| `shell/src/page/shell-page.ts` | The page side: `mountShell(game)`, the circle (no buttons; a name tag on hover), the card, the window, and the one top bar the card and the window share: Games and Settings (open the Games and Settings window on that tab) and the size switch Circle · Card · Window at the far right; keys 1/2/3, Esc one size down, G, `,`, H, F; a right-click asks for the menu. The Settings sheet itself stays in the page, hidden, and the Settings tab shows a copy of it |
 | `shell/src/game.ts` | The game interface: `Game`, `GameContext`, `GameStatusLine`, `Theme` |
-| `shell/src/orb.ts`, `modes.ts` | Orb corners, display choice and shapes; the mode state machine (pure, unit-tested) |
+| `shell/src/orb.ts`, `modes.ts` | Orb corners, display choice and shapes; the mode state machine, the size each state lights (`sizeOf`) and what each size button sends (`goTo`) (pure, unit-tested) |
+| `shell/src/tray.ts` | The one menu, as data: the menu-bar icon and a right-click on the game show the same items (pure, unit-tested) |
 | `shell/src/settings.ts` | Shared settings and `settingsKit` for a game's own settings schema |
 | `shell/src/manifest.ts` | `game.json` checker ([docs/manifest.md](docs/manifest.md)) |
 | `shell/src/catalog/` | The catalog: index, signatures and keys, zip and bundle checks, installer, permissions, control socket; `notApproved()` decides which games the app hides ([docs/catalog.md](docs/catalog.md)) |
@@ -58,7 +59,7 @@ the **shell** (`shell/`); a game only draws itself and reacts to usage.
 | `cli/` | `tokengames` (CLI), `token-games-mcp` (MCP server), `tg-registry` (pack, check, build and sign the index; `src/keychain.ts` keeps the key in the macOS Keychain) |
 | `registry/` | Catalog pointers (`games/<id>.json`), `blocklist.json`, and the committed `index.json` + `index.json.sig` (signed on Jake's Mac); CI checks them and publishes them on Pages ([registry/README.md](registry/README.md)) |
 | `scripts/` | Repo scripts: `new-game.mjs`, `check-docs.mjs` (+ their tests) |
-| `docs/` | `presentation.md` (a corner orb, pop out), `manifest.md`, `catalog.md`, `publishing-a-game.md`, `first-game-walkthrough.md` (package, sign, release, install, rollback; the signing key; go-live), `pre-public-audit.md`, `ant-farm-design.md` |
+| `docs/` | `presentation.md` (the circle, the card, the window; the top bar, the size switch and the menu), `manifest.md`, `catalog.md`, `publishing-a-game.md`, `first-game-walkthrough.md` (package, sign, release, install, rollback; the signing key; go-live), `pre-public-audit.md`, `ant-farm-design.md` |
 | `prototype/` | Browser prototypes and mock-ups; not shipped |
 
 Each game is a folder at the root beside `shell/`, with `game.json`, its own `package.json` (Electron, esbuild,

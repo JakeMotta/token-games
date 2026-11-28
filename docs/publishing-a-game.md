@@ -52,7 +52,7 @@ const s = await tg.getSettings();          // your settings (JSON, ≤ 64 KB); a
 const env = await tg.env();                // { scale: 'mini' | 'expanded' | 'window', dark, reducedMotion, feed }
 tg.onEnv((e) => restyle(e));               // env.feed: { watching, files }, so you can say "waiting for usage"
 tg.onHide(() => tg.save(state));           // before it is closed; return the promise and the shell waits (≤ 1 s)
-tg.setStatus({ count: '12', title: 'Sand Clock', line: '12 jars · 300 grains' });  // the orb and its pill
+tg.setStatus({ count: '12', title: 'Sand Clock', line: '12 jars · 300 grains' });  // the circle, its name tag and the bars
 tg.popOut(); tg.dock();                    // ask to open in the window, or dock back
 ```
 

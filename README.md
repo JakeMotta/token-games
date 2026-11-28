@@ -4,10 +4,11 @@ Idle games that play themselves from the work your AI agent does. Every token Cl
 finishes moves the game forward, and nothing else does: no buttons to grind, no cheats. Codex and other agents come
 later.
 
-Every game lives in a **corner orb**: a small round window in a corner of the screen with a live view of the game
-and a count. Point at it and a pill grows out with its name and status; click and it opens into a card; **Pop out ↗**
-turns it into a small floating window, and **↩ Corner** sends it back. Drag the orb to any corner of any display and
-it stays there. See [docs/presentation.md](docs/presentation.md).
+Every game lives in a **corner circle**: a small round window in a corner of the screen with a live view of the game
+and a count. Point at it for its name; click and it opens into a **card**; drag it to any corner of any display and it
+stays there. The card and the floating **window** share one top bar: Games, Settings, and at the far right a size
+switch, **Circle · Card · Window**, with the current one lit. Everything else is in one menu, from the menu-bar icon or
+a right-click on the game. See [docs/presentation.md](docs/presentation.md).
 
 ## Games
 
@@ -25,7 +26,7 @@ Claude usage, made with the generative-creature technique. Prototypes, design an
 Anyone can write a game for Token Games, and players install them inside the app, on the **Games tab** of the Games and
 Settings window: one normal, resizable window of its own (about 960 × 680, centred on the screen the game is on,
 never bigger than it) with two tabs at the top, **Games** and **Settings**. The **Games** button (next to Settings in
-the open card and in the popped-out window's title bar), the menu-bar icon's **Games…** and **Open Games…** in
+the top bar of the card and the window), the menu-bar icon's **Games…** and **Open Games…** in
 Settings → Games open it on Games. Opening it leaves the game as it is; Esc, Cmd+W or Close closes it, and Games
 again brings the same window forward on its Games tab. When the catalog has a newer version of an
 installed game, the Games button gets a small dot, the game's card says **Update available** with an **Update to …**
@@ -62,13 +63,14 @@ npm install
 npm start
 ```
 
-It starts as an orb in the bottom-right corner. Click it to open the card, **Pop out ↗** for the window, drag it
-to move it to another corner. The menu-bar icon has everything (show, open, pop out, back to the corner, the corner,
-Games… and Settings… (the one Games and Settings window), Settings, size, docking, click-through, Reduced motion, Reset to defaults, quit), and **Alt+Cmd+T** (Alt+Ctrl+T)
-works anywhere: it shows a hidden game, in the corner it opens and closes the card, popped out it switches
-click-through. Settings are saved as you change them; Settings → Display → Presentation
-chooses where it starts. Settings (its button next to Games, the gear in the window's title bar, `,`, or the menu's
-Settings…) opens the same window on its Settings tab. There is only ever one: any of these brings it forward and
+It starts as a circle in the bottom-right corner. Click it to open the card, drag it to move it to another corner.
+In the card and the window the size switch at the top right goes to **Circle**, **Card** or **Window** (or press 1, 2,
+3); Esc goes one size down, Window → Card → Circle. The menu (the menu-bar icon, or a right-click on the circle, the
+card or the window) has the rest: the three sizes, Games… and Settings…, the window's size, full screen, always on top
+and click-through, the circle's corner, hide and quit. **Alt+Cmd+T** (Alt+Ctrl+T) shows or hides the game anywhere;
+holding Alt over a click-through window grabs it again. Settings are saved as you change them, and the game starts
+at the size it was left at. Settings (its button next to Games, `,`, or the menu's Settings…) opens the same window
+on its Settings tab. There is only ever one: any of these brings it forward and
 switches it to the tab asked for, and it remembers no tab between opens. Click a tab, press Cmd+1 or Cmd+2, or the
 arrow keys on a focused tab to switch; Esc, Cmd+W or Close closes it. It follows the system's light or dark mode. Games pause their drawing while the screen is locked or the computer sleeps.
 
@@ -85,7 +87,7 @@ the jar with your game. For a catalog game anyone can install, add `--web`: it c
 
 ## The repo
 
-- `shell/`: the wrapper every game runs in: the corner orb and window modes, tray, hotkey, settings, the Claude Code feed,
+- `shell/`: the wrapper every game runs in: the corner circle, the card and the window, the menu, hotkey, settings, the Claude Code feed,
   the build and the hidden smoke test ([shell/README.md](shell/README.md)).
 - `<game>/`: one folder per game, each with a `game.json` manifest ([docs/manifest.md](docs/manifest.md)).
 - `samples/`: catalog (web) games, like Token Garden.

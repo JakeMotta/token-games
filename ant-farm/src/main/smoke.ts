@@ -55,8 +55,17 @@ export const farmSmoke: GameSmoke<Settings> = {
     check('a two-finger scroll pans 1:1 and pauses the auto camera', !st.auto && Math.abs((st.cam.x - c0.x) * st.cam.s - 120) < 1, { before: c0, after: st.cam });
     await js('gameTest.wheel({ deltaX: 0, deltaY: -40, deltaMode: 0, ctrlKey: true })');
     check('a pinch zooms in', await until(async () => (await state(k)).cam.s > c0.s * 1.3, 2000), (await state(k)).cam);
+    // Follow lives in the farm itself now, not in the shell's bar: a chip at the top middle, just below the bar
+    const fb = await js<{ shown: boolean; inFarm: boolean; inBar: boolean; top: number; mid: number; inset: number }>(`(() => { const b = document.getElementById('bFollow'),
+      r = b.getBoundingClientRect(); return { shown: !b.hidden && r.width > 0, inFarm: !!b.closest('#farm'), inBar: !!b.closest('.tg-bar, .tg-cbar'), top: r.top,
+      mid: Math.abs(r.x + r.width / 2 - innerWidth / 2), inset: gameTest.bounds().topInset }; })()`);
+    check('panned away, a Follow chip shows in the farm, below the shell\'s bar, in the middle', fb.shown && fb.inFarm && !fb.inBar && fb.top >= fb.inset && fb.top < fb.inset + 20 && fb.mid < 2, fb);
+    await js('document.getElementById("bFollow").click()');
+    check('Follow gives the camera back to the colony and hides itself', await until(async () => (await state(k)).auto) && await js<boolean>('document.getElementById("bFollow").hidden'));
+    await js('gameTest.wheel({ deltaX: 120, deltaY: 0, deltaMode: 0 })');
+    await until(async () => !(await state(k)).auto, 2000);
     await js('shellTest.key("a")');
-    check('A gives the camera back to the colony', await until(async () => (await state(k)).auto));
+    check('A does the same', await until(async () => (await state(k)).auto));
 
     // the zoom range: out only as far as a fixed largest view, in to a sensible closest, and always inside the world
     type Bounds = { min: number; max: number; world: { x0: number; y0: number; x1: number; y1: number }; topInset: number };

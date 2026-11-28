@@ -17,7 +17,7 @@ declare global { interface Window { tokenGame?: TokenGameApi } }
 
 const SLIDERS = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1 3h10M1 9h10"/><circle cx="4" cy="3" r="1.4" fill="currentColor"/><circle cx="8" cy="9" r="1.4" fill="currentColor"/></svg>';
 // Keys the app's shell uses (game-preload.ts passes them on): the game leaves them alone, as it does in the app.
-const SHELL_KEYS = new Set(['Escape', ',', 'o', 'h', '1', '2', 'f', 't', 'd']);
+const SHELL_KEYS = new Set(['Escape', '1', '2', '3', 'g', ',', 'f', 'h']);
 
 let kit: SettingsKit<any> = settingsKit<object>({ defaults: () => ({}), sanitize: () => ({}), reset: () => ({}) });
 
@@ -55,7 +55,7 @@ export function mountShell<S extends ShellSettings>(game: Game<S>): void {
   const tools = el('div', 'tgh-tools');
   const gear = el<HTMLButtonElement>('button', 'tg-wbtn tgh-gear', SLIDERS);
   gear.id = 'tgh-gear'; gear.title = `${game.name} settings`;
-  tools.append(...(game.barButtons || []), gear);
+  tools.append(gear);
   const panel = el('div', 'tg-panel tgh-panel');
   panel.id = 'tgh-panel';
   panel.hidden = true;
