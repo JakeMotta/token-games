@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src data:">
+<title>Ink Tower Defense</title>
+<link rel="stylesheet" href="shell.css">
+<link rel="stylesheet" href="font.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- The game's view. The shell builds the corner orb, the window's title bar and the Settings sheet around it. -->
+<div class="game td" id="game">
+  <canvas id="view"></canvas>
+
+  <!-- what you have, and the controls: hidden in the orb -->
+  <div class="hud" id="hud">
+    <span class="stat" title="Lives: walkers that reach the castle take them"><b class="hot">♥</b> <span id="hLives">20</span></span>
+    <span class="stat" title="Gold: from beating walkers, clearing waves and finished Claude Code turns"><b class="gold">●</b> <span id="hGold">0</span></span>
+    <span class="stat" title="The wave you are on"><span class="lbl">wave </span><span class="w">w</span><span id="hWave">0</span></span>
+  </div>
+  <div class="ctrl" id="ctrl">
+    <button class="btn" id="bBuild" title="Build a tower (B)">build</button>
+    <button class="btn" id="bSend" title="Send the next wave now">send</button>
+    <button class="btn" id="bAuto" title="Send waves by themselves when the bucket is full">auto</button>
+    <button class="btn" id="bSpeed" title="Game speed">1×</button>
+    <button class="btn" id="bPause" title="Pause (P)">Ⅱ</button>
+  </div>
+
+  <!-- the build card: every tower, the locked ones with the wave that brings them -->
+  <div class="card build" id="buildCard" hidden>
+    <div class="tape"></div>
+    <div class="head"><span id="buildTitle">build</span><button class="x" id="buildClose" title="Close (Esc)">×</button></div>
+    <div class="tiles" id="buildTiles"></div>
+    <p class="note" id="buildNote"></p>
+  </div>
+
+  <!-- a tower's card: its numbers, upgrades without end, aim, move, sell -->
+  <div class="card tower" id="towerCard" hidden>
+    <div class="tape"></div>
+    <div class="head"><span><span id="tName"></span> <small id="tLevel"></small></span><button class="x" id="tClose" title="Close (Esc)">×</button></div>
+    <p class="role" id="tRole"></p>
+    <pre class="stats" id="tStats"></pre>
+    <p class="note" id="tFlavor"></p>
+    <div class="row"><button class="btn up" id="tUp1"></button><button class="btn up" id="tUp10"></button><button class="btn up" id="tUpMax"></button></div>
+    <div class="row"><button class="btn" id="tAim"></button><button class="btn" id="tMove">move</button><button class="btn" id="tSell"></button></div>
+  </div>
+
+  <div class="placing" id="placing" hidden><span id="placingText"></span><button class="btn" id="placingCancel">cancel</button></div>
+  <div class="tip" id="tip" hidden><span id="tipText"></span><button class="x" id="tipClose" title="Hide the tips">×</button></div>
+</div>
+
+<!-- The game's own sections of the Settings sheet; the shell adds Display and Reset below them. -->
+<div id="gamePanel" hidden>
+  <section>
+    <h4>Paper</h4>
+    <div class="tg-chips" id="themes"></div>
+    <label class="tg-row"><input type="checkbox" id="numbers"> Damage numbers</label>
+    <p class="tg-note" id="statsNote"></p>
+    <p class="tg-note">Waves come only from your Claude Code tokens; finished turns pay gold. Nothing happens while the app is closed.</p>
+  </section>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

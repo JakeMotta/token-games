@@ -1,0 +1,88 @@
+/* The game's own styles. The corner orb, the window frame, the title bar and the Settings sheet are the shell's
+   (shell/src/page/shell.css); their colours (--g-*) come from the game's paper through ctx.setTheme. The cards look
+   like notes taped onto the page, in the same hand as the drawing. */
+.td { background: var(--g-back); color: var(--g-ink); font: 700 17px/1.1 Caveat, 'Bradley Hand', cursive; --td-red: #e0604a; --td-gold: #e2b44a; --td-shadow: rgba(0, 0, 0, 0.35); }
+.td.light { --td-red: #d23a2a; --td-gold: #b8871b; --td-shadow: rgba(0, 0, 0, 0.14); }
+#view { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+.td.mini #view { cursor: inherit; pointer-events: none; }
+.td.mini .hud, .td.mini .ctrl, .td.mini .card, .td.mini .placing, .td.mini .tip { display: none; }
+[hidden] { display: none !important; }
+
+.td button { font: inherit; color: inherit; cursor: pointer; }
+.btn { min-width: 30px; min-height: 28px; padding: 0 8px; border: 1.5px solid var(--g-ink); border-radius: 7px 9px 6px 8px; background: var(--g-panel);
+  font-size: 17px; line-height: 1; white-space: nowrap; }
+.btn:hover:not(:disabled) { border-color: var(--td-red); color: var(--td-red); }
+.btn.on { background: var(--g-ink); color: var(--g-back); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.x { width: 28px; height: 28px; border: 0; background: none; font-size: 22px; line-height: 1; opacity: 0.7; }
+.x:hover { opacity: 1; color: var(--td-red); }
+
+/* the top of the page: what you have on the left, the controls on the right */
+.hud { position: absolute; left: 10px; top: calc(var(--td-top, 0px) + 6px); display: flex; gap: 12px; font-size: 21px; pointer-events: none;
+  text-shadow: 0 0 4px var(--g-back), 0 0 2px var(--g-back); }
+.hot { color: var(--td-red); } .gold { color: var(--td-gold); }
+.ctrl { position: absolute; right: 8px; top: calc(var(--td-top, 0px) + 6px); display: flex; gap: 4px; }
+
+/* a taped note */
+.card { position: absolute; z-index: 2; padding: 8px 10px 10px; background: var(--g-panel); border: 1.5px solid var(--g-line); border-radius: 3px;
+  box-shadow: 3px 4px 0 var(--td-shadow); transform: rotate(-0.6deg); max-height: calc(100% - 60px); overflow: auto; }
+.card .tape { position: absolute; left: 50%; top: -7px; width: 54px; height: 14px; margin-left: -27px; background: rgba(214, 190, 100, 0.45); transform: rotate(2deg); }
+.card .head { display: flex; justify-content: space-between; align-items: center; font-size: 24px; margin-bottom: 2px; }
+.card .head small { font-size: 17px; color: var(--td-red); }
+.card .note, .card .role { margin: 2px 0 6px; color: var(--g-dim); font-size: 16px; }
+.card .row { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+.card .row .btn { flex: 1; }
+.stats { margin: 0 0 4px; font: inherit; font-size: 18px; white-space: pre-wrap; }
+
+.build { left: 50%; bottom: 10px; width: min(560px, calc(100% - 20px)); margin-left: max(-280px, calc(-50% + 10px)); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 5px; }
+.tile { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 3px 2px 4px; border: 1.5px solid var(--g-line); border-radius: 6px 8px 5px 7px;
+  background: transparent; min-height: 28px; }
+.tile canvas { width: 44px; height: 44px; }
+.tile .nm { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; padding: 0 4px; box-sizing: border-box; }
+.tile .cost { font-size: 15px; color: var(--td-gold); }
+.tile:hover:not(:disabled) { border-color: var(--td-red); }
+.tile.poor .cost { color: var(--td-red); }
+.tile.poor canvas { opacity: 0.6; }
+.tile.locked { opacity: 0.38; cursor: default; }
+.tile.locked .cost { color: var(--g-dim); }
+
+.tower { right: 8px; top: calc(var(--td-top, 0px) + 42px); width: 262px; }
+.card .row .btn { font-size: 15px; padding: 0 3px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+.placing, .tip { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px;
+  padding: 3px 4px 3px 10px; background: var(--g-panel); border: 1.5px solid var(--g-line); border-radius: 4px; font-size: 19px; white-space: nowrap;
+  max-width: calc(100% - 20px); box-shadow: 2px 3px 0 var(--td-shadow); }
+.tip span, .placing span { overflow: hidden; text-overflow: ellipsis; }
+/* the tip sits under what you have, top left, so it never hides the bucket or the road's end; it wraps rather than cuts */
+.tip { left: 10px; bottom: auto; top: calc(var(--td-top, 0px) + 40px); transform: rotate(-0.5deg); white-space: normal; max-width: min(340px, calc(100% - 20px)); }
+
+.hud .w { display: none; }
+
+/* the small window (320 × 180) and the card: smaller words and buttons so what you have and the controls share the
+   top line, and a tower's card that leaves most of the page in view */
+@media (max-width: 460px) {
+  .td { font-size: 14px; }
+  .hud { left: 6px; top: calc(var(--td-top, 0px) + 4px); font-size: 15px; gap: 6px; }
+  .hud .lbl { display: none; } .hud .w { display: inline; }
+  .ctrl { right: 4px; top: calc(var(--td-top, 0px) + 3px); gap: 2px; }
+  .btn { font-size: 13px; padding: 0 4px; min-width: 22px; min-height: 22px; border-width: 1px; }
+  .x { width: 22px; height: 22px; font-size: 18px; }
+  .card { padding: 4px 6px 6px; max-height: calc(100% - var(--td-top, 0px) - 34px); }
+  .card .tape { width: 36px; margin-left: -18px; height: 10px; top: -5px; }
+  .card .head { font-size: 17px; }
+  .card .head small { font-size: 14px; }
+  .card .note, .card .role { font-size: 13px; margin: 0 0 3px; }
+  .stats { font-size: 14px; }
+  #tFlavor, #tRole { display: none; }
+  .tower { right: 4px; top: calc(var(--td-top, 0px) + 30px); width: 196px; }
+  .card .row { flex-wrap: nowrap; margin-top: 2px; gap: 2px; }
+  .card .row .btn { font-size: 12px; min-width: 0; padding: 0 2px; overflow: hidden; text-overflow: ellipsis; }
+  .build { bottom: 4px; }
+  .tiles { grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 3px; }
+  .tile { padding: 1px; }
+  .tile canvas { width: 26px; height: 26px; }
+  .tile .nm { font-size: 12px; } .tile .cost { font-size: 12px; }
+  .placing, .tip { font-size: 14px; }
+  .tip { top: calc(var(--td-top, 0px) + 30px); max-width: calc(100% - 12px); left: 6px; }
+}

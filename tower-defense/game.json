@@ -1,0 +1,12 @@
+{
+  "manifestVersion": 1,
+  "id": "tower-defense",
+  "name": "Ink Tower Defense",
+  "description": "A hand-drawn tower defense on notebook paper: your AI agent's tokens send the waves, finished turns pay gold, and every tower levels up without end.",
+  "author": "Jacob Motta",
+  "version": "0.1.0",
+  "entry": { "main": "dist/main.js", "page": "dist/index.html" },
+  "icon": "icon.svg",
+  "minShellVersion": "1.3.0",
+  "permissions": ["claude-usage"]
+}
