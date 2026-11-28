@@ -19,6 +19,7 @@ export interface Pointer {
   commit: string; // the full commit the bundle was built from; CI rebuilds it and compares
   tag: string; // the release the bundle is attached to
   bundle: { url: string; sha256: string };
+  duplicates?: string; // the id of a built-in game this is a copy of (like ant-farm-web of ant-farm): the app hides it
 }
 
 export interface IndexGame {
@@ -26,6 +27,7 @@ export interface IndexGame {
   tier: RegistryTier; minShellVersion: string; permissions: string[]; network: string[];
   license?: string; repository: string; commit: string;
   bundle: { url: string; sha256: string; size: number };
+  duplicates?: string; // as in the pointer
 }
 
 export interface BlockEntry { id: string; versions?: string[]; sha256?: string[]; reason: string }
@@ -64,7 +66,8 @@ export function checkPointer(raw: unknown, fileId?: string): string[] {
     if (!isBundleUrl(b.url)) e.push('bundle.url must be an https:// URL to the release zip');
     if (!isStr(b.sha256) || !SHA.test(b.sha256)) e.push('bundle.sha256 must be 64 lowercase hex characters');
   }
-  for (const k of Object.keys(raw)) if (!['id', 'tier', 'repository', 'path', 'commit', 'tag', 'bundle'].includes(k)) e.push(`unknown field "${k}"`);
+  if (raw.duplicates !== undefined && (!isGameId(raw.duplicates) || raw.duplicates === raw.id)) e.push('duplicates must be the id of the built-in game this is a copy of');
+  for (const k of Object.keys(raw)) if (!['id', 'tier', 'repository', 'path', 'commit', 'tag', 'bundle', 'duplicates'].includes(k)) e.push(`unknown field "${k}"`);
   return e;
 }
 
@@ -88,6 +91,7 @@ export function checkIndex(raw: unknown): { ok: true; index: CatalogIndex } | { 
     if (!Array.isArray(g.network) || g.network.some((h) => !isHost(h))) e.push(`${at}: bad network hosts`);
     const b = g.bundle;
     if (!isObj(b) || !isBundleUrl(b.url) || !isStr(b.sha256) || !SHA.test(b.sha256) || typeof b.size !== 'number' || b.size <= 0) e.push(`${at}: bad bundle`);
+    if (g.duplicates !== undefined && !isGameId(g.duplicates)) e.push(`${at}: duplicates must be a game id`);
   });
   (raw.blocklist as unknown[]).forEach((b, i) => {
     if (!isObj(b) || !isGameId(b.id) || !isStr(b.reason)) e.push(`blocklist[${i}]: needs an id and a reason`);
@@ -119,6 +123,7 @@ export function indexEntry(p: Pointer, m: GameManifest, size: number): IndexGame
     repository: `https://github.com/${p.repository}`, commit: p.commit, bundle: { url: p.bundle.url, sha256: p.bundle.sha256, size },
   };
   if (m.license) g.license = m.license;
+  if (p.duplicates) g.duplicates = p.duplicates;
   return g;
 }
 

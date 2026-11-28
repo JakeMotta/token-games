@@ -41,6 +41,7 @@ function run(mode) {
   return new Promise((resolve) => {
     const env = { ...process.env, TG_SMOKE: out, TG_SMOKE_MODE: mode, TG_USER_DATA: userData, TG_CLAUDE_DIR: claude };
     delete env.ELECTRON_RUN_AS_NODE;
+    delete env.TG_CATALOG_DIR; // the catalog stays in the temp profile: the player's own state.json is never touched
     const p = spawn(electron, [root], { env, stdio: ['ignore', 'pipe', 'pipe'] });
     let log = '';
     p.stdout.on('data', (d) => { log += d; });

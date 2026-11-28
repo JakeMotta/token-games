@@ -55,7 +55,8 @@ the hosted adapter (`src/page/hosted-shell.ts`), which runs the same `mountShell
 | `src/main/preload.ts` | The page's bridge (`window.tokenShell`) |
 | `src/main/smoke.ts`, `scripts/smoke.mjs` | The hidden end-to-end test and its runner; a game adds a `GameSmoke` |
 | `src/main/pixel-icon.ts` | A menu-bar icon from a 16 × 16 pixel map |
-| `src/page/shell-page.ts`, `shell.css` | `mountShell`: the orb, its pill and card, dragging, window title bar, the Games button (opens the Games window), the Settings sheet, keys |
+| `src/page/shell-page.ts`, `shell.css` | `mountShell`: the orb, its pill and card, dragging, window title bar, the Games and Settings buttons, the Settings sheet (hidden; mirrored into the Settings window), keys |
+| `src/page/settings-page.ts`, `settings.html`, `settings.css`, `src/page/mirror.ts`, `src/main/settings-window-preload.ts` | The Settings window: centred like the Games window (`centredWindow()`), one only, Esc closes it; it shows a copy of the page's Settings sheet and sends clicks and values back (`window.tokenSettings`) |
 | `src/orb.ts` | Corners, display choice, the orb's window bounds and shapes, the nearest corner after a drag (pure) |
 | `src/modes.ts` | The states `orb → hover → expanded → popping → popped → docking` and their scale and shape (pure) |
 | `src/settings.ts` | Shared settings, `settingsKit` |
@@ -79,11 +80,10 @@ the hosted adapter (`src/page/hosted-shell.ts`), which runs the same `mountShell
 ## Testing
 
 `test/*.test.ts` runs with every game's `npm test`. `npm run test:smoke` in a game runs the shell's checks (the orb's
-corner, the pill, the card, dragging, hiding and the hotkey, pop out, docking, sizes, tray, hotkey, display changes, the Games window from the Games buttons, the tray and Settings (its size and place, one window, its isolation, large type, the game left as it was, Esc, Cmd+W and Close), Settings, Reset, restart) and then the
-game's. Settings' closing is checked with real mouse input: its ×, Esc, a click outside, and a slider dragged past
-the sheet's edge (which must not close it). A third run, `catalog`, installs the sample Token Garden from a signed test
+corner, the pill, the card, dragging, hiding and the hotkey, pop out, docking, sizes, tray, hotkey, display changes, the Games window from the Games buttons, the tray and Settings (its size and place, one window, its isolation, large type, the game left as it was, Esc, Cmd+W and Close), the Settings window the same way (from the Settings buttons, `,` and the tray; a click and a slider in it change the real settings), Reset, restart) and then the
+game's. A third run, `catalog`, installs the sample Token Garden from a signed test
 registry through the Games window (an agent asks, the player approves there), proves it has no Node, files or network, feeds it a transcript line, lists a newer version and checks the update badge, the tray's count and the approved update, switches back and
-removes it (approved in the card's Settings → Games). A fourth, `catalog-game` (when the game has a `catalog/` bundle), does the same for the game's own bundle through the
+removes it (approved in the Settings window's Games section). A fourth, `catalog-game` (when the game has a `catalog/` bundle), does the same for the game's own bundle through the
 real `tokengames` CLI and checks it saves in its own slot. `node ../shell/scripts/smoke.mjs --only <run>` runs one.
 Windows are never shown in the smoke test: showing and hiding only flip a flag there. `npm run perf` (`smoke.mjs
 --perf [--profile <folder>]`) is a single hidden run that measures what frames cost in each mode (`GameSmoke.perf`,

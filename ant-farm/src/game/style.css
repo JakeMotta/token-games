@@ -19,6 +19,9 @@
 .pal span { padding: 0 2px 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pal:hover { border-color: var(--g-dim); }
 .pal.on { border-color: var(--g-hot); color: var(--g-hot); }
+/* in the Settings window there is room: bigger thumbnails */
+.sw-sheet .pals { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.sw-sheet .pal { padding: 4px; gap: 4px; }
 
 /* the colony's health, in Settings */
 .health { display: grid; gap: 2px; }

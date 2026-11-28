@@ -49,6 +49,19 @@ test('list, install (a request only), use after the player approves, and remove 
   } finally { await app.close(); }
 });
 
+test('list shows every game and marks the ones the Games window hides', async () => {
+  const app = await runningApp([{}, { id: 'wild-game', tier: 'community' }, { id: 'ant-farm-web' }]);
+  try {
+    const c = capture();
+    assert.equal(await runCli(['list', '--refresh'], { ...c.io, call: socketCall({ TG_CATALOG_DIR: app.dir }) }), 0);
+    const out = c.out.join('\n');
+    assert.match(out, /NOTE/);
+    assert.match(out, /token-garden .*available$/m, 'an approved game has no note');
+    assert.match(out, /wild-game .*hidden in the app: a community game, not reviewed/);
+    assert.match(out, /ant-farm-web .*hidden in the app: a copy of the built-in Ant Farm/);
+  } finally { await app.close(); }
+});
+
 test('the socket has no approve command, whatever a client sends', async () => {
   const app = await runningApp();
   try {

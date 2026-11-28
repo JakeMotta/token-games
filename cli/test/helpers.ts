@@ -3,12 +3,12 @@
 import { Catalog } from '@token-games/shell/catalog/catalog';
 import { catalogCommands } from '@token-games/shell/catalog/commands';
 import { serveControl, type ControlServer } from '@token-games/shell/catalog/control';
-import { testRegistry, tmpDir } from '../../shell/test/catalog-fixtures';
+import { testRegistry, tmpDir, type Spec } from '../../shell/test/catalog-fixtures';
 
 export interface Running { catalog: Catalog; dir: string; server: ControlServer; close(): Promise<void> }
 
-export async function runningApp(): Promise<Running> {
-  const reg = testRegistry([{}]);
+export async function runningApp(games: Spec[] = [{}]): Promise<Running> {
+  const reg = testRegistry(games);
   const dir = tmpDir('cli');
   const catalog = new Catalog({
     dir, hostApp: 'ant-farm', builtIn: { id: 'ant-farm', name: 'Ant Farm', description: 'Ants.', version: '1.0.0' },

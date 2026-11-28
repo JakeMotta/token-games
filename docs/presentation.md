@@ -48,9 +48,12 @@ setting reads as `orb`), and Settings → Display sets it.
   click-through (so a click-through window can always be grabbed again).
 - The **Games** button sits next to Settings in the card and in the popped-out window's title bar; it opens the
   Games window, a normal window of its own centred on the screen (or brings it forward), and leaves the orb, the card
-  or the floating window as they are. Settings is a sheet over the game: its **×** (top right), **Close**, Esc or a click outside closes it. A press that
-  starts inside it (dragging a slider past its edge) never closes it, and the click outside only closes it, it
-  doesn't reach the game. Nothing traps the keyboard focus.
+  or the floating window as they are. **Settings** (its button next to Games, the gear in the window's title bar, `,`,
+  Cmd+, or the tray's Settings…) does the same: a window of its own, centred and the Games window's size, made by the
+  same code. Pressing it again brings that one window forward; Esc, Cmd+W, its Close button or the sheet's Close
+  closes it. The game's page keeps its Settings sheet, hidden, and the window shows a copy of it in large type
+  (`shell/src/page/mirror.ts`); clicks and slider moves there go back to the page, so a game's settings code works
+  unchanged.
 - Keys while focused: Esc closes, `,` Settings, `O` pop out / back to the corner, `H` hide; popped out: `1` small,
   `2` large, `F` full screen, `T` click-through, `D` next corner. Games get every other key.
 

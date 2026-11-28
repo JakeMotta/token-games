@@ -29,13 +29,14 @@ How the app uses it: [docs/catalog.md](../docs/catalog.md). Writing a game: [doc
 | Field | Rule |
 |---|---|
 | `id` | the game's id; equals the file name and the bundle's `game.json` id |
-| `tier` | `verified` (a maintainer read the code at `commit`) or `community` (CI only; hidden unless the player turns Community on) |
+| `tier` | `verified` (a maintainer read the code at `commit`) or `community` (CI only; hidden unless the player turns on Show developer and unapproved games) |
 | `repository` | `owner/repo` on GitHub, public |
 | `path` | the game's folder in that repo (`.` for the root) |
 | `commit` | the full commit; CI rebuilds the bundle from it |
 | `tag` | the GitHub Release the bundle is attached to |
 | `bundle.url` | https only |
 | `bundle.sha256` | of the zip; the app refuses any other bytes |
+| `duplicates` | optional: the id of the built-in game this is a copy of (a sandboxed build of it); the app hides it unless the developer switch is on. An id like `ant-farm-web` (the built-in id plus `-web`) counts as one without it |
 
 `blocklist.json` is a list of `{ "id", "versions"?, "sha256"?, "reason" }`. A blocked version is left out of the
 index, and an installed copy stops running.

@@ -8,7 +8,8 @@
 //
 // It also hosts the game catalog (docs/catalog.md): the shell's own game is the built-in one, and a catalog game the
 // player installed and chose runs in its place, sandboxed (catalog-host.ts). The catalog has its own normal window,
-// the Games window (the Games buttons, the tray's Games…), a second page with only the catalog calls. The control
+// the Games window (the Games buttons, the tray's Games…), a second page with only the catalog calls. Settings opens
+// the same way, centred in a window of its own that shows a copy of the game page's Settings sheet. The control
 // socket lets the tokengames CLI and agents list games and ask for installs, which only the player can approve, in the
 // Games window or Settings → Games.
 //
@@ -20,7 +21,7 @@ import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage,
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { CH, type FeedStatus, type GameRect, type GamesBoot, type GamesOp, type GamesResult, type GamesView, type GameStatus, type HostedBoot, type ModeInfo, type OrbDrag, type ResizeDrag, type ShellBoot, type ShellCommand, updatesIn } from '../api';
+import { CH, type FeedStatus, type GameRect, type GamesBoot, type GamesOp, type GamesResult, type GamesView, type GameStatus, type HostedBoot, type ModeInfo, type OrbDrag, type ResizeDrag, type SettingsBoot, type SettingsInput, type SettingsSnap, type ShellBoot, type ShellCommand, updatesIn } from '../api';
 import { Catalog, type BuiltIn } from '../catalog/catalog';
 import { catalogCommands } from '../catalog/commands';
 import { defaultCatalogDir, serveControl, type ControlServer } from '../catalog/control';
@@ -64,6 +65,8 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
 
   let win: BrowserWindow | null = null;
   let gamesWin: BrowserWindow | null = null; // the Games window, while it is open
+  let settingsWin: BrowserWindow | null = null; // the Settings window, while it is open
+  let settingsSnap: SettingsSnap | null = null; // the Settings sheet as the game's page last sent it
   let tray: Tray | null = null;
   let store: SettingsStore<S>;
   let save: SaveFile;
@@ -97,6 +100,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
   const same = (a: Bounds | null, b: Bounds): boolean => !!a && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
   const send = (ch: string, v: unknown): void => { if (win && !win.isDestroyed()) win.webContents.send(ch, v); };
   const gamesOpen = (): boolean => !!gamesWin && !gamesWin.isDestroyed();
+  const settingsOpen = (): boolean => !!settingsWin && !settingsWin.isDestroyed();
   const floating = (): boolean => presentationOf(state) === 'floating';
   // The smoke test never puts a window on screen: there, showing and hiding only flip this flag.
   let smokeShown = true;
@@ -320,7 +324,8 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
   function setupCatalog(): void {
     builtIn = readBuiltIn();
     try { builtInIcon = iconDataUrl(app.getAppPath(), JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'game.json'), 'utf8')).icon); } catch { /* no icon */ }
-    const dir = env.TG_CATALOG_DIR ? path.resolve(env.TG_CATALOG_DIR) : SMOKE ? path.join(app.getPath('userData'), 'catalog') : defaultCatalogDir();
+    // the smoke test always keeps its catalog in its own temp profile, so it can never touch the player's state.json
+    const dir = SMOKE ? path.join(app.getPath('userData'), 'catalog') : env.TG_CATALOG_DIR ? path.resolve(env.TG_CATALOG_DIR) : defaultCatalogDir();
     let keys = [...REGISTRY_KEYS], url = env.TG_REGISTRY_URL || DEFAULT_REGISTRY;
     if (env.TG_REGISTRY_KEY) keys.push(env.TG_REGISTRY_KEY); // a developer's own registry, signed with their own key
     const smokeMode = SMOKE ? env.TG_SMOKE_MODE : undefined;
@@ -332,7 +337,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
         : smokeRegistry(path.join(SMOKE!, 'registry'), path.join(app.getAppPath(), 'catalog'), `${path.basename(app.getAppPath())}/catalog`);
       keys = [reg.publicKey]; url = reg.url;
     }
-    catalog = new Catalog({ dir, hostApp: builtIn.id, builtIn, trustedKeys: keys, registryUrl: url });
+    catalog = new Catalog({ dir, hostApp: builtIn.id, builtIn, trustedKeys: keys, approvedKeys: REGISTRY_KEYS, registryUrl: url });
     activeId = catalog.active();
     hosted = hostedBoot();
     catalog.onChange(() => {
@@ -390,15 +395,15 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
   }
 
   function gamesView(): GamesView {
-    const st = catalog.status();
+    const st = catalog.status(), rows = st.games.filter((r) => !r.hidden);
     const icons: Record<string, string> = {};
-    for (const r of st.games) {
+    for (const r of rows) {
       const dir = r.id === builtIn.id ? null : catalog.gameDir(r.id);
       const icon = r.id === builtIn.id ? builtInIcon : dir ? iconDataUrl(dir, catalog.manifestOf(r.id)?.icon) : '';
       if (icon) icons[r.id] = icon;
     }
     return {
-      rows: st.games, pending: st.pending, allowCommunity: st.allowCommunity, canAddLocal: !SMOKE, icons,
+      rows, pending: st.pending, developer: st.developer, hiddenCount: st.games.length - rows.length, canAddLocal: !SMOKE, icons,
       catalog: { fetchedAt: st.catalog.fetchedAt, games: st.catalog.games, error: st.catalog.error, signed: st.catalog.signed },
     };
   }
@@ -418,7 +423,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
       } else if (op?.op === 'approve' && typeof op.requestId === 'string') catalog.approve(op.requestId);
       else if (op?.op === 'deny' && typeof op.requestId === 'string') catalog.deny(op.requestId);
       else if (op?.op === 'use' && typeof op.id === 'string') catalog.setActive(op.id);
-      else if (op?.op === 'community') catalog.setAllowCommunity(op.on === true);
+      else if (op?.op === 'developer') catalog.setDeveloper(op.on === true);
       else throw new Error('unknown games request');
       return { ok: true, view: gamesView() };
     } catch (e) {
@@ -426,34 +431,60 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     }
   }
 
-  // ---------- the Games window: the catalog in a normal window of its own ----------
+  // ---------- the Games and Settings windows: normal windows of their own, centred on the screen ----------
 
-  // Opens it centred on the display the game is on, or brings the open one to the front: there is only ever one. It
-  // changes nothing about the game: not the active game, not where it is or whether it shows.
-  function openGames(): void {
-    if (gamesOpen()) {
-      if (gamesWin!.isMinimized()) gamesWin!.restore();
-      if (!SMOKE) { if (IS_MAC) app.focus({ steal: true }); gamesWin!.show(); gamesWin!.focus(); }
-      return;
-    }
+  // Opens one centred on the display the game is on, the same size for both. Only the page's own preload, no
+  // navigation, no new windows. It changes nothing about the game: not the active game, where it is or whether it shows.
+  function centredWindow(title: string, preload: string, page: string): BrowserWindow {
     const area = screen.getDisplayMatching(win ? win.getBounds() : screen.getPrimaryDisplay().bounds).workArea;
-    const g = gamesWin = new BrowserWindow({
+    const w = new BrowserWindow({
       ...gamesWindowBounds(area), minWidth: Math.min(GAMES_WINDOW.minWidth, area.width), minHeight: Math.min(GAMES_WINDOW.minHeight, area.height),
-      show: false, title: `Games · ${cfg.name}`, backgroundColor: '#17181b', resizable: true, fullscreenable: false, autoHideMenuBar: true,
+      show: false, title: `${title} · ${cfg.name}`, backgroundColor: '#17181b', resizable: true, fullscreenable: false, autoHideMenuBar: true,
       webPreferences: {
-        preload: path.join(cfg.dir, 'games-window-preload.js'), contextIsolation: true, sandbox: true, nodeIntegration: false,
+        preload: path.join(cfg.dir, preload), contextIsolation: true, sandbox: true, nodeIntegration: false,
         backgroundThrottling: !SMOKE,
       },
     });
-    g.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-    g.webContents.on('will-navigate', (e) => e.preventDefault());
+    w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    w.webContents.on('will-navigate', (e) => e.preventDefault());
+    if (!SMOKE) w.once('ready-to-show', () => { if (IS_MAC) app.focus({ steal: true }); w.show(); w.focus(); });
+    w.loadFile(path.join(cfg.dir, page));
+    return w;
+  }
+
+  // There is only ever one of each: opening it again brings the open one to the front.
+  function toFront(w: BrowserWindow): void {
+    if (w.isMinimized()) w.restore();
+    if (!SMOKE) { if (IS_MAC) app.focus({ steal: true }); w.show(); w.focus(); }
+  }
+
+  function openGames(): void {
+    if (gamesOpen()) return toFront(gamesWin!);
+    const g = gamesWin = centredWindow('Games', 'games-window-preload.js', 'games.html');
     g.on('closed', () => { if (gamesWin === g) gamesWin = null; });
-    if (!SMOKE) g.once('ready-to-show', () => { if (IS_MAC) app.focus({ steal: true }); g.show(); g.focus(); });
-    g.loadFile(path.join(cfg.dir, 'games.html'));
   }
 
   function closeGames(): void {
     if (gamesOpen()) gamesWin!.close();
+  }
+
+  // Settings (the Settings buttons, the , key, the tray's Settings…): the game's page keeps the sheet and is told the
+  // window opened, so it starts sending its copy; and that it closed, however it closed.
+  function openSettings(): void {
+    if (settingsOpen()) return toFront(settingsWin!);
+    settingsSnap = null;
+    const w = settingsWin = centredWindow('Settings', 'settings-window-preload.js', 'settings.html');
+    w.on('closed', () => {
+      if (settingsWin !== w) return;
+      settingsWin = null;
+      settingsSnap = null;
+      send(CH.settingsWin, false);
+    });
+    send(CH.settingsWin, true);
+  }
+
+  function closeSettings(): void {
+    if (settingsOpen()) settingsWin!.close();
   }
 
   // ---------- full screen (the display's whole area, not the Mac's full-screen Space), popped out only ----------
@@ -540,7 +571,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     });
   }
 
-  const trayItems = (): TrayItem[] => trayMenu(store.get(), { name: cfg.name, visible: visible(), state, shortcut: SHORTCUT, updates: catalog ? updatesIn(catalog.list()) : 0 });
+  const trayItems = (): TrayItem[] => trayMenu(store.get(), { name: cfg.name, visible: visible(), state, shortcut: SHORTCUT, updates: catalog ? updatesIn(catalog.shown()) : 0 });
 
   function runAction(a: TrayAction): void {
     if (a.do === 'toggle-window') toggleWindow();
@@ -548,11 +579,8 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     else if (a.do === 'pop') { showWindow(); dispatch('pop'); }
     else if (a.do === 'dock') { showWindow(); dispatch('dock'); }
     else if (a.do === 'games') openGames();
-    else if (a.do === 'settings') {
-      showWindow(true);
-      if (!floating() && state !== 'expanded') dispatch('toggle');
-      send(CH.command, 'settings' satisfies ShellCommand);
-    } else if (a.do === 'fullscreen') { if (state === 'popped') { showWindow(true); setFullscreen(!fullPrev); } }
+    else if (a.do === 'settings') openSettings();
+    else if (a.do === 'fullscreen') { if (state === 'popped') { showWindow(true); setFullscreen(!fullPrev); } }
     else if (a.do === 'reset') resetAll();
     else if (a.do === 'quit') app.quit();
     else if (a.do === 'set') { if (a.patch.dock || a.patch.size) setFullscreen(false); update(a.patch as Partial<S>); }
@@ -627,12 +655,13 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     // window's page may use the catalog calls and nothing else.
     const fromPage = (e: IpcMainEvent | IpcMainInvokeEvent) => !!win && e.sender === win.webContents;
     const fromGames = (e: IpcMainEvent | IpcMainInvokeEvent) => gamesOpen() && e.sender === gamesWin!.webContents;
+    const fromSettings = (e: IpcMainEvent | IpcMainInvokeEvent) => settingsOpen() && e.sender === settingsWin!.webContents;
     const handle = (ch: string, fn: (...a: any[]) => unknown, games = false) => ipcMain.handle(ch, (e, ...a) => (fromPage(e) || (games && fromGames(e)) ? fn(...a) : null));
     const on = (ch: string, fn: (...a: any[]) => void, games = false) => ipcMain.on(ch, (e, ...a) => { if (fromPage(e) || (games && fromGames(e))) fn(...a); });
     handle(CH.state, (): ShellBoot<S> => ({
       name: cfg.name, settings: store.get(), dark: nativeTheme.shouldUseDarkColors, platform: process.platform, fullscreen: !!fullPrev,
       feed: { ...feedStatus, watching: !!feed && feed.watching(), files: feed ? feed.files() : 0 }, smoke: !!SMOKE, mode: modeInfo(), shortcut: SHORTCUT,
-      hosted,
+      hosted, settingsOpen: settingsOpen(),
     }));
     handle(CH.set, (patch: Partial<S>) => {
       if (patch && (patch.size || patch.dock)) setFullscreen(false);
@@ -661,6 +690,22 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     handle(CH.gamesBoot, (): GamesBoot => ({ name: cfg.name, smoke: !!SMOKE }), true);
     on(CH.gamesOpen, openGames);
     on(CH.gamesClose, closeGames, true);
+    // The Settings window gets the sheet the game's page sends, and sends the player's input back to that page: the
+    // page's own code decides what it does. Only the Settings window may send input; only the page may send the sheet.
+    on(CH.settingsOpen, (open: boolean) => (open ? openSettings() : closeSettings()));
+    on(CH.settingsSnap, (snap: SettingsSnap) => {
+      if (!settingsOpen() || !snap || typeof snap.html !== 'string' || !Array.isArray(snap.css)) return;
+      settingsSnap = { html: snap.html, css: snap.css.filter((f) => typeof f === 'string' && /^[\w.-]+\.css$/.test(f)) };
+      settingsWin!.webContents.send(CH.settingsSnap, settingsSnap);
+    });
+    ipcMain.handle(CH.settingsBoot, (e): SettingsBoot | null => (fromSettings(e) ? { name: cfg.name, smoke: !!SMOKE, snap: settingsSnap } : null));
+    ipcMain.on(CH.settingsInput, (e, i: SettingsInput) => {
+      if (!fromSettings(e) || !i || !Array.isArray(i.path) || !i.path.every((n) => Number.isInteger(n) && n >= 0) || !['click', 'input', 'change'].includes(i.type)) return;
+      send(CH.settingsInput, {
+        path: i.path, type: i.type, ...(typeof i.value === 'string' ? { value: i.value.slice(0, 200) } : {}), ...(typeof i.checked === 'boolean' ? { checked: i.checked } : {}),
+      } satisfies SettingsInput);
+    });
+    ipcMain.on(CH.settingsClose, (e) => { if (fromSettings(e)) closeSettings(); });
     on(CH.hostedRect, (r: GameRect | null, sc: Scale) => {
       if (!hosted) return;
       openHost();
@@ -691,6 +736,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
         win: win!, store, outDir: SMOKE, claudeDir: CLAUDE_DIR, update: (p) => update(p), resize: onResizeDrag, orbDrag: onOrbDrag,
         isFullscreen: () => !!fullPrev, dispatch, displays: onDisplays, state: () => state, geo: () => geo, trayItems, tray: runAction, hotkey, status: () => status,
         visible, show: () => showWindow(), hide: hideWindow, ignoresMouse: () => ignoring, gamesWin: () => (gamesOpen() ? gamesWin : null),
+        settingsWin: () => (settingsOpen() ? settingsWin : null),
         catalog: {
           catalog: () => catalog, host: () => host, socket: () => control?.socket || '', builtIn: () => builtIn, saveFile: () => save.file,
           bundleDir: () => path.join(app.getAppPath(), 'catalog'), publish: (v) => smokeReg?.publish(v),

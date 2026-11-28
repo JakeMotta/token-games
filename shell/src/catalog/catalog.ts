@@ -21,7 +21,7 @@ export interface CatalogState {
   installed: Record<string, InstalledGame>;
   local: LocalGame[];
   active: Record<string, string>; // per host app: the game it shows
-  allowCommunity: boolean; // off by default: community games are listed only when the player turns this on
+  developer: boolean; // "Show developer and unapproved games" (Settings → Games), off by default
 }
 
 export interface BuiltIn { id: string; name: string; description: string; version: string }
@@ -31,6 +31,24 @@ export interface GameRow {
   installed: boolean; active: boolean; network: string[];
   update?: string; // a newer version in the catalog
   blocked?: string; // why it may not run
+  unapproved?: string; // why it is not one of the approved games (notApproved); '' or missing when it is
+  hidden?: boolean; // left out of the Games window (unapproved, not on this computer, developer games off)
+}
+
+// Why a game is not one of the approved games the Games window lists, or '' when it is. Approved: the built-in game,
+// and a verified game from an index signed by the catalog's own key (keys.ts), not blocked and not a copy of the
+// built-in game. A copy is a catalog game marked "duplicates": "<built-in id>" in the index, or one whose id is the
+// built-in id plus "-web", the name shell/scripts/build-web.mjs gives a shell game shipped as a catalog game (the
+// Ant Farm (web), ant-farm-web, beside the built-in ant-farm). Local folders, community games (no person read them),
+// and anything from a developer's or a test catalog (signed by another key) are developer games.
+export function notApproved(g: { id: string; tier: Tier; duplicates?: string; blocked?: string }, o: { builtIn: BuiltIn; approvedIndex: boolean }): string {
+  if (g.tier === 'built-in') return '';
+  if (g.tier === 'local') return 'a local folder';
+  if (g.duplicates === o.builtIn.id || g.id === o.builtIn.id + '-web') return `a copy of the built-in ${o.builtIn.name}`;
+  if (g.blocked) return 'blocked';
+  if (g.tier === 'community') return 'a community game, not reviewed';
+  if (!o.approvedIndex) return 'from a developer or test catalog';
+  return '';
 }
 
 export type RequestAction = 'install' | 'update' | 'remove' | 'add-local';
@@ -44,6 +62,8 @@ export interface CatalogOptions {
   hostApp: string; // the app hosting games (its built-in game's id)
   builtIn: BuiltIn;
   trustedKeys: readonly string[]; // ed25519 public keys for the index (keys.ts)
+  approvedKeys?: readonly string[]; // the catalog's own keys (REGISTRY_KEYS): an index signed only by another trusted key
+  // (a developer's or the smoke test's) lists developer games. Default: all of trustedKeys
   registryUrl: string;
   afterSwap?: () => void; // tests only: see installer.ts
 }
@@ -59,6 +79,7 @@ export class Catalog {
   private readonly cacheDir: string;
   private st: CatalogState;
   private idx: CatalogIndex | null = null;
+  private idxApproved = false; // signed by one of approvedKeys
   private idxError = '';
   private idxFetchedAt = '';
   private pending: Internal[] = [];
@@ -81,7 +102,7 @@ export class Catalog {
   // ---- state ----
 
   private loadState(): CatalogState {
-    const s: CatalogState = { stateVersion: 1, installed: {}, local: [], active: {}, allowCommunity: false };
+    const s: CatalogState = { stateVersion: 1, installed: {}, local: [], active: {}, developer: false };
     let raw: Record<string, unknown> | null = null;
     try { raw = JSON.parse(fs.readFileSync(this.statePath, 'utf8')); } catch { /* first run */ }
     if (!raw || typeof raw !== 'object') return s;
@@ -91,7 +112,7 @@ export class Catalog {
     }
     if (Array.isArray(raw.local)) s.local = (raw.local as LocalGame[]).filter((g) => g && isGameId(g.id) && typeof g.dir === 'string');
     if (raw.active && typeof raw.active === 'object') for (const [k, v] of Object.entries(raw.active as Record<string, unknown>)) if (isGameId(k) && isGameId(v)) s.active[k] = v;
-    s.allowCommunity = raw.allowCommunity === true;
+    s.developer = raw.developer === true;
     return s;
   }
 
@@ -101,8 +122,8 @@ export class Catalog {
     fs.renameSync(tmp, this.statePath);
   }
 
-  get allowCommunity(): boolean { return this.st.allowCommunity; }
-  setAllowCommunity(on: boolean): void { this.st.allowCommunity = !!on; this.saveState(); this.changed(); }
+  get developer(): boolean { return this.st.developer; }
+  setDeveloper(on: boolean): void { this.st.developer = !!on; this.saveState(); this.changed(); }
 
   // ---- the signed index ----
 
@@ -124,6 +145,7 @@ export class Catalog {
     const c = checkIndex(raw);
     if (!c.ok) throw new InstallError(`the catalog is malformed: ${c.errors.slice(0, 3).join('; ')}`);
     this.idx = c.index;
+    this.idxApproved = verify(bytes, sig, this.o.approvedKeys ?? this.o.trustedKeys);
     this.applyBlocklist();
     return c.index;
   }
@@ -161,11 +183,16 @@ export class Catalog {
     if (any) this.saveState();
   }
 
+  // An index game the player may install: approved, or any while developer games are on.
   private listed(id: string): IndexGame | undefined {
     const g = this.idx?.games.find((x) => x.id === id);
     if (!g) return undefined;
-    if (g.tier === 'community' && !this.st.allowCommunity) return undefined;
+    if (!this.st.developer && this.whyNot(g)) return undefined;
     return g;
+  }
+
+  private whyNot(g: { id: string; tier: Tier; duplicates?: string; blocked?: string }): string {
+    return notApproved(g, { builtIn: this.o.builtIn, approvedIndex: this.idxApproved });
   }
 
   // ---- what the player sees ----
@@ -178,32 +205,41 @@ export class Catalog {
     return this.o.builtIn.id;
   }
 
+  // Every game: the built-in one, installed and local ones, and what the index offers, each marked with why it is not
+  // approved (unapproved) and whether the Games window leaves it out (hidden). The CLI lists them all.
   list(): GameRow[] {
-    const act = this.active(), b = this.o.builtIn;
+    const act = this.active(), b = this.o.builtIn, dev = this.st.developer;
     const rows: GameRow[] = [{ id: b.id, name: b.name, description: b.description, version: b.version, tier: 'built-in', installed: true, active: act === b.id, network: [] }];
     for (const [id, g] of Object.entries(this.st.installed)) {
       const next = this.idx?.games.find((x) => x.id === id);
       const row: GameRow = { id, name: g.name, description: next?.description || '', version: g.version, tier: g.tier, installed: true, active: act === id, network: g.network };
-      if (next && isNewer(next.version, g.version) && compareVersions(next.minShellVersion, SHELL_VERSION) <= 0) row.update = next.version;
       if (g.blocked) row.blocked = g.blocked;
+      // on this computer it always shows, so it can be played or removed; an unapproved one offers no updates
+      const why = this.whyNot({ id, tier: g.tier, duplicates: next?.duplicates, blocked: g.blocked });
+      if (why) row.unapproved = why;
+      if (next && (dev || !why) && isNewer(next.version, g.version) && compareVersions(next.minShellVersion, SHELL_VERSION) <= 0) row.update = next.version;
       rows.push(row);
     }
-    for (const g of this.st.local) rows.push({ id: g.id, name: g.name, description: g.dir, version: g.version, tier: 'local', installed: true, active: act === g.id, network: g.network });
+    for (const g of this.st.local) rows.push({ id: g.id, name: g.name, description: g.dir, version: g.version, tier: 'local', installed: true, active: act === g.id, network: g.network, unapproved: this.whyNot({ id: g.id, tier: 'local' }) });
     for (const g of this.idx?.games || []) {
       if (rows.some((r) => r.id === g.id)) continue;
-      if (g.tier === 'community' && !this.st.allowCommunity) continue;
       const row: GameRow = { id: g.id, name: g.name, description: g.description, version: g.version, tier: g.tier, installed: false, active: false, network: g.network };
       const bl = blockedBy(this.idx!.blocklist, g.id, g.version, g.bundle.sha256);
       if (bl) row.blocked = bl.reason;
       else if (compareVersions(g.minShellVersion, SHELL_VERSION) > 0) row.blocked = `needs a newer Token Games (shell ${g.minShellVersion})`;
+      const why = this.whyNot({ ...g, blocked: bl?.reason });
+      if (why) { row.unapproved = why; if (!dev) row.hidden = true; }
       rows.push(row);
     }
     return rows;
   }
 
+  // What the Games window, Settings → Games, the tray's update count and the Games buttons' dot show.
+  shown(): GameRow[] { return this.list().filter((r) => !r.hidden); }
+
   status() {
     return {
-      hostApp: this.o.hostApp, active: this.active(), allowCommunity: this.st.allowCommunity,
+      hostApp: this.o.hostApp, active: this.active(), developer: this.st.developer,
       catalog: { url: this.o.registryUrl, fetchedAt: this.idxFetchedAt || null, games: this.idx?.games.length ?? 0, error: this.idxError || null, signed: !!this.idx },
       games: this.list(), pending: this.requests(),
     };
@@ -253,7 +289,8 @@ export class Catalog {
       if (idOrDir === this.o.builtIn.id || this.st.local.some((g) => g.id === idOrDir)) throw new InstallError(`${idOrDir} is not a catalog game`);
       if (!this.idx) throw new InstallError(this.idxError || 'the catalog has not been loaded; check for games first');
       const g = this.listed(idOrDir);
-      if (!g) throw new InstallError(`${idOrDir} is not in the catalog${this.idx.games.some((x) => x.id === idOrDir) ? ' (community games are off; turn them on in Settings)' : ''}`);
+      const any = this.idx.games.find((x) => x.id === idOrDir);
+      if (!g) throw new InstallError(any ? `${idOrDir} is not an approved game (${this.whyNot(any)}); to install it anyway, turn on Show developer and unapproved games in Settings → Games` : `${idOrDir} is not in the catalog`);
       if (compareVersions(g.minShellVersion, SHELL_VERSION) > 0) throw new InstallError(`${g.id} needs shell ${g.minShellVersion}; this is ${SHELL_VERSION}`);
       const prev = this.st.installed[g.id];
       if (prev && !isNewer(g.version, prev.version)) throw new InstallError(`${g.id} ${prev.version} is installed and the catalog has ${g.version}: nothing newer to install`);
@@ -268,6 +305,7 @@ export class Catalog {
       const name = inst?.name || loc!.name;
       r = { ...base, id: idOrDir, name, version: inst?.version || loc!.version, tier: inst ? inst.tier : 'local', network: [], sheet: [{ kind: 'warn', text: `Removes ${name} from this computer. Its save is kept, so reinstalling picks up where it left off.` }] };
     } else {
+      if (!this.st.developer) throw new InstallError('adding a local folder is for developing a game: turn on Show developer and unapproved games in Settings → Games first');
       const dir = path.resolve(idOrDir);
       const c = checkBundleDir(dir);
       if (!c.ok || !c.manifest) throw new InstallError(`that folder is not a web game: ${c.errors.join('; ')}`);
@@ -296,7 +334,7 @@ export class Catalog {
       if (r.action === 'install' || r.action === 'update') {
         const p = r.prepared!;
         installPrepared(this.gamesDir, p, { installedVersion: this.st.installed[r.id]?.version, afterSwap: this.o.afterSwap });
-        const g = this.listed(r.id)!;
+        const g = this.idx!.games.find((x) => x.id === r.id)!; // the player approved it, even if developer games went off since
         this.st.installed[r.id] = { name: p.manifest.name, version: p.manifest.version, tier: g.tier, sha256: p.sha256, source: g.bundle.url, network: r.network, installedAt: new Date().toISOString() };
       } else if (r.action === 'remove') {
         if (this.st.installed[r.id]) {

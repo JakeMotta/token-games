@@ -55,9 +55,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--g-hot); out
 .tg-gi { min-width: 0; }
 .tg-gt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 17px; }
 .tg-ver { color: var(--g-dim); font-size: 14px; font-variant-numeric: tabular-nums; }
-.tg-tier, .tg-updtag { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; border: 1px solid var(--g-line); border-radius: 2px; padding: 1px 5px;
+.tg-tier, .tg-updtag, .tg-devtag { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; border: 1px solid var(--g-line); border-radius: 2px; padding: 1px 5px;
   color: var(--g-dim); white-space: nowrap; }
 .tg-updtag { color: var(--g-hot); border-color: var(--g-hot); }
+.tg-devtag { text-transform: none; letter-spacing: 0; font-size: 12px; border-style: dashed; white-space: normal; }
 .tg-gd { margin-top: 6px; color: var(--g-dim); font-size: 14px; overflow-wrap: anywhere; }
 .tg-game > .tg-chips { grid-column: 1 / -1; align-items: center; }
 .tg-playing { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; font-size: 14px; color: var(--g-hot); }

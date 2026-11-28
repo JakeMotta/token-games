@@ -18,7 +18,7 @@ attached to its GitHub Releases. Anything committed here is visible to everyone,
 | **Third-party games get no main-process code.** A catalog game is `"kind": "web"`: HTML, JS, CSS and images, run sandboxed | Main-process code could read any file or reach any server. A web bundle can be reviewed and boxed in |
 | **One active game** per app. The Ant Farm app shows the Ant Farm or one catalog game in its orb, card and window | One view, one orb, cheap when collapsed (CLAUDE.md, rule 4) |
 | **The Ant Farm stays built in.** Its own code, its `colony.json`, score and orb are unchanged; switching away and back keeps them | Built-in games are app games and are never installed or removed |
-| **The Community tier is off.** Settings → Games has a switch; until the player turns it on, community games are not listed and cannot be installed | They passed CI only; no person read them |
+| **Only approved games are listed.** The Games window shows the built-in game and approved catalog games; everything else waits for Settings → Games → **Show developer and unapproved games** (off by default). See [What the app lists](#what-the-app-lists) | The player sees the games we built and approved, not test, prototype or copied builds |
 | **No network for games.** A game reaches only its own files. A web game may list up to 8 `network` hosts; they are shown on the permission sheet and allowed only once the player approves the install | Rule 6: counts only, nothing sent anywhere |
 | **The app fetches the catalog only on request** ("Check for games", `tokengames list --refresh`), never at launch | No background network |
 | **Agents can only ask.** The CLI and MCP server request installs and removals; the player approves or denies them in the app | An agent should not change what runs on your computer by itself |
@@ -29,8 +29,29 @@ attached to its GitHub Releases. Anything committed here is visible to everyone,
 |---|---|---|
 | Built-in | Ships with the app (the Ant Farm) | This repo's own review |
 | Verified | The signed index; a maintainer read the code at the pinned commit | CI rebuild + a person |
-| Community | The signed index; off by default | CI rebuild only |
-| Local | A folder on this computer ("Add local folder…"), for developing a game | None; the sheet says so |
+| Community | The signed index; hidden unless the developer switch is on | CI rebuild only |
+| Local | A folder on this computer ("Add local folder…", developer switch on), for developing a game | None; the sheet says so |
+
+## What the app lists
+
+`notApproved()` (`shell/src/catalog/catalog.ts`) gives each game a reason it is not approved, or none. A game with a
+reason is **hidden**: left out of the Games window, Settings → Games, the update dot and the tray's update count, and
+an agent cannot ask to install it. The reasons, in order:
+
+1. **A local folder** (`tier: local`).
+2. **A copy of a built-in game**: its pointer (and index entry) has `"duplicates": "<built-in id>"`, or its id is the
+   built-in id plus `-web` (`ant-farm-web`, the Ant Farm packed to prove the catalog). The rule lives in the app, so
+   the committed, signed index needs no change and no re-signing.
+3. **Blocked** by `blocklist.json`.
+4. **A community game**, not reviewed.
+5. **From a developer or test catalog**: the index was not signed by one of the app's own keys (`REGISTRY_KEYS`),
+   e.g. a `TG_REGISTRY_URL` registry or a test registry.
+
+The built-in game is always approved. **Settings → Games → Show developer and unapproved games** (off by default,
+saved as `developer` in `state.json`) lists them all again, each with a **Not approved: …** tag, and allows Add local
+folder. A game that is already installed always shows, so it can be played or removed; it gets no update while it is
+not approved and the switch is off. `tokengames list` shows every game, with a NOTE column naming the reason
+(`hidden in the app: …`, or `not approved: …` while the switch is on).
 
 ## How a game runs (the sandbox)
 
@@ -133,7 +154,7 @@ The catalog folder is `~/Library/Application Support/Token Games` on macOS (`%AP
 
 ```sh
 cd cli && npm install && npm run build      # then: node dist/tokengames.js …, or npm link
-tokengames list [--refresh] [--json]        # ID NAME VERSION TIER STATE
+tokengames list [--refresh] [--json]        # ID NAME VERSION TIER STATE NOTE (why a game is hidden)
 tokengames install <id> | --dir <folder>    # asks the player; prints what it asked
 tokengames use <id>                         # switch the active game (installed games only)
 tokengames remove <id>                      # asks the player
@@ -177,13 +198,15 @@ that display's work area (`gamesWindowBounds` in `shell/src/geometry.ts`), at le
 Games again brings it to the front. Esc, Cmd+W (Ctrl+W), its Close button or the window's close button close it.
 Opening it changes nothing about the game: not the active game, not where it is or whether it shows.
 
-It lists (`shell/src/page/games-panel.ts`, layout `window`) the built-in game, installed, local and available games as
-cards, each with its icon, name, version, tier and description; Play, Install, Update, Remove and the Playing mark;
-"Check for games"; "Add local folder…"; the Community switch; and pending requests at the top with Approve and Deny.
+It lists (`shell/src/page/games-panel.ts`, layout `window`) the built-in game, installed games and approved available
+games as cards ([What the app lists](#what-the-app-lists)), each with its icon, name, version, tier and description;
+Play, Install, Update, Remove and the Playing mark; "Check for games" (with how many games it hides); and pending
+requests at the top with Approve and Deny. With the developer switch on it also lists the hidden games, tagged **Not
+approved: …**, and offers "Add local folder…".
 Its page (`games-page.ts`) runs isolated and sandboxed like the shell's own, and its bridge (`window.tokenGames`,
 `shell/src/main/games-window-preload.ts`) has only the catalog calls; the main process answers them only from the
-shell's page and this window. Settings → Games in the card (layout `summary`) is a line about the games, any request
-waiting with Approve and Deny, and Open Games…. When an agent asks, the orb's pill says so ("An agent asked: see
+shell's page and this window. Settings → Games (in the Settings window, layout `summary`) is a line about the games,
+the **Show developer and unapproved games** switch, any request waiting with Approve and Deny, and Open Games…. When an agent asks, the orb's pill says so ("An agent asked: see
 Games"), and opening Settings scrolls to the waiting request.
 
 **Update available.** When the cached index lists a newer version of an installed game (and it is not blocked), its
@@ -202,15 +225,18 @@ radius (a pointer PR can never touch app code). The signing key and `REGISTRY_KE
 ## Tests
 
 - Unit (`shell/test/catalog*.test.ts`, run by any game's `npm test`): the manifest checker, sha256 and zip-slip,
-  rollback and no downgrades, signatures and tamper rejection, the blocklist, permissions and the sheet.
+  rollback and no downgrades, signatures and tamper rejection, the blocklist, permissions and the sheet; what the app
+  lists (`notApproved()`, copies of a built-in game, the developer switch and its persistence).
 - CLI and MCP (`cd cli && npm test`): against a real catalog on a temp folder and a local test registry signed with a
   fresh test key, including the built MCP server over stdio and the `tg-registry` tool.
 - End to end (`cd ant-farm && npm run test:smoke`, the `catalog` run, `shell/src/main/smoke-catalog.ts`): real
-  Electron, hidden. Installs Token Garden from a local registry after approving the sheet, runs it sandboxed and
+  Electron, hidden. Checks the test registry's games stay hidden (and an agent cannot ask for them) until the
+  developer switch is on, then installs Token Garden from that local registry after approving the sheet, runs it sandboxed and
   checks it has no `require`, `process`, file access or network; feeds it a transcript line and checks its count;
   switches back to the Ant Farm and removes Token Garden. Screenshots: `catalog-*.png` in `shots/`.
 - The packaged Ant Farm (the `catalog-game` run): the same, but driven by the real `tokengames` CLI (list, install,
   use, status, remove) against the built `ant-farm/catalog` bundle, or a real registry with `TG_REGISTRY_URL`. It
+  checks the bundle is hidden as a copy of the built-in farm (and `tokengames list` says so) until the switch is on.
   checks the permission sheet, the sandbox, the farm drawing, the fed tokens reaching its own `save.json` (and the
   built-in `colony.json` left alone), that it loads that save again, and that removing it keeps the save.
   Screenshots: `catalog-game-*.png`.

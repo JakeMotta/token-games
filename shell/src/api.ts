@@ -26,17 +26,20 @@ export interface ShellBoot<S extends ShellSettings = ShellSettings> {
   mode: ModeInfo;
   shortcut: string;
   hosted: HostedBoot | null; // a catalog game is the active one: the page hosts it instead of its own game
+  settingsOpen: boolean; // the Settings window is open (the page was reloaded under it, switching games)
 }
 
 // The catalog game the shell hosts in place of its own (docs/catalog.md).
 export interface HostedBoot { id: string; name: string; version: string; tier: Tier; icon: string } // icon: a data: URL or ''
 
 // The Games window (the Games buttons, the tray's Games…, Settings → Games): what is installed, what the catalog offers,
-// and requests waiting for the player.
+// and requests waiting for the player. rows are the games shown: the built-in one, approved catalog games and what is
+// on this computer, plus every developer and unapproved game while developer is on (Catalog.shown()).
 export interface GamesView {
   rows: GameRow[];
   pending: PendingRequest[];
-  allowCommunity: boolean;
+  developer: boolean; // Settings → Games: "Show developer and unapproved games"
+  hiddenCount: number; // games left out because developer is off
   catalog: { fetchedAt: string | null; games: number; error: string | null; signed: boolean };
   canAddLocal: boolean; // a folder picker is available (not in the smoke test)
   icons: Record<string, string>; // game id → its icon as a data: URL, for the games on this computer
@@ -46,14 +49,14 @@ export const updatesIn = (rows: GameRow[]): number => rows.filter((r) => r.insta
 
 export type GamesOp =
   | { op: 'refresh' } | { op: 'request'; action: 'install' | 'update' | 'remove'; id: string } | { op: 'add-local' }
-  | { op: 'approve'; requestId: string } | { op: 'deny'; requestId: string } | { op: 'use'; id: string } | { op: 'community'; on: boolean };
+  | { op: 'approve'; requestId: string } | { op: 'deny'; requestId: string } | { op: 'use'; id: string } | { op: 'developer'; on: boolean };
 export interface GamesResult { ok: boolean; error?: string; view: GamesView }
 export interface GameRect { x: number; y: number; width: number; height: number; radius?: number } // radius: the rounded corners of the card
 
 export interface FeedStatus { watching: boolean; files: number; root: string; error?: string }
 
 // Commands the main process sends the page (tray menu, global shortcut, window changes).
-export type ShellCommand = 'settings' | 'fullscreen-on' | 'fullscreen-off';
+export type ShellCommand = 'fullscreen-on' | 'fullscreen-off';
 
 export interface ResizeDrag { phase: 'start' | 'move' | 'end'; x: number; y: number } // screen coordinates
 export type OrbDrag = ResizeDrag; // the orb dragged to another corner, the same way
@@ -88,6 +91,12 @@ export interface ShellApi<S extends ShellSettings = ShellSettings> {
   gamesDo(op: GamesOp): Promise<GamesResult>; // approving is only possible in the app: here or in the Games window
   onGames(fn: (v: GamesView) => void): void;
   openGames(): void; // open the Games window, or bring it to the front
+  // the Settings window: the page keeps the Settings sheet (the game's own sections, Display, Games, Reset) and its
+  // logic, hidden; the window shows a copy of it and sends the player's clicks and drags back (page/mirror.ts)
+  openSettings(open: boolean): void; // open it (or bring it to the front), or close it
+  onSettingsWindow(fn: (open: boolean) => void): void; // it opened or closed, however that happened
+  settingsSnap(s: SettingsSnap): void; // what the sheet looks like now
+  onSettingsInput(fn: (i: SettingsInput) => void): void; // the player did something in the window
   hostedRect(r: GameRect | null, scale: Scale): void; // where the hosted game goes in the window; null hides it
   onHostedStatus(fn: (s: HostedStatus) => void): void;
   onHostedKey(fn: (k: { key: string; meta: boolean; ctrl: boolean }) => void): void; // a shell key pressed in the game
@@ -101,6 +110,20 @@ export interface GamesWindowApi extends GamesApi {
   close(): void;
 }
 
+// The Settings sheet as the Settings window shows it: its HTML (live values written in, canvases as images) and the
+// game's own stylesheets (file names next to the page, shell.css left out).
+export interface SettingsSnap { html: string; css: string[] }
+// A click, or a new value, on the element at path (child indexes from the sheet's root, elements only).
+export interface SettingsInput { path: number[]; type: 'click' | 'input' | 'change'; value?: string; checked?: boolean }
+// The Settings window's bridge (window.tokenSettings, settings-window-preload.ts): the sheet, input back, closing.
+export interface SettingsBoot { name: string; smoke: boolean; snap: SettingsSnap | null }
+export interface SettingsWindowApi {
+  boot(): Promise<SettingsBoot>;
+  onSnap(fn: (s: SettingsSnap) => void): void;
+  input(i: SettingsInput): void;
+  close(): void;
+}
+
 export const CH = {
   state: 'shell:state', set: 'shell:set', reset: 'shell:reset', fullscreen: 'shell:fullscreen', resize: 'shell:resize',
   grab: 'shell:grab', orbDrag: 'shell:orb-drag', intent: 'shell:intent', status: 'shell:status', hide: 'shell:hide', quit: 'shell:quit',
@@ -108,5 +131,7 @@ export const CH = {
   save: 'shell:save', saveNow: 'shell:save-now', load: 'shell:load',
   games: 'shell:games', gamesDo: 'shell:games-do', gamesChanged: 'shell:games-changed',
   gamesOpen: 'shell:games-open', gamesBoot: 'shell:games-boot', gamesClose: 'shell:games-close',
+  settingsOpen: 'shell:settings-open', settingsWin: 'shell:settings-win', settingsSnap: 'shell:settings-snap', settingsInput: 'shell:settings-input',
+  settingsBoot: 'shell:settings-boot', settingsClose: 'shell:settings-close',
   hostedRect: 'shell:hosted-rect', hostedStatus: 'shell:hosted-status', hostedKey: 'shell:hosted-key',
 } as const;

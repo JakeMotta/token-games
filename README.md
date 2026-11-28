@@ -32,9 +32,13 @@ installed game, the Games button gets a small dot, the game's card says **Update
 button (approved like an install), and the menu says **Games… (1 update)**. A catalog
 game is a small web page the app runs sandboxed (no Node, no files, no network unless you approve its hosts); it sees
 usage counts and its own save, nothing else. Check for games, read the permission sheet, approve, press Play. One game
-is active at a time; the Ant Farm stays built in. The Community tier (games only CI has checked) is off until you
-turn it on. The first published game is the Ant Farm itself, as **Ant Farm (web)** (`ant-farm-web`): the same farm,
-sandboxed, with its own save. Sample: [Token Garden](samples/token-garden/). How it works:
+is active at a time; the Ant Farm stays built in. The Games window lists only the built-in game and **approved**
+games: from the catalog signed with the catalog's own key, not blocked, not a community game nobody reviewed, and not
+a sandboxed copy of a built-in game (a pointer's `duplicates` field, or an id like `ant-farm-web`). Everything else
+(test and developer catalogs, local folders, community games, copies) stays hidden until you turn on **Settings →
+Games → Show developer and unapproved games** (off by default); a game you already installed always shows, so you can
+remove it. `tokengames list` shows every game, with a NOTE for the hidden ones. The Ant Farm's own catalog build,
+**Ant Farm (web)** (`ant-farm-web`), is such a copy: published to prove the catalog, hidden in the app. Sample: [Token Garden](samples/token-garden/). How it works:
 [docs/catalog.md](docs/catalog.md). Write one: [docs/publishing-a-game.md](docs/publishing-a-game.md). Every step of
 publishing the Ant Farm, from package to rollback: [docs/first-game-walkthrough.md](docs/first-game-walkthrough.md).
 
@@ -62,8 +66,9 @@ to move it to another corner. The menu-bar icon has everything (show, open, pop 
 Games… (the Games window), Settings, size, docking, click-through, Reduced motion, Reset to defaults, quit), and **Alt+Cmd+T** (Alt+Ctrl+T)
 works anywhere: it shows a hidden game, in the corner it opens and closes the card, popped out it switches
 click-through. Settings are saved as you change them; Settings → Display → Presentation
-chooses where it starts. Settings closes with its **×** at the top right, **Close** at the bottom, Esc, or a click
-anywhere outside it. Games pause their drawing while the screen is locked or the computer sleeps.
+chooses where it starts. Settings (its button next to Games, the gear in the window's title bar, `,`, or the menu's
+Settings…) opens in a window of its own, centred and the same size as the Games window; pressing it again brings that
+window forward, and Esc, Cmd+W or Close closes it. Games pause their drawing while the screen is locked or the computer sleeps.
 
 ## Make a game
 

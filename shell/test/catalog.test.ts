@@ -1,10 +1,10 @@
 // The catalog on this computer: fetching the signed index, requests that wait for the player, installs, updates,
-// removal, the active game, community games, the blocklist, and the control socket the CLI and agents use.
+// removal, the active game, which games are approved, the developer switch, the blocklist, and the control socket the CLI and agents use.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Catalog, MAX_PENDING, type CatalogOptions } from '../src/catalog/catalog';
+import { Catalog, MAX_PENDING, notApproved, type CatalogOptions } from '../src/catalog/catalog';
 import { catalogCommands } from '../src/catalog/commands';
 import { callControl, CONTROL_COMMANDS, findSocket, serveControl, socketPathFor } from '../src/catalog/control';
 import { generateKeyPair } from '../src/catalog/signing';
@@ -110,15 +110,62 @@ test('remove waits for approval, deletes the files, keeps the save and falls bac
   assert.throws(() => c.setActive('token-garden'), /not installed/);
 });
 
-test('community games are hidden until the player turns them on', async () => {
-  const reg = testRegistry([{ id: 'wild-game', tier: 'community' }]);
+test('only approved games show: community, test-catalog, blocked and built-in copies are hidden until developer games are on', async () => {
+  const reg = testRegistry([{ id: 'wild-game', tier: 'community' }, { id: 'ant-farm-web' }, { id: 'token-garden' }, { id: 'bad-game' }],
+    [{ id: 'bad-game', reason: 'it sends your data away' }]);
   const c = open(reg);
   await c.refresh();
-  assert.ok(!c.list().some((g) => g.id === 'wild-game'));
-  await assert.rejects(c.request('install', 'wild-game'), /community games are off/);
-  c.setAllowCommunity(true);
+  assert.equal(c.developer, false, 'off by default');
+  assert.deepEqual(c.shown().map((g) => g.id), ['ant-farm', 'token-garden'], 'the built-in game and the approved one');
+  const hidden = Object.fromEntries(c.list().filter((g) => g.hidden).map((g) => [g.id, g.unapproved]));
+  assert.deepEqual(hidden, { 'wild-game': 'a community game, not reviewed', 'ant-farm-web': 'a copy of the built-in Ant Farm', 'bad-game': 'blocked' });
+  await assert.rejects(c.request('install', 'wild-game'), /not an approved game \(a community game.*Show developer and unapproved games/);
+  await assert.rejects(c.request('install', 'ant-farm-web'), /copy of the built-in Ant Farm/);
+  await assert.rejects(c.request('add-local', tmpDir('local')), /Show developer and unapproved games/);
+
+  c.setDeveloper(true);
+  assert.equal(open(reg, { dir: path.dirname(c.gamesDir) }).developer, true, 'remembered across restarts');
+  assert.deepEqual(c.shown().map((g) => g.id).sort(), ['ant-farm', 'ant-farm-web', 'bad-game', 'token-garden', 'wild-game']);
+  assert.equal(c.shown().find((g) => g.id === 'wild-game')!.unapproved, 'a community game, not reviewed', 'still marked');
   const r = await c.request('install', 'wild-game');
   assert.ok(r.sheet.some((l) => /not reviewed/.test(l.text)));
+  const w = await c.request('install', 'ant-farm-web');
+  c.setDeveloper(false);
+  c.approve(r.requestId); c.approve(w.requestId);
+  assert.ok(c.gameDir('wild-game'), 'an approval still goes through after the switch is turned off');
+
+  reg.republish([{ id: 'wild-game', tier: 'community', version: '0.2.0' }, { id: 'ant-farm-web', version: '0.2.0' }, { id: 'token-garden' }]);
+  await c.refresh();
+  const shown = c.shown();
+  assert.deepEqual(shown.map((g) => g.id).sort(), ['ant-farm', 'ant-farm-web', 'token-garden', 'wild-game'], 'installed ones stay, so they can be removed');
+  assert.ok(shown.every((g) => g.update === undefined), 'no update offers for unapproved games while the switch is off');
+  c.setDeveloper(true);
+  assert.equal(c.shown().find((g) => g.id === 'wild-game')!.update, '0.2.0');
+});
+
+test('a duplicate is a game named ant-farm-web or one whose pointer says duplicates', () => {
+  const b = { id: 'ant-farm', name: 'Ant Farm', description: '', version: '1.0.0' };
+  const ok = { builtIn: b, approvedIndex: true };
+  assert.equal(notApproved({ id: 'ant-farm', tier: 'built-in' }, ok), '');
+  assert.equal(notApproved({ id: 'token-garden', tier: 'verified' }, ok), '');
+  assert.equal(notApproved({ id: 'ant-farm-web', tier: 'verified' }, ok), 'a copy of the built-in Ant Farm');
+  assert.equal(notApproved({ id: 'farm-two', tier: 'verified', duplicates: 'ant-farm' }, ok), 'a copy of the built-in Ant Farm');
+  assert.equal(notApproved({ id: 'farm-two', tier: 'verified', duplicates: 'other' }, ok), '');
+  assert.equal(notApproved({ id: 'my-game', tier: 'local' }, ok), 'a local folder');
+  assert.equal(notApproved({ id: 'token-garden', tier: 'verified', blocked: 'bad' }, ok), 'blocked');
+  assert.equal(notApproved({ id: 'token-garden', tier: 'community' }, ok), 'a community game, not reviewed');
+  assert.equal(notApproved({ id: 'token-garden', tier: 'verified' }, { builtIn: b, approvedIndex: false }), 'from a developer or test catalog');
+});
+
+test('games from an index signed only by a developer key are trusted but not approved', async () => {
+  const reg = testRegistry([{}]);
+  const c = open(reg, { approvedKeys: [generateKeyPair().publicKey] });
+  assert.deepEqual(await c.refresh(), { ok: true, games: 1 });
+  assert.deepEqual(c.shown().map((g) => g.id), ['ant-farm']);
+  assert.equal(c.list().find((g) => g.id === 'token-garden')!.unapproved, 'from a developer or test catalog');
+  await assert.rejects(c.request('install', 'token-garden'), /developer or test catalog/);
+  c.setDeveloper(true);
+  assert.equal((await c.request('install', 'token-garden')).action, 'install');
 });
 
 test('the blocklist stops installs and switches off a game already installed', async () => {
@@ -151,6 +198,7 @@ test('a game for a newer shell is listed but cannot be installed', async () => {
 test('a local folder is added after approval and served from where it is', async () => {
   const reg = testRegistry([]);
   const c = open(reg);
+  c.setDeveloper(true);
   const dir = tmpDir('local');
   for (const f of webGame({ id: 'my-game' })) fs.writeFileSync(path.join(dir, f.path), f.data);
   const r = await c.request('add-local', dir);
@@ -158,6 +206,9 @@ test('a local folder is added after approval and served from where it is', async
   c.approve(r.requestId);
   assert.equal(c.gameDir('my-game'), dir);
   assert.equal(c.list().find((g) => g.id === 'my-game')!.tier, 'local');
+  c.setDeveloper(false);
+  assert.equal(c.shown().find((g) => g.id === 'my-game')!.unapproved, 'a local folder', 'still shown, so it can be removed');
+  c.setDeveloper(true);
   const bad = tmpDir('local');
   fs.writeFileSync(path.join(bad, 'game.json'), '{}');
   await assert.rejects(c.request('add-local', bad), /not a web game/);
