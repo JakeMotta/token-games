@@ -49,7 +49,7 @@ test('list, install (a request only), use after the player approves, and remove 
   } finally { await app.close(); }
 });
 
-test('list shows every game and marks the ones the Games window hides', async () => {
+test('list shows every game and marks the ones the Games tab hides', async () => {
   const app = await runningApp([{}, { id: 'wild-game', tier: 'community' }, { id: 'ant-farm-web' }]);
   try {
     const c = capture();

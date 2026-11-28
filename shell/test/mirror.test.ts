@@ -1,4 +1,4 @@
-// The Settings window names the element the player clicked by its place in the sheet, and the game's page finds the
+// The Settings tab names the element the player clicked by its place in the sheet, and the game's page finds the
 // same element in its own copy: pathOf and nodeAt must agree, and never reach outside the sheet.
 import test from 'node:test';
 import assert from 'node:assert/strict';

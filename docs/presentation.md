@@ -42,16 +42,18 @@ setting reads as `orb`), and Settings → Display sets it.
 ## Never without a way back
 
 - The menu-bar (tray) icon is always there: show or hide, open the card or **Back to the corner**, **Pop out**,
-  **Games…** (the Games window, with the number of updates waiting), Settings, Presentation, Corner, the floating window's size, full screen, click-through, always on top and dock
+  **Games…** and **Settings…** (the Games and Settings window on that tab; Games… with the number of updates waiting), Settings, Presentation, Corner, the floating window's size, full screen, click-through, always on top and dock
   corner, Reduced motion, **Reset to defaults**, Quit.
 - **Alt+Cmd+T** (Alt+Ctrl+T): shows a hidden game; in the corner, opens or closes the card; popped out, switches
   click-through (so a click-through window can always be grabbed again).
 - The **Games** button sits next to Settings in the card and in the popped-out window's title bar; it opens the
-  Games window, a normal window of its own centred on the screen (or brings it forward), and leaves the orb, the card
-  or the floating window as they are. **Settings** (its button next to Games, the gear in the window's title bar, `,`,
-  Cmd+, or the tray's Settings…) does the same: a window of its own, centred and the Games window's size, made by the
-  same code. Pressing it again brings that one window forward; Esc, Cmd+W, its Close button or the sheet's Close
-  closes it. The game's page keeps its Settings sheet, hidden, and the window shows a copy of it in large type
+  Games and Settings window on its Games tab: a normal window of its own centred on the screen, with two tabs at the
+  top, Games and Settings. It leaves the orb, the card or the floating window as they are. **Settings** (its button
+  next to Games, the gear in the window's title bar, `,`, Cmd+, or the tray's Settings…) opens the same window on its
+  Settings tab. There is only ever one: any way in brings it forward and switches it to its tab, and no tab is
+  remembered between opens. Click a tab, press Cmd+1 or Cmd+2, or ←/→ on a focused tab; Esc, Cmd+W, its Close button
+  or the sheet's Close closes it. It is light or dark with the system. The game's page keeps its Settings sheet,
+  hidden, and the Settings tab shows a copy of it in large type
   (`shell/src/page/mirror.ts`); clicks and slider moves there go back to the page, so a game's settings code works
   unchanged.
 - Keys while focused: Esc closes, `,` Settings, `O` pop out / back to the corner, `H` hide; popped out: `1` small,

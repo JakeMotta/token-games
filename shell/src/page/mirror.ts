@@ -1,4 +1,4 @@
-// The Settings window shows a copy of the Settings sheet that lives, hidden, in the game's page: the game's own
+// The Settings tab (of the Games and Settings window) shows a copy of the Settings sheet that lives, hidden, in the game's page: the game's own
 // sections and the shell's (Display, Games, Reset) keep their code and their elements where they always were, and the
 // window gets their HTML and sends the player's clicks and new values back. A game's settings work in the window
 // without the game knowing it moved.

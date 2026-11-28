@@ -1,8 +1,9 @@
 // The shell's side of a game's page: builds the corner orb (its round live view, the hover pill, the open card), the
 // popped-out window's frame (title bar, grip, size tag) and the Settings sheet, moves the game's root between them,
 // and handles the keys and settings every game shares. The Settings sheet stays hidden in this page: the Settings
-// window, centred on the screen like the Games window, shows a copy of it and sends the player's input back (mirror.ts). A game's page calls mountShell(game) once and does the rest through the
-// GameContext it gets back in start().
+// tab of the Games and Settings window, one window centred on the screen, shows a copy of it and sends the player's
+// input back (mirror.ts). A game's page calls mountShell(game) once and does the rest through the GameContext it gets
+// back in start().
 //
 // The main process decides the state (modes.ts); this page only shows it and sends intents (click, Esc, Pop out, …)
 // and, while the orb is dragged, the pointer in screen coordinates.
@@ -24,7 +25,7 @@ declare global { interface Window { tokenShell: ShellApi<any>; shellTest?: Recor
 const BAR = 20, BAR_FULL = 26, GRIP = 14;
 const FADE_MS = 130; // the page fades out this long before the window flies (main waits a little longer)
 const DRAG_PX = 4; // the orb follows the pointer only once it has moved this far, so a click stays a click
-const MIRROR_MS = 80, THUMBS_MS = 1000; // the Settings window's copy follows changes this soon; canvases once a second
+const MIRROR_MS = 80, THUMBS_MS = 1000; // the Settings tab's copy follows changes this soon; canvases once a second
 const SHELL_KEYS = 'Esc closes · , settings · O pop out / back to the corner · H hide · popped out: 1 small · 2 large · F full screen · T click-through · D dock';
 
 const GEAR = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6" cy="6" r="1.8"/><path d="M6 .8v1.6M6 9.6v1.6M.8 6h1.6M9.6 6h1.6M2.3 2.3l1.1 1.1M8.6 8.6l1.1 1.1M2.3 9.7l1.1-1.1M8.6 3.4l1.1-1.1"/></svg>';
@@ -343,7 +344,8 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
     for (const id of ['alwaysOnTop', 'clickThrough', 'reducedMotion'] as const) $<HTMLInputElement>('tg-' + id).checked = S[id];
   }
 
-  // Settings opens in its own window, or brings the open one to the front; the main process says when it opened or closed.
+  // Settings opens the Games and Settings window on its Settings tab (or brings it to the front and switches to that
+  // tab); the main process says when the Settings tab starts or stops showing, however that happened.
   function togglePanel(open = !settingsOpen): void {
     api.openSettings(open);
   }
@@ -357,7 +359,7 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
     game.onPanel?.(open);
   }
 
-  // While the Settings window is open it gets the sheet after every change, and once a second for the game's canvases
+  // While the Settings tab shows it gets the sheet after every change, and once a second for the game's canvases
   // (palette thumbnails and the like, drawn without changing the DOM). Only what changed is sent.
   const watch = new MutationObserver(() => sendSheet());
   let mirrorT = 0, thumbsT = 0, lastSheet = '';
@@ -432,7 +434,8 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   shape.addEventListener('pointercancel', (e) => release(e, true));
   shrinkBtn.onclick = (e) => { e.stopPropagation(); intent('escape'); };
   popBtn.onclick = (e) => { e.stopPropagation(); intent('pop'); };
-  // The Games buttons open the Games window (or bring it to the front); the card and the game stay as they are.
+  // The Games buttons open the Games and Settings window on its Games tab (or bring it to the front and switch to it);
+  // the card and the game stay as they are.
   setBtn.onclick = (e) => { e.stopPropagation(); togglePanel(true); };
   gamesBtn.onclick = (e) => { e.stopPropagation(); api.openGames(); };
   dockBtn.onclick = () => intent('dock');

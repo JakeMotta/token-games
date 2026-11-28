@@ -89,9 +89,9 @@ export const farmSmoke: GameSmoke<Settings> = {
     check('a frame stays cheap on the Ridiculous map', st.drawMs < 16, { drawMs: +st.drawMs.toFixed(2), tickMs: +st.tickMs.toFixed(3) });
     await js('shellTest.key("a")');
 
-    // the farm's Settings sections, above the shell's Display section, in the centred Settings window
+    // the farm's Settings sections, above the shell's Display section, in the Settings tab of the centred Games and Settings window
     await js('shellTest.key(",")');
-    check('Settings opens with , in its own window', await k.settingsReady() && (await k.js('shellTest.state()')).panelOpen);
+    check('Settings opens with , in the Games and Settings window', await k.settingsReady() && (await k.js('shellTest.state()')).panelOpen);
     check('the palette previews reach the window', await until(async () => (await k.sjs<{ images: number }>('settingsTest.look()')).images >= 7, 4000));
     const grid = await k.sjs<{ n: number; w: number }>(
       `(() => { const p = document.getElementById('sw-sheet').getBoundingClientRect(), c = document.querySelector('.pal img').getBoundingClientRect();
@@ -104,7 +104,7 @@ export const farmSmoke: GameSmoke<Settings> = {
     await k.sjs(`settingsTest.click('[data-pal="graphite"]')`);
     check('picking Graphite in the window applies and saves it', await until(async () => k.store.get().palette === 'graphite' && (await state(k)).palette === 'graphite'));
     await k.sjs('settingsTest.key("Escape")');
-    await until(() => !k.settingsWin());
+    await until(() => !k.hubWin());
 
     // the performance readout: off by default, a switch in Settings shows frames a second and ms in a corner of the farm
     check('the performance readout is off by default', !(await js<{ perf: string | false }>('gameTest.bounds()')).perf);
@@ -112,7 +112,7 @@ export const farmSmoke: GameSmoke<Settings> = {
     await k.settingsReady();
     await k.sjs('settingsTest.click("#perfReadout")');
     await k.sjs('settingsTest.key("Escape")');
-    await until(() => !k.settingsWin());
+    await until(() => !k.hubWin());
     check('Show performance puts frames a second and ms on the farm', k.store.get().perfReadout && await until(async () => /\d+ fps · [\d.]+ ms/.test(String((await js<{ perf: string | false }>('gameTest.bounds()')).perf)), 3000),
       await js('gameTest.bounds()'));
     await shot('window-perf-readout');

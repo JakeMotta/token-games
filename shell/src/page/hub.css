@@ -1,0 +1,104 @@
+/* The Games and Settings window: one normal window of its own with two tabs at the top. In the shell's quiet colours,
+   light or dark with the system like the orb, with crisp one-pixel borders and pixel icons; larger type than the small
+   card, since there is room. A game's own stylesheet is loaded too, before this one, for its Settings sections. */
+:root {
+  --g-back: #17181b; --g-card: #1f2024; --g-ink: #c9cbd0; --g-dim: #8a8d93; --g-hot: #b3a684; --g-line: rgba(255, 255, 255, 0.09);
+  --g-edge: rgba(255, 255, 255, 0.16); --g-head: #e2e3e7; --g-icon: #121315; --g-press: rgba(0, 0, 0, 0.35); --g-wash: rgba(179, 166, 132, 0.06);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --g-back: #f3f2ee; --g-card: #fbfaf7; --g-ink: #34353a; --g-dim: #6c6e74; --g-hot: #7d6c3f; --g-line: rgba(0, 0, 0, 0.1);
+    --g-edge: rgba(0, 0, 0, 0.2); --g-head: #1f2024; --g-icon: #e6e4de; --g-press: rgba(0, 0, 0, 0.12); --g-wash: rgba(125, 108, 63, 0.07);
+    color-scheme: light;
+  }
+}
+html, body { margin: 0; min-height: 100%; background: var(--g-back); color: var(--g-ink); }
+body { font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--g-hot); outline-offset: 2px; }
+
+.gw-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 12px; padding: 12px 28px 0;
+  background: var(--g-back); border-bottom: 1px solid var(--g-line); }
+.gw-sub { color: var(--g-dim); font-size: 14px; padding-bottom: 4px; }
+.gw-sp { flex: 1; }
+.gw-close { font: inherit; font-size: 13px; color: var(--g-dim); background: transparent; border: 1px solid var(--g-line);
+  border-radius: 3px; padding: 5px 12px; margin-bottom: 4px; cursor: pointer; }
+.gw-close:hover { color: var(--g-ink); border-color: var(--g-edge); }
+.gw-main { padding: 18px 28px 32px; }
+
+/* the tabs: the active one in full ink with a line under it, the other dimmed */
+.hw-tabs { display: flex; gap: 4px; align-self: stretch; }
+.hw-tab { font: inherit; font-size: 20px; font-weight: 600; letter-spacing: 0.01em; color: var(--g-dim); background: transparent; border: 0;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 6px 12px 10px; cursor: pointer; }
+.hw-tab:first-child { margin-left: -12px; }
+.hw-tab:hover { color: var(--g-ink); }
+.hw-tab.on { color: var(--g-head); border-bottom-color: var(--g-hot); }
+.hw-tab:focus-visible { outline-offset: -4px; }
+
+/* the shared picker (games-panel.ts, layout 'window') */
+.tg-games h2 { margin: 0 0 10px; font-size: 15px; font-weight: 600; color: var(--g-hot); }
+.tg-pending { margin-bottom: 22px; }
+.tg-sheet { margin: 0 0 12px; padding: 14px 16px; border: 1px solid var(--g-hot); border-radius: 3px; background: var(--g-wash); max-width: 720px; }
+.tg-sheet-t { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 16px; }
+.tg-sheet-t b, .tg-gt b { font-weight: 600; color: var(--g-head); }
+.tg-sheet ul { margin: 8px 0 12px; padding-left: 20px; }
+.tg-sheet li { margin: 3px 0; font-size: 14px; }
+.tg-sheet li.tg-l-ok { color: var(--g-dim); }
+.tg-sheet li.tg-l-warn { color: var(--g-hot); }
+.tg-agent { margin-top: 4px; font-size: 14px; color: var(--g-hot); }
+
+.tg-gbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; }
+.tg-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.tg-chips button { font: inherit; font-size: 14px; color: var(--g-ink); background: var(--g-card); border: 1px solid var(--g-edge); border-radius: 3px;
+  min-height: 34px; padding: 5px 16px; cursor: pointer; box-shadow: 0 2px 0 var(--g-press); }
+.tg-chips button:hover { border-color: var(--g-dim); }
+.tg-chips button:active { transform: translateY(1px); box-shadow: 0 1px 0 var(--g-press); }
+.tg-chips button.tg-yes { border-color: var(--g-hot); color: var(--g-hot); }
+.tg-chips button:disabled { opacity: 0.4; cursor: default; }
+.tg-row { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--g-dim); cursor: pointer; }
+.tg-row input { margin: 0; width: 16px; height: 16px; accent-color: var(--g-hot); }
+.tg-note { margin: 12px 0 16px; color: var(--g-dim); font-size: 13.5px; }
+.tg-err { color: var(--g-hot); }
+
+.tg-glist { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.tg-game { display: grid; grid-template-columns: 56px 1fr; grid-template-rows: 1fr auto; gap: 12px 14px; padding: 16px;
+  background: var(--g-card); border: 1px solid var(--g-line); border-radius: 3px; min-height: 150px; }
+.tg-game.on { border-color: var(--g-hot); }
+.tg-game.upd { border-color: var(--g-edge); }
+.tg-gicon { width: 56px; height: 56px; box-sizing: border-box; image-rendering: pixelated; border: 1px solid var(--g-line); border-radius: 2px; background: var(--g-icon); }
+.tg-gletter { display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 700; color: var(--g-dim);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.tg-gi { min-width: 0; }
+.tg-gt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 17px; }
+.tg-ver { color: var(--g-dim); font-size: 14px; font-variant-numeric: tabular-nums; }
+.tg-tier, .tg-updtag, .tg-devtag { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; border: 1px solid var(--g-line); border-radius: 2px; padding: 1px 5px;
+  color: var(--g-dim); white-space: nowrap; }
+.tg-updtag { color: var(--g-hot); border-color: var(--g-hot); }
+.tg-devtag { text-transform: none; letter-spacing: 0; font-size: 12px; border-style: dashed; white-space: normal; }
+.tg-gd { margin-top: 6px; color: var(--g-dim); font-size: 14px; overflow-wrap: anywhere; }
+.tg-game > .tg-chips { grid-column: 1 / -1; align-items: center; }
+.tg-playing { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; font-size: 14px; color: var(--g-hot); }
+.tg-playing::before { content: ''; width: 8px; height: 8px; background: var(--g-hot); }
+
+/* the Settings tab: the game page's Settings sheet (the game's own sections, Display, Games, Reset) */
+.sw-sheet { max-width: 760px; color: var(--g-ink); font-size: 14px; }
+.sw-sheet > *, .sw-sheet > div > section { margin: 0 0 14px; padding: 16px 18px; background: var(--g-card); border: 1px solid var(--g-line); border-radius: 3px; }
+.sw-sheet > div:has(> section) { padding: 0; background: none; border: 0; margin: 0; }
+.sw-sheet section + section { border-top: 1px solid var(--g-line); }
+.sw-sheet h4 { margin: 0 0 10px; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--g-hot); }
+.sw-sheet .tg-row { margin: 8px 0; min-height: 26px; color: var(--g-ink); }
+.sw-sheet .tg-row input[type=range] { flex: 1; min-width: 120px; max-width: 360px; height: 18px; width: auto; }
+.sw-sheet .tg-row output { width: 44px; text-align: right; color: var(--g-dim); font-variant-numeric: tabular-nums; }
+.sw-sheet .tg-row .tg-chips, .sw-sheet .tg-docks { margin-left: auto; }
+.sw-sheet .tg-chips button.on, .sw-sheet .tg-docks button.on { border-color: var(--g-hot); color: var(--g-hot); }
+.sw-sheet .tg-docks { display: flex; gap: 6px; }
+.sw-sheet .tg-docks button { font: inherit; font-size: 15px; color: var(--g-ink); background: var(--g-card); border: 1px solid var(--g-edge); border-radius: 3px;
+  min-width: 38px; min-height: 34px; padding: 3px 10px; cursor: pointer; }
+.sw-sheet .tg-docks button:hover { border-color: var(--g-dim); }
+.sw-sheet .tg-note { margin: 8px 0; }
+.sw-sheet .tg-games > .tg-chips { margin-top: 10px; }
+.sw-sheet .tg-foot .tg-chips { margin-bottom: 4px; }
+.sw-sheet .tg-keys { margin: 10px 0 0; font-size: 12.5px; }
+.sw-sheet section button:not(.tg-chips button):not(.tg-docks button) { font-size: 13px; }
+
+@media (prefers-reduced-motion: reduce) { .tg-chips button:active { transform: none; } }

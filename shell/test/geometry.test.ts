@@ -52,13 +52,13 @@ test('the grip sits away from the dock and resizing keeps 16:9 with the docked c
   assert.equal(tiny.width, 256, 'never smaller than the minimum');
 });
 
-test('the Games window: 960 × 680, centred on the work area of the game\'s display', () => {
+test('the Games and Settings window: 960 × 680, centred on the work area of the game\'s display', () => {
   assert.deepEqual(gamesWindowBounds(AREA), { x: 240, y: 25 + 60, width: 960, height: 680 });
   // a second display to the left, below the first's top
   assert.deepEqual(gamesWindowBounds({ x: -1920, y: 0, width: 1920, height: 1055 }), { x: -1920 + 480, y: 188, width: 960, height: 680 });
 });
 
-test('the Games window shrinks to fit a small work area, keeping a margin, but not below its minimum', () => {
+test('the Games and Settings window shrinks to fit a small work area, keeping a margin, but not below its minimum', () => {
   const m = 2 * MARGIN; // in from each edge
   assert.deepEqual(gamesWindowBounds({ x: 0, y: 25, width: 1024, height: 640 }), { x: 32, y: 25 + m, width: 960, height: 640 - 2 * m });
   assert.deepEqual(gamesWindowBounds({ x: 0, y: 25, width: 680, height: 520 }), { x: 20, y: 25 + 20, width: GAMES_WINDOW.minWidth, height: GAMES_WINDOW.minHeight });

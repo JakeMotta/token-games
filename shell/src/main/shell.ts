@@ -7,11 +7,11 @@
 // open card and lets every click through except over the orb (or the pill, or the open card).
 //
 // It also hosts the game catalog (docs/catalog.md): the shell's own game is the built-in one, and a catalog game the
-// player installed and chose runs in its place, sandboxed (catalog-host.ts). The catalog has its own normal window,
-// the Games window (the Games buttons, the tray's Games…), a second page with only the catalog calls. Settings opens
-// the same way, centred in a window of its own that shows a copy of the game page's Settings sheet. The control
-// socket lets the tokengames CLI and agents list games and ask for installs, which only the player can approve, in the
-// Games window or Settings → Games.
+// player installed and chose runs in its place, sandboxed (catalog-host.ts). The catalog and Settings share one
+// normal window, centred on the screen, with two tabs: Games (the Games buttons, the tray's Games…) and Settings (the
+// Settings buttons, the , key, the tray's Settings…), a second page with only the catalog calls and a copy of the game
+// page's Settings sheet (hub.ts, page/hub-page.ts). The control socket lets the tokengames CLI and agents list games
+// and ask for installs, which only the player can approve, in the Games tab or Settings → Games.
 //
 // Environment (for the automated smoke test): TG_SMOKE=<folder> runs the smoke test and quits without ever showing a
 // window; TG_SMOKE_MODE picks the run; TG_USER_DATA moves the settings and save files; TG_CLAUDE_DIR points the feed
@@ -21,7 +21,7 @@ import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage,
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { CH, type FeedStatus, type GameRect, type GamesBoot, type GamesOp, type GamesResult, type GamesView, type GameStatus, type HostedBoot, type ModeInfo, type OrbDrag, type ResizeDrag, type SettingsBoot, type SettingsInput, type SettingsSnap, type ShellBoot, type ShellCommand, updatesIn } from '../api';
+import { CH, type FeedStatus, type GameRect, type GamesOp, type GamesResult, type GamesView, type GameStatus, type HostedBoot, type HubBoot, type ModeInfo, type OrbDrag, type ResizeDrag, type SettingsInput, type SettingsSnap, type ShellBoot, type ShellCommand, updatesIn } from '../api';
 import { Catalog, type BuiltIn } from '../catalog/catalog';
 import { catalogCommands } from '../catalog/commands';
 import { defaultCatalogDir, serveControl, type ControlServer } from '../catalog/control';
@@ -35,6 +35,7 @@ import { watchClaudeCode, type Feed } from '../feed/claude-code';
 import { boundsFor, clampToArea, GAMES_WINDOW, gamesWindowBounds, gripCorner, nearestDock, resizeFromGrip, type Area } from '../geometry';
 import { initialState, next, PAGE_EVENTS, presentationOf, type Scale, type ShellEvent, type ShellState } from '../modes';
 import { contains, nearestCorner, onOrb, orbCenter, orbGeo, orbWindowBounds, pickDisplay, shapeRect, type Corner, type OrbGeo } from '../orb';
+import { ENTRY_TAB, HUB_LABELS, isHubTab, openHub, pickTab, settingsShowing, type HubState, type HubTab } from '../hub';
 import { settingsKit, type Bounds, type GameSettingsSchema, type ShellSettings } from '../settings';
 import { trayMenu, type TrayAction, type TrayItem } from '../tray';
 import { runSmoke, type GameSmoke } from './smoke';
@@ -64,8 +65,8 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
   const kit = settingsKit(cfg.settings);
 
   let win: BrowserWindow | null = null;
-  let gamesWin: BrowserWindow | null = null; // the Games window, while it is open
-  let settingsWin: BrowserWindow | null = null; // the Settings window, while it is open
+  let hubWin: BrowserWindow | null = null; // the Games and Settings window, while it is open
+  let hub: HubState = { open: false, tab: 'games' }; // and which tab it shows
   let settingsSnap: SettingsSnap | null = null; // the Settings sheet as the game's page last sent it
   let tray: Tray | null = null;
   let store: SettingsStore<S>;
@@ -99,8 +100,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
 
   const same = (a: Bounds | null, b: Bounds): boolean => !!a && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
   const send = (ch: string, v: unknown): void => { if (win && !win.isDestroyed()) win.webContents.send(ch, v); };
-  const gamesOpen = (): boolean => !!gamesWin && !gamesWin.isDestroyed();
-  const settingsOpen = (): boolean => !!settingsWin && !settingsWin.isDestroyed();
+  const hubOpen = (): boolean => !!hubWin && !hubWin.isDestroyed();
   const floating = (): boolean => presentationOf(state) === 'floating';
   // The smoke test never puts a window on screen: there, showing and hiding only flip this flag.
   let smokeShown = true;
@@ -343,7 +343,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     catalog.onChange(() => {
       const v = gamesView();
       send(CH.gamesChanged, v);
-      if (gamesOpen()) gamesWin!.webContents.send(CH.gamesChanged, v);
+      if (hubOpen()) hubWin!.webContents.send(CH.gamesChanged, v);
       refreshTray(); // the tray says when an update is waiting
       if (catalog.active() !== activeId) switchGame();
     });
@@ -408,7 +408,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     };
   }
 
-  // What the Games window and Settings → Games ask for. Approving happens only here: the player clicked it in the app.
+  // What the Games tab and Settings → Games ask for. Approving happens only here: the player clicked it in the app.
   async function gamesDo(op: GamesOp): Promise<GamesResult> {
     try {
       if (op?.op === 'refresh') {
@@ -416,7 +416,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
         if (!r.ok) return { ok: false, error: r.error, view: gamesView() };
       } else if (op?.op === 'request' && ['install', 'update', 'remove'].includes(op.action) && typeof op.id === 'string') await catalog.request(op.action, op.id, 'player');
       else if (op?.op === 'add-local') {
-        const parent = gamesOpen() ? gamesWin : win;
+        const parent = hubOpen() ? hubWin : win;
         if (SMOKE || !parent) throw new Error('no folder picker here');
         const r = await dialog.showOpenDialog(parent, { title: 'Add a game folder', buttonLabel: 'Add', properties: ['openDirectory'] });
         if (!r.canceled && r.filePaths[0]) await catalog.request('add-local', r.filePaths[0], 'player');
@@ -431,60 +431,64 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     }
   }
 
-  // ---------- the Games and Settings windows: normal windows of their own, centred on the screen ----------
+  // ---------- the Games and Settings window: one normal window of its own, centred on the screen, two tabs ----------
 
-  // Opens one centred on the display the game is on, the same size for both. Only the page's own preload, no
-  // navigation, no new windows. It changes nothing about the game: not the active game, where it is or whether it shows.
-  function centredWindow(title: string, preload: string, page: string): BrowserWindow {
-    const area = screen.getDisplayMatching(win ? win.getBounds() : screen.getPrimaryDisplay().bounds).workArea;
-    const w = new BrowserWindow({
-      ...gamesWindowBounds(area), minWidth: Math.min(GAMES_WINDOW.minWidth, area.width), minHeight: Math.min(GAMES_WINDOW.minHeight, area.height),
-      show: false, title: `${title} · ${cfg.name}`, backgroundColor: '#17181b', resizable: true, fullscreenable: false, autoHideMenuBar: true,
-      webPreferences: {
-        preload: path.join(cfg.dir, preload), contextIsolation: true, sandbox: true, nodeIntegration: false,
-        backgroundThrottling: !SMOKE,
-      },
-    });
-    w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-    w.webContents.on('will-navigate', (e) => e.preventDefault());
-    if (!SMOKE) w.once('ready-to-show', () => { if (IS_MAC) app.focus({ steal: true }); w.show(); w.focus(); });
-    w.loadFile(path.join(cfg.dir, page));
-    return w;
-  }
-
-  // There is only ever one of each: opening it again brings the open one to the front.
-  function toFront(w: BrowserWindow): void {
-    if (w.isMinimized()) w.restore();
-    if (!SMOKE) { if (IS_MAC) app.focus({ steal: true }); w.show(); w.focus(); }
-  }
-
-  function openGames(): void {
-    if (gamesOpen()) return toFront(gamesWin!);
-    const g = gamesWin = centredWindow('Games', 'games-window-preload.js', 'games.html');
-    g.on('closed', () => { if (gamesWin === g) gamesWin = null; });
-  }
-
-  function closeGames(): void {
-    if (gamesOpen()) gamesWin!.close();
-  }
-
-  // Settings (the Settings buttons, the , key, the tray's Settings…): the game's page keeps the sheet and is told the
-  // window opened, so it starts sending its copy; and that it closed, however it closed.
-  function openSettings(): void {
-    if (settingsOpen()) return toFront(settingsWin!);
-    settingsSnap = null;
-    const w = settingsWin = centredWindow('Settings', 'settings-window-preload.js', 'settings.html');
-    w.on('closed', () => {
-      if (settingsWin !== w) return;
-      settingsWin = null;
+  // Opens it on a tab, centred on the display the game is on. Only its own preload, no navigation, no new windows. It
+  // changes nothing about the game: not the active game, where it is or whether it shows. There is only ever one:
+  // opening it again brings it to the front on the tab asked for. Nothing about it is remembered between opens.
+  function showHub(tab: HubTab): void {
+    const was = settingsShowing({ ...hub, open: hubOpen() });
+    const o = openHub({ ...hub, open: hubOpen() }, tab);
+    hub = o.next;
+    if (!o.create) {
+      const w = hubWin!;
+      if (w.isMinimized()) w.restore();
+      if (!SMOKE) { if (IS_MAC) app.focus({ steal: true }); w.show(); w.focus(); }
+      if (o.switched) w.webContents.send(CH.hubTab, tab);
+    } else {
       settingsSnap = null;
-      send(CH.settingsWin, false);
-    });
-    send(CH.settingsWin, true);
+      const area = screen.getDisplayMatching(win ? win.getBounds() : screen.getPrimaryDisplay().bounds).workArea;
+      const w = hubWin = new BrowserWindow({
+        ...gamesWindowBounds(area), minWidth: Math.min(GAMES_WINDOW.minWidth, area.width), minHeight: Math.min(GAMES_WINDOW.minHeight, area.height),
+        show: false, title: `${HUB_LABELS[tab]} · ${cfg.name}`, backgroundColor: nativeTheme.shouldUseDarkColors ? '#17181b' : '#f3f2ee',
+        resizable: true, fullscreenable: false, autoHideMenuBar: true,
+        webPreferences: {
+          preload: path.join(cfg.dir, 'hub-window-preload.js'), contextIsolation: true, sandbox: true, nodeIntegration: false,
+          backgroundThrottling: !SMOKE,
+        },
+      });
+      w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+      w.webContents.on('will-navigate', (e) => e.preventDefault());
+      if (!SMOKE) w.once('ready-to-show', () => { if (IS_MAC) app.focus({ steal: true }); w.show(); w.focus(); });
+      w.on('closed', () => {
+        if (hubWin !== w) return;
+        const showing = settingsShowing(hub);
+        hubWin = null;
+        hub = { ...hub, open: false };
+        settingsSnap = null;
+        if (showing) send(CH.settingsWin, false);
+      });
+      w.loadFile(path.join(cfg.dir, 'hub.html'));
+    }
+    settingsTold(was);
   }
 
-  function closeSettings(): void {
-    if (settingsOpen()) settingsWin!.close();
+  // The player picked a tab in the window.
+  function hubPicked(tab: HubTab): void {
+    const was = settingsShowing(hub);
+    hub = pickTab(hub, tab).next;
+    settingsTold(was);
+  }
+
+  // The game's page keeps its Settings sheet and sends the window a copy only while the Settings tab shows: tell it
+  // when that starts or stops.
+  function settingsTold(was: boolean): void {
+    const now = settingsShowing(hub);
+    if (now !== was) send(CH.settingsWin, now);
+  }
+
+  function closeHub(): void {
+    if (hubOpen()) hubWin!.close();
   }
 
   // ---------- full screen (the display's whole area, not the Mac's full-screen Space), popped out only ----------
@@ -578,8 +582,8 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     else if (a.do === 'open') { showWindow(); dispatch('toggle'); }
     else if (a.do === 'pop') { showWindow(); dispatch('pop'); }
     else if (a.do === 'dock') { showWindow(); dispatch('dock'); }
-    else if (a.do === 'games') openGames();
-    else if (a.do === 'settings') openSettings();
+    else if (a.do === 'games') showHub(ENTRY_TAB['tray-games']);
+    else if (a.do === 'settings') showHub(ENTRY_TAB['tray-settings']);
     else if (a.do === 'fullscreen') { if (state === 'popped') { showWindow(true); setFullscreen(!fullPrev); } }
     else if (a.do === 'reset') resetAll();
     else if (a.do === 'quit') app.quit();
@@ -652,16 +656,15 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
 
   function wireIpc(): void {
     // Only the shell's own page may use these: never a hosted game's view (it has its own, smaller bridge). The Games
-    // window's page may use the catalog calls and nothing else.
+    // and Settings window's page may use the catalog calls, its own tab and Settings calls, and nothing else.
     const fromPage = (e: IpcMainEvent | IpcMainInvokeEvent) => !!win && e.sender === win.webContents;
-    const fromGames = (e: IpcMainEvent | IpcMainInvokeEvent) => gamesOpen() && e.sender === gamesWin!.webContents;
-    const fromSettings = (e: IpcMainEvent | IpcMainInvokeEvent) => settingsOpen() && e.sender === settingsWin!.webContents;
-    const handle = (ch: string, fn: (...a: any[]) => unknown, games = false) => ipcMain.handle(ch, (e, ...a) => (fromPage(e) || (games && fromGames(e)) ? fn(...a) : null));
-    const on = (ch: string, fn: (...a: any[]) => void, games = false) => ipcMain.on(ch, (e, ...a) => { if (fromPage(e) || (games && fromGames(e))) fn(...a); });
+    const fromHub = (e: IpcMainEvent | IpcMainInvokeEvent) => hubOpen() && e.sender === hubWin!.webContents;
+    const handle = (ch: string, fn: (...a: any[]) => unknown, games = false) => ipcMain.handle(ch, (e, ...a) => (fromPage(e) || (games && fromHub(e)) ? fn(...a) : null));
+    const on = (ch: string, fn: (...a: any[]) => void, games = false) => ipcMain.on(ch, (e, ...a) => { if (fromPage(e) || (games && fromHub(e))) fn(...a); });
     handle(CH.state, (): ShellBoot<S> => ({
       name: cfg.name, settings: store.get(), dark: nativeTheme.shouldUseDarkColors, platform: process.platform, fullscreen: !!fullPrev,
       feed: { ...feedStatus, watching: !!feed && feed.watching(), files: feed ? feed.files() : 0 }, smoke: !!SMOKE, mode: modeInfo(), shortcut: SHORTCUT,
-      hosted, settingsOpen: settingsOpen(),
+      hosted, settingsOpen: settingsShowing({ ...hub, open: hubOpen() }),
     }));
     handle(CH.set, (patch: Partial<S>) => {
       if (patch && (patch.size || patch.dock)) setFullscreen(false);
@@ -687,25 +690,26 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     handle(CH.load, () => (hosted ? null : save.load()));
     handle(CH.games, gamesView, true);
     handle(CH.gamesDo, (op: GamesOp) => gamesDo(op), true);
-    handle(CH.gamesBoot, (): GamesBoot => ({ name: cfg.name, smoke: !!SMOKE }), true);
-    on(CH.gamesOpen, openGames);
-    on(CH.gamesClose, closeGames, true);
-    // The Settings window gets the sheet the game's page sends, and sends the player's input back to that page: the
-    // page's own code decides what it does. Only the Settings window may send input; only the page may send the sheet.
-    on(CH.settingsOpen, (open: boolean) => (open ? openSettings() : closeSettings()));
+    // The game's page opens the window on a tab (its Games and Settings buttons, the , key, Settings → Games' Open
+    // Games…) or closes it (the sheet's own Close); the window picks its tabs and closes itself.
+    on(CH.gamesOpen, () => showHub('games'));
+    on(CH.settingsOpen, (open: boolean) => (open ? showHub('settings') : closeHub()));
+    ipcMain.handle(CH.hubBoot, (e): HubBoot | null => (fromHub(e) ? { name: cfg.name, smoke: !!SMOKE, tab: hub.tab, snap: settingsSnap } : null));
+    ipcMain.on(CH.hubTab, (e, tab: unknown) => { if (fromHub(e) && isHubTab(tab)) hubPicked(tab); });
+    ipcMain.on(CH.hubClose, (e) => { if (fromHub(e)) closeHub(); });
+    // The Settings tab gets the sheet the game's page sends, and sends the player's input back to that page: the
+    // page's own code decides what it does. Only the window may send input; only the page may send the sheet.
     on(CH.settingsSnap, (snap: SettingsSnap) => {
-      if (!settingsOpen() || !snap || typeof snap.html !== 'string' || !Array.isArray(snap.css)) return;
+      if (!hubOpen() || !snap || typeof snap.html !== 'string' || !Array.isArray(snap.css)) return;
       settingsSnap = { html: snap.html, css: snap.css.filter((f) => typeof f === 'string' && /^[\w.-]+\.css$/.test(f)) };
-      settingsWin!.webContents.send(CH.settingsSnap, settingsSnap);
+      hubWin!.webContents.send(CH.settingsSnap, settingsSnap);
     });
-    ipcMain.handle(CH.settingsBoot, (e): SettingsBoot | null => (fromSettings(e) ? { name: cfg.name, smoke: !!SMOKE, snap: settingsSnap } : null));
     ipcMain.on(CH.settingsInput, (e, i: SettingsInput) => {
-      if (!fromSettings(e) || !i || !Array.isArray(i.path) || !i.path.every((n) => Number.isInteger(n) && n >= 0) || !['click', 'input', 'change'].includes(i.type)) return;
+      if (!fromHub(e) || !i || !Array.isArray(i.path) || !i.path.every((n) => Number.isInteger(n) && n >= 0) || !['click', 'input', 'change'].includes(i.type)) return;
       send(CH.settingsInput, {
         path: i.path, type: i.type, ...(typeof i.value === 'string' ? { value: i.value.slice(0, 200) } : {}), ...(typeof i.checked === 'boolean' ? { checked: i.checked } : {}),
       } satisfies SettingsInput);
     });
-    ipcMain.on(CH.settingsClose, (e) => { if (fromSettings(e)) closeSettings(); });
     on(CH.hostedRect, (r: GameRect | null, sc: Scale) => {
       if (!hosted) return;
       openHost();
@@ -735,8 +739,8 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
       runSmoke<S>({
         win: win!, store, outDir: SMOKE, claudeDir: CLAUDE_DIR, update: (p) => update(p), resize: onResizeDrag, orbDrag: onOrbDrag,
         isFullscreen: () => !!fullPrev, dispatch, displays: onDisplays, state: () => state, geo: () => geo, trayItems, tray: runAction, hotkey, status: () => status,
-        visible, show: () => showWindow(), hide: hideWindow, ignoresMouse: () => ignoring, gamesWin: () => (gamesOpen() ? gamesWin : null),
-        settingsWin: () => (settingsOpen() ? settingsWin : null),
+        visible, show: () => showWindow(), hide: hideWindow, ignoresMouse: () => ignoring, hubWin: () => (hubOpen() ? hubWin : null),
+        hubTab: () => hub.tab,
         catalog: {
           catalog: () => catalog, host: () => host, socket: () => control?.socket || '', builtIn: () => builtIn, saveFile: () => save.file,
           bundleDir: () => path.join(app.getAppPath(), 'catalog'), publish: (v) => smokeReg?.publish(v),

@@ -32,10 +32,10 @@ export interface GameRow {
   update?: string; // a newer version in the catalog
   blocked?: string; // why it may not run
   unapproved?: string; // why it is not one of the approved games (notApproved); '' or missing when it is
-  hidden?: boolean; // left out of the Games window (unapproved, not on this computer, developer games off)
+  hidden?: boolean; // left out of the Games tab (unapproved, not on this computer, developer games off)
 }
 
-// Why a game is not one of the approved games the Games window lists, or '' when it is. Approved: the built-in game,
+// Why a game is not one of the approved games the Games tab lists, or '' when it is. Approved: the built-in game,
 // and a verified game from an index signed by the catalog's own key (keys.ts), not blocked and not a copy of the
 // built-in game. A copy is a catalog game marked "duplicates": "<built-in id>" in the index, or one whose id is the
 // built-in id plus "-web", the name shell/scripts/build-web.mjs gives a shell game shipped as a catalog game (the
@@ -206,7 +206,7 @@ export class Catalog {
   }
 
   // Every game: the built-in one, installed and local ones, and what the index offers, each marked with why it is not
-  // approved (unapproved) and whether the Games window leaves it out (hidden). The CLI lists them all.
+  // approved (unapproved) and whether the Games tab leaves it out (hidden). The CLI lists them all.
   list(): GameRow[] {
     const act = this.active(), b = this.o.builtIn, dev = this.st.developer;
     const rows: GameRow[] = [{ id: b.id, name: b.name, description: b.description, version: b.version, tier: 'built-in', installed: true, active: act === b.id, network: [] }];
@@ -234,7 +234,7 @@ export class Catalog {
     return rows;
   }
 
-  // What the Games window, Settings → Games, the tray's update count and the Games buttons' dot show.
+  // What the Games tab, Settings → Games, the tray's update count and the Games buttons' dot show.
   shown(): GameRow[] { return this.list().filter((r) => !r.hidden); }
 
   status() {

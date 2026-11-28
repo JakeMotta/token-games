@@ -11,7 +11,7 @@ export interface Io { out(s: string): void; err(s: string): void; call: Call }
 export const USAGE = `tokengames: ask the running Token Games app to change games. Installs and removals wait for the player to approve them in the app.
 
   tokengames list [--refresh] [--json]   every game: built in, installed, and in the catalog (--refresh fetches the signed catalog first);
-                                         NOTE says which are not approved and hidden in the app's Games window
+                                         NOTE says which are not approved and hidden in the app's Games tab
   tokengames status [--json]             what is playing, the catalog, and requests waiting for the player
   tokengames install <id>                ask the player to install a catalog game
   tokengames install --dir <folder>      ask the player to add a web game from a folder on this computer
@@ -29,7 +29,7 @@ export function socketCall(env: NodeJS.ProcessEnv = process.env): Call {
 export const rowState = (g: GameRow): string =>
   g.active ? 'playing' : g.blocked ? 'blocked' : g.update ? `update ${g.update}` : g.installed ? 'installed' : 'available';
 
-// The app's Games window lists only approved games unless "Show developer and unapproved games" is on; the CLI lists
+// The app's Games tab lists only approved games unless "Show developer and unapproved games" is on; the CLI lists
 // everything and says which ones the window hides, and why.
 export const rowNote = (g: GameRow): string =>
   !g.unapproved ? '' : g.hidden ? `hidden in the app: ${g.unapproved}` : `not approved: ${g.unapproved}`;

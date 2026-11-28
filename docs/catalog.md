@@ -1,6 +1,6 @@
 # The game catalog
 
-Other people can write Token Games games, and players can install them from inside the app, in the **Games window**: the **Games** button next to Settings (in the
+Other people can write Token Games games, and players can install them from inside the app, on the **Games tab** of the Games and Settings window: the **Games** button next to Settings (in the
 open card and the popped-out window's title bar), the menu-bar icon's **Games…**, or **Open Games…** in **Settings → Games**.
 This page is how it works as built. The original proposal, with diagrams and a clickable mock, is
 [game-catalog.html](game-catalog.html) and [game-catalog-design.md](game-catalog-design.md). Writing a game for the
@@ -18,7 +18,7 @@ attached to its GitHub Releases. Anything committed here is visible to everyone,
 | **Third-party games get no main-process code.** A catalog game is `"kind": "web"`: HTML, JS, CSS and images, run sandboxed | Main-process code could read any file or reach any server. A web bundle can be reviewed and boxed in |
 | **One active game** per app. The Ant Farm app shows the Ant Farm or one catalog game in its orb, card and window | One view, one orb, cheap when collapsed (CLAUDE.md, rule 4) |
 | **The Ant Farm stays built in.** Its own code, its `colony.json`, score and orb are unchanged; switching away and back keeps them | Built-in games are app games and are never installed or removed |
-| **Only approved games are listed.** The Games window shows the built-in game and approved catalog games; everything else waits for Settings → Games → **Show developer and unapproved games** (off by default). See [What the app lists](#what-the-app-lists) | The player sees the games we built and approved, not test, prototype or copied builds |
+| **Only approved games are listed.** The Games tab shows the built-in game and approved catalog games; everything else waits for Settings → Games → **Show developer and unapproved games** (off by default). See [What the app lists](#what-the-app-lists) | The player sees the games we built and approved, not test, prototype or copied builds |
 | **No network for games.** A game reaches only its own files. A web game may list up to 8 `network` hosts; they are shown on the permission sheet and allowed only once the player approves the install | Rule 6: counts only, nothing sent anywhere |
 | **The app fetches the catalog only on request** ("Check for games", `tokengames list --refresh`), never at launch | No background network |
 | **Agents can only ask.** The CLI and MCP server request installs and removals; the player approves or denies them in the app | An agent should not change what runs on your computer by itself |
@@ -35,7 +35,7 @@ attached to its GitHub Releases. Anything committed here is visible to everyone,
 ## What the app lists
 
 `notApproved()` (`shell/src/catalog/catalog.ts`) gives each game a reason it is not approved, or none. A game with a
-reason is **hidden**: left out of the Games window, Settings → Games, the update dot and the tray's update count, and
+reason is **hidden**: left out of the Games tab, Settings → Games, the update dot and the tray's update count, and
 an agent cannot ask to install it. The reasons, in order:
 
 1. **A local folder** (`tier: local`).
@@ -191,13 +191,15 @@ app shows the permission sheet and the agent tells you to approve it there.
 choices, `tokengames install <id>` to ask, then it tells the player to approve in the app, and `tokengames status
 --json` for something to say about the active game. It never approves.
 
-## The Games window
+## The Games tab
 
 The **Games** button (next to Settings in the open card and in the popped-out window's title bar), the tray's
-**Games…** and **Open Games…** in Settings → Games open the **Games window**: a normal window of its own with a title
-bar, resizable, always dark. It opens centred on the display the game is on, about 960 × 680 and never bigger than
+**Games…** and **Open Games…** in Settings → Games open the **Games and Settings window** on its **Games** tab: a
+normal window of its own with a title bar, resizable, light or dark with the system, and two tabs at the top, Games
+and Settings (the Settings buttons, `,` and the tray's Settings… open it on Settings). It opens centred on the display the game is on, about 960 × 680 and never bigger than
 that display's work area (`gamesWindowBounds` in `shell/src/geometry.ts`), at least 640 × 480. There is only ever one:
-Games again brings it to the front. Esc, Cmd+W (Ctrl+W), its Close button or the window's close button close it.
+Games again brings it to the front and switches it to Games; Cmd+1 and Cmd+2, or the arrow keys on a focused tab,
+switch tabs. Esc, Cmd+W (Ctrl+W), its Close button or the window's close button close it.
 Opening it changes nothing about the game: not the active game, not where it is or whether it shows.
 
 It lists (`shell/src/page/games-panel.ts`, layout `window`) the built-in game, installed games and approved available
@@ -205,9 +207,9 @@ games as cards ([What the app lists](#what-the-app-lists)), each with its icon, 
 Play, Install, Update, Remove and the Playing mark; "Check for games" (with how many games it hides); and pending
 requests at the top with Approve and Deny. With the developer switch on it also lists the hidden games, tagged **Not
 approved: …**, and offers "Add local folder…".
-Its page (`games-page.ts`) runs isolated and sandboxed like the shell's own, and its bridge (`window.tokenGames`,
-`shell/src/main/games-window-preload.ts`) has only the catalog calls; the main process answers them only from the
-shell's page and this window. Settings → Games (in the Settings window, layout `summary`) is a line about the games,
+Its page (`hub-page.ts`) runs isolated and sandboxed like the shell's own, and its bridge (`window.tokenHub`,
+`shell/src/main/hub-window-preload.ts`) has only the catalog, tab and Settings calls; the main process answers the
+catalog calls only from the shell's page and this window. Settings → Games (on the Settings tab, layout `summary`) is a line about the games,
 the **Show developer and unapproved games** switch, any request waiting with Approve and Deny, and Open Games…. When an agent asks, the orb's pill says so ("An agent asked: see
 Games"), and opening Settings scrolls to the waiting request.
 

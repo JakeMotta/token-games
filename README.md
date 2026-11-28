@@ -22,16 +22,17 @@ Claude usage, made with the generative-creature technique. Prototypes, design an
 
 ## More games: the catalog
 
-Anyone can write a game for Token Games, and players install them inside the app, in the **Games window**: a
-normal, resizable window of its own (about 960 × 680, centred on the screen the game is on, never bigger than it),
-opened by the **Games** button (next to Settings in the open card and in the popped-out window's title bar), the
-menu-bar icon's **Games…**, or **Open Games…** in Settings → Games. Opening it leaves the game as it is; Esc or the
-close button closes it, and Games again brings the same window forward. When the catalog has a newer version of an
+Anyone can write a game for Token Games, and players install them inside the app, on the **Games tab** of the Games and
+Settings window: one normal, resizable window of its own (about 960 × 680, centred on the screen the game is on,
+never bigger than it) with two tabs at the top, **Games** and **Settings**. The **Games** button (next to Settings in
+the open card and in the popped-out window's title bar), the menu-bar icon's **Games…** and **Open Games…** in
+Settings → Games open it on Games. Opening it leaves the game as it is; Esc, Cmd+W or Close closes it, and Games
+again brings the same window forward on its Games tab. When the catalog has a newer version of an
 installed game, the Games button gets a small dot, the game's card says **Update available** with an **Update to …**
 button (approved like an install), and the menu says **Games… (1 update)**. A catalog
 game is a small web page the app runs sandboxed (no Node, no files, no network unless you approve its hosts); it sees
 usage counts and its own save, nothing else. Check for games, read the permission sheet, approve, press Play. One game
-is active at a time; the Ant Farm stays built in. The Games window lists only the built-in game and **approved**
+is active at a time; the Ant Farm stays built in. The Games tab lists only the built-in game and **approved**
 games: from the catalog signed with the catalog's own key, not blocked, not a community game nobody reviewed, and not
 a sandboxed copy of a built-in game (a pointer's `duplicates` field, or an id like `ant-farm-web`). Everything else
 (test and developer catalogs, local folders, community games, copies) stays hidden until you turn on **Settings →
@@ -63,12 +64,13 @@ npm start
 
 It starts as an orb in the bottom-right corner. Click it to open the card, **Pop out ↗** for the window, drag it
 to move it to another corner. The menu-bar icon has everything (show, open, pop out, back to the corner, the corner,
-Games… (the Games window), Settings, size, docking, click-through, Reduced motion, Reset to defaults, quit), and **Alt+Cmd+T** (Alt+Ctrl+T)
+Games… and Settings… (the one Games and Settings window), Settings, size, docking, click-through, Reduced motion, Reset to defaults, quit), and **Alt+Cmd+T** (Alt+Ctrl+T)
 works anywhere: it shows a hidden game, in the corner it opens and closes the card, popped out it switches
 click-through. Settings are saved as you change them; Settings → Display → Presentation
 chooses where it starts. Settings (its button next to Games, the gear in the window's title bar, `,`, or the menu's
-Settings…) opens in a window of its own, centred and the same size as the Games window; pressing it again brings that
-window forward, and Esc, Cmd+W or Close closes it. Games pause their drawing while the screen is locked or the computer sleeps.
+Settings…) opens the same window on its Settings tab. There is only ever one: any of these brings it forward and
+switches it to the tab asked for, and it remembers no tab between opens. Click a tab, press Cmd+1 or Cmd+2, or the
+arrow keys on a focused tab to switch; Esc, Cmd+W or Close closes it. It follows the system's light or dark mode. Games pause their drawing while the screen is locked or the computer sleeps.
 
 ## Make a game
 

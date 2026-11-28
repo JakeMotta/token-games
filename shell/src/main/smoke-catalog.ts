@@ -1,10 +1,10 @@
-// The catalog's smoke run (TG_SMOKE_MODE=catalog), inside the real app with no window shown: open the Games window,
+// The catalog's smoke run (TG_SMOKE_MODE=catalog), inside the real app with no window shown: open the Games tab,
 // fetch the signed test registry built from samples/, ask for an install over the control socket like an agent would,
-// approve it in the Games window, update it, switch to the game and prove it runs sandboxed (no Node, no file or
+// approve it in the Games tab, update it, switch to the game and prove it runs sandboxed (no Node, no file or
 // network access, only window.tokenGame), that it gets the usage feed and its own save, that the built-in game's save
 // is left alone, and that removing it (approved in Settings → Games) brings the built-in game back. The test registry
 // is signed with a throwaway key, so its games stay hidden (and an agent cannot ask for them) until the developer
-// switch in Settings → Games is on. Screenshots of the Games window: the catalog not fetched yet, only approved games,
+// switch in Settings → Games is on. Screenshots of the Games tab: the catalog not fetched yet, only approved games,
 // with the developer switch on, the permission sheet, an update available.
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
@@ -51,10 +51,10 @@ export async function catalogSmoke<S extends ShellSettings>(k: SmokeKit<S>, c: C
   check('catalog: the built-in game is active and nothing else is listed before a fetch', c.catalog().active() === c.builtIn().id
     && await until(async () => JSON.stringify(((await card())?.view?.rows || []).map((r: any) => r.id)) === JSON.stringify([c.builtIn().id])), (await card())?.view);
 
-  // popped out, the title bar's Games button opens the Games window; the game stays in its window
+  // popped out, the title bar's Games button opens the Games tab; the game stays in its window
   k.update({ size: 'large', dock: 'br', corner: 'br' } as Partial<S>);
   if (k.state() !== 'popped') { k.dispatch('pop'); await settled('popped'); }
-  check('catalog: the title bar\'s Games opens the Games window', await openGames());
+  check('catalog: the title bar\'s Games opens the Games tab', await openGames());
   check('catalog: before a fetch it shows the built-in game and Check for games', /Check for games/.test((await games())?.text || '') && /only fetched when you ask/.test((await games())?.text || ''));
   await k.gamesShot('games-window-empty');
 
@@ -63,7 +63,7 @@ export async function catalogSmoke<S extends ShellSettings>(k: SmokeKit<S>, c: C
     const v = (await games())?.view;
     return !!v?.catalog.signed && v.hiddenCount > 0 && JSON.stringify(v.rows.map((r: any) => r.id)) === JSON.stringify([c.builtIn().id]) && !v.developer;
   }), (await games())?.view);
-  check('catalog: the Games window offers no local folder and no test games while the switch is off, and says how many it hides', !/Add local folder/.test((await games())?.text || '')
+  check('catalog: the Games tab offers no local folder and no test games while the switch is off, and says how many it hides', !/Add local folder/.test((await games())?.text || '')
     && !/Token Garden/.test((await games())?.text || '') && /1 not approved, hidden/.test((await games())?.text || ''), (await games())?.text);
   await k.gamesShot('games-approved');
   check('catalog: the control socket is up', await until(() => !!c.socket()), c.socket());
@@ -80,16 +80,16 @@ export async function catalogSmoke<S extends ShellSettings>(k: SmokeKit<S>, c: C
   // an agent asks over the control socket; it can only ask
   const asked = (await callControl(c.socket(), 'install', { id: GAME })) as { requested: { from: string; requestId: string } };
   check('catalog: an agent\'s install is only a request', asked.requested.from === 'agent' && !fs.existsSync(gameDir), asked);
-  check('catalog: the request appears in the Games window as a permission sheet marked "Requested by an agent"', await until(async () => /Requested by an agent/.test((await games())?.text || '')), (await games())?.text);
+  check('catalog: the request appears in the Games tab as a permission sheet marked "Requested by an agent"', await until(async () => /Requested by an agent/.test((await games())?.text || '')), (await games())?.text);
   check('catalog: …and in the card\'s Settings → Games', await until(async () => /Requested by an agent/.test((await card())?.text || '')), (await card())?.text);
   await k.gamesShot('games-window-approval');
 
   await click('approve:' + asked.requested.requestId);
-  check('catalog: approving in the Games window installs it', await until(async () => !!(await row(GAME))?.installed) && fs.existsSync(path.join(gameDir, 'index.html')));
+  check('catalog: approving in the Games tab installs it', await until(async () => !!(await row(GAME))?.installed) && fs.existsSync(path.join(gameDir, 'index.html')));
   check('catalog: installing does not switch games', c.catalog().active() === c.builtIn().id && !c.host());
   await k.gamesShot('games-window-installed');
 
-  // an update: the registry lists a newer version; the Games window says so, and updating waits for Approve
+  // an update: the registry lists a newer version; the Games tab says so, and updating waits for Approve
   const was = (await row(GAME))?.version as string, next = was.replace(/\d+$/, (n) => String(Number(n) + 1));
   check('catalog: no update is shown while the catalog has the same version', !(await row(GAME))?.update && !(await page())?.update);
   c.publish(next);
@@ -110,13 +110,13 @@ export async function catalogSmoke<S extends ShellSettings>(k: SmokeKit<S>, c: C
     && JSON.parse(fs.readFileSync(path.join(gameDir, 'game.json'), 'utf8')).version === next);
   check('catalog: the dot and the tray\'s count go once it is up to date', await until(async () => !(await page())?.update) && k.trayItems().some((i) => i.label === 'Games…'));
 
-  // switch: the page starts again around the catalog game; the Games window stays open and says so
+  // switch: the page starts again around the catalog game; the Games tab stays open and says so
   await click('use:' + GAME);
   check('catalog: Play switches to the catalog game', await until(async () => (await card())?.hosted === GAME, 8000) && c.catalog().active() === GAME);
   check('catalog: the game is shown in the window, below the title bar', await until(() => !!c.host()?.shown(), 5000), c.host()?.shown());
-  check('catalog: the Games window marks it Playing', await until(async () => !!(await row(GAME))?.active) && /Playing/.test((await games())?.text || ''));
+  check('catalog: the Games tab marks it Playing', await until(async () => !!(await row(GAME))?.active) && /Playing/.test((await games())?.text || ''));
   await k.gjs('gamesTest.key("Escape")');
-  check('catalog: Esc closes the Games window', await until(() => !k.gamesWin()));
+  check('catalog: Esc closes the Games and Settings window', await until(() => !k.hubWin()));
   check('catalog: the game page loads', await until(() => inGame<boolean>('!!document.getElementById("tokens") && document.readyState === "complete"').catch(() => false), 5000));
   const colony = fs.existsSync(c.saveFile()) ? fs.readFileSync(c.saveFile(), 'utf8') : null;
 
@@ -146,22 +146,22 @@ export async function catalogSmoke<S extends ShellSettings>(k: SmokeKit<S>, c: C
   await sj('shellTest.clickOrb()');
   check('catalog: in the open card the game is shown again', await settled('expanded') && await until(() => !!c.host()?.shown()), c.host()?.shown());
   await sj('shellTest.key(",")');
-  check('catalog: Settings opens in its own window, the game still shown in the card', await k.settingsReady() && await until(() => !!c.host()?.shown()));
+  check('catalog: Settings opens the window on its Settings tab, the game still shown in the card', await k.settingsReady() && await until(() => !!c.host()?.shown()));
   check('catalog: the built-in game\'s save is left alone while another game plays', (fs.existsSync(c.saveFile()) ? fs.readFileSync(c.saveFile(), 'utf8') : null) === colony);
 
   // an agent asks to remove it; the player approves right there in the card's Settings → Games: back to the built-in
   // game, the save kept
   const rm = (await callControl(c.socket(), 'remove', { id: GAME })) as { requested: { requestId: string } };
-  check('catalog: Remove asks first, in the Settings window\'s Settings → Games too', await until(async () => ((await card())?.view?.pending || []).some((r: any) => r.action === 'remove'))
+  check('catalog: Remove asks first, in the Settings tab\'s Settings → Games too', await until(async () => ((await card())?.view?.pending || []).some((r: any) => r.action === 'remove'))
     && await until(async () => /Remove/.test(await k.sjs<string>('settingsTest.text()'))) && fs.existsSync(gameDir), rm);
   await k.settingsShot('catalog-settings-approval');
   await k.sjs(`settingsTest.click(${JSON.stringify(`[data-games="approve:${rm.requested.requestId}"]`)})`);
   check('catalog: removing it brings the built-in game back', await until(async () => !!(await sj('!!window.gameTest')) && (await card())?.hosted === null, 8000)
     && c.catalog().active() === c.builtIn().id && !c.host());
-  check('catalog: the Settings window stays open and shows the built-in game\'s settings again', !!k.settingsWin() && await until(async () => !!(await page())?.panelOpen
+  check('catalog: the window stays open on Settings and shows the built-in game\'s settings again', !!k.hubWin() && await until(async () => !!(await page())?.panelOpen
     && /Reduced motion/.test(await k.sjs<string>('settingsTest.text()')), 5000));
   await k.sjs('settingsTest.key("Escape")');
-  await until(() => !k.settingsWin());
+  await until(() => !k.hubWin());
   check('catalog: its files are gone and its save is kept', !fs.existsSync(gameDir) && fs.existsSync(path.join(c.catalog().saveDir(GAME), 'save.json')));
   await wait(300);
   if (k.state() !== 'orb') { k.dispatch('escape'); await settled('orb'); }
@@ -192,7 +192,7 @@ export async function catalogGameSmoke<S extends ShellSettings>(k: SmokeKit<S>, 
 
   k.update({ size: 'large', dock: 'br', corner: 'br' } as Partial<S>);
   if (k.state() !== 'popped') { k.dispatch('pop'); await settled('popped'); }
-  check('catalog-game: the title bar\'s Games opens the Games window', await openGames());
+  check('catalog-game: the title bar\'s Games opens the Games tab', await openGames());
   // the packaged game is a copy of the built-in one: hidden in the app until the developer switch is on (the catalog
   // run, in the same profile, left it on)
   await developerSwitch(k, c, 'catalog-game', false);
@@ -255,7 +255,7 @@ export async function catalogGameSmoke<S extends ShellSettings>(k: SmokeKit<S>, 
   const painted = await inGame<number>(`(() => { const v = document.getElementById('view'); const d = v.getContext('2d').getImageData(0, 0, v.width, v.height).data; const s = new Set(); for (let i = 0; i < d.length; i += 4 * 97) s.add(d[i] << 16 | d[i + 1] << 8 | d[i + 2]); return s.size; })()`).catch(() => 0);
   check('catalog-game: the canvas shows the game', painted > 3, painted);
   await k.gjs('gamesTest.key("Escape")');
-  await until(() => !k.gamesWin());
+  await until(() => !k.hubWin());
   await k.shot('catalog-game-window');
   await viewShot('catalog-game-playing');
 
@@ -283,7 +283,7 @@ export async function catalogGameSmoke<S extends ShellSettings>(k: SmokeKit<S>, 
   check('catalog-game: it loads its save: the same game, not a new one', !!saved && again?.seed === saved.seed && again?.stats?.tokens >= saved.stats.tokens,
     again && { seed: again.seed, was: saved?.seed, tokens: again.stats?.tokens });
 
-  // remove, approved in the Games window; the save stays
+  // remove, approved in the Games tab; the save stays
   await openGames();
   if (hasCli) {
     const r = await cli('remove', GAME);
@@ -303,7 +303,7 @@ export async function catalogGameSmoke<S extends ShellSettings>(k: SmokeKit<S>, 
 // (DEFAULT_REGISTRY, or TG_REGISTRY_URL), trusting only the keys built into the app, from this run's clean profile.
 // What a player sees after "Check for games": the approved games, and with the developer switch on still nothing else
 // (TG_SMOKE_EXPECT, when set, is every id the index must hold). Then for each game: `tokengames list` finds it and
-// `tokengames install` only asks (denied here); the Games window's Install shows the permission sheet; Approve
+// `tokengames install` only asks (denied here); the Games tab's Install shows the permission sheet; Approve
 // downloads, checks and installs it; Play runs it sandboxed; a transcript line feeds it; it saves in its own slot and
 // the built-in game's save is left alone. It needs the network, so the normal smoke test never runs it.
 export async function publishedSmoke<S extends ShellSettings>(k: SmokeKit<S>, c: CatalogSmoke): Promise<void> {
@@ -328,7 +328,7 @@ export async function publishedSmoke<S extends ShellSettings>(k: SmokeKit<S>, c:
 
   k.update({ size: 'large', dock: 'br', corner: 'br' } as Partial<S>);
   if (k.state() !== 'popped') { k.dispatch('pop'); await settled('popped'); }
-  check('published: the title bar\'s Games opens the Games window', await openGames());
+  check('published: the title bar\'s Games opens the Games tab', await openGames());
   await developerSwitch(k, c, 'published', false);
   await openGames();
   const url = process.env.TG_REGISTRY_URL || DEFAULT_REGISTRY;
@@ -337,7 +337,7 @@ export async function publishedSmoke<S extends ShellSettings>(k: SmokeKit<S>, c:
   const approved = others(await view());
   k.note('url', url);
   k.note('approved', approved);
-  check('published: the Games window lists approved games and hides none', approved.length > 0 && (await view())?.hiddenCount === 0, await view());
+  check('published: the Games tab lists approved games and hides none', approved.length > 0 && (await view())?.hiddenCount === 0, await view());
   if (expect.length) check(`published: it lists exactly ${expect.join(', ')}`, same(approved, expect), approved);
   await k.gamesShot('published-games');
 
@@ -369,7 +369,7 @@ export async function publishedSmoke<S extends ShellSettings>(k: SmokeKit<S>, c:
       const asked = await cli('install', id, '--json');
       const req = (() => { try { return JSON.parse(asked.out); } catch { return null; } })();
       check(`published: \`tokengames install ${id}\` finds it and only asks`, asked.code === 0 && req?.from === 'agent' && !fs.existsSync(gameDir), asked.out.slice(0, 400));
-      check('published: the agent\'s request waits in the Games window', await until(async () => !!(await pending('agent'))));
+      check('published: the agent\'s request waits in the Games tab', await until(async () => !!(await pending('agent'))));
       await click('deny:' + (await pending('agent'))?.requestId);
       check('published: Deny drops it and installs nothing', await until(async () => !(await pending('agent'))) && !fs.existsSync(gameDir));
     }
@@ -399,7 +399,7 @@ export async function publishedSmoke<S extends ShellSettings>(k: SmokeKit<S>, c:
     check(`published: ${id} draws`, painted > 3, painted);
     const before = (await page())?.line;
     await k.gjs('gamesTest.key("Escape")').catch(() => null);
-    await until(() => !k.gamesWin());
+    await until(() => !k.hubWin());
     await k.shot('published-window');
     await gameViewShot(k, c, 'published-playing');
     k.transcript({ input_tokens: 40000, output_tokens: 9000 }, `msg_published_${id}`);
@@ -416,18 +416,25 @@ export async function publishedSmoke<S extends ShellSettings>(k: SmokeKit<S>, c:
   if (k.state() !== 'orb') { k.dispatch('escape'); await settled('orb'); }
 }
 
-// Settings → Games' developer switch, turned on or off in the Settings window the way the player would.
+// Settings → Games' developer switch, turned on or off in the Settings tab the way the player would: , switches the
+// window to Settings, and from there back to the Games tab when it started there, or closes it.
 async function developerSwitch<S extends ShellSettings>(k: SmokeKit<S>, c: CatalogSmoke, run: string, on: boolean): Promise<void> {
+  const back = !!k.hubWin() && k.hubTab() === 'games';
   await k.js('shellTest.key(",")').catch(() => null);
   const was = (await k.settingsReady()) ? await k.sjs<boolean>('settingsTest.value("#tg-developer")') : null;
   if (was === !on) await k.sjs('settingsTest.click("#tg-developer")');
   k.check(`${run}: Settings → Games' "Show developer and unapproved games" ${was === !on ? 'turns ' : 'is '}${on ? 'on' : 'off'}`, was !== null
     && await k.until(() => c.catalog().developer === on, 3000) && await k.until(async () => (await k.sjs('settingsTest.value("#tg-developer")')) === on, 3000), was);
+  if (back) {
+    await k.gjs('hubTest.key("1", true)').catch(() => null);
+    await k.gamesReady();
+    return;
+  }
   await k.sjs('settingsTest.key("Escape")').catch(() => null);
-  await k.until(() => !k.settingsWin());
+  await k.until(() => !k.hubWin());
 }
 
-// The Games window, for the catalog runs: open it with the title bar's Games button, read it, click its buttons by
+// The Games tab, for the catalog runs: open it with the title bar's Games button, read it, click its buttons by
 // their data-games name ("refresh", "approve:<request>", "use:<id>", …).
 function gamesWindow<S extends ShellSettings>(k: SmokeKit<S>) {
   const gj = <T = any>(code: string): Promise<T | null> => k.gjs<T>(code).catch(() => null);
@@ -435,7 +442,7 @@ function gamesWindow<S extends ShellSettings>(k: SmokeKit<S>) {
     games: async () => { const view = await gj<any>('gamesTest.view()'); return view ? { view, text: (await gj<string>('gamesTest.text()')) || '' } : null; },
     click: (name: string) => gj<boolean>(`gamesTest.click(${JSON.stringify(name)})`),
     openGames: async () => {
-      if (!k.gamesWin()) await k.js('shellTest.click("tg-gamesw")').catch(() => null);
+      if (!k.hubWin() || k.hubTab() !== 'games') await k.js('shellTest.click("tg-gamesw")').catch(() => null);
       return k.gamesReady();
     },
   };
@@ -459,7 +466,7 @@ function tokengames(c: CatalogSmoke) {
   return { cli, hasCli: fs.existsSync(cliJs) };
 }
 
-// Play a game from the Games window, and wait until it is the one in the orb, its card and the window.
+// Play a game from the Games tab, and wait until it is the one in the orb, its card and the window.
 async function playGame<S extends ShellSettings>(k: SmokeKit<S>, c: CatalogSmoke, id: string): Promise<boolean> {
   const { click, openGames } = gamesWindow(k);
   const hosted = async () => (await k.js<{ hosted: string | null }>('shellTest.games()').catch(() => null))?.hosted;

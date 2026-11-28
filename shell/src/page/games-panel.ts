@@ -1,7 +1,7 @@
-// The game picker, in two layouts. 'window' fills the Games window (the Games buttons, the tray's Games…): every
+// The game picker, in two layouts. 'window' fills the Games tab of the Games and Settings window (the Games buttons, the tray's Games…): every
 // game shown as a card: the built-in one, the approved games the signed catalog offers, and what is on this computer
 // (developer and unapproved games too only while "Show developer and unapproved games" is on). 'summary' is Settings →
-// Games: a line about what is installed, that switch, and a button that opens the Games window. Both show every request
+// Games: a line about what is installed, that switch, and a button that switches to the Games tab. Both show every request
 // waiting for the player (an install, update or removal they asked for, or one an agent asked for through the
 // tokengames CLI) as a permission sheet with Approve and Deny; approving is only possible in the app.
 // Everything from the catalog is shown as text (textContent), never as HTML.
@@ -111,7 +111,7 @@ export function gamesPanel(api: GamesApi, o: GamesPanelOptions): GamesPanel {
     if (o.layout === 'summary') renderSummary(); else renderWindow();
   }
 
-  // Settings → Games: what waits for the player, one line, and the way to the Games window
+  // Settings → Games: what waits for the player, one line, and the way to the Games tab
   function renderSummary(): void {
     el.append(h('h4', '', 'Games'));
     if (!v) { el.append(h('p', 'tg-note', 'Loading…')); return; }
@@ -131,8 +131,8 @@ export function gamesPanel(api: GamesApi, o: GamesPanelOptions): GamesPanel {
     cb.onchange = () => void run({ op: 'developer', on: cb.checked });
     lab.append(cb, ' Show developer and unapproved games');
     el.append(lab, h('p', 'tg-note', v.developer
-      ? 'On: the Games window also lists local folders, community games, test catalogs and copies of the built-in game, and offers Add local folder….'
-      : 'Off: the Games window lists only the built-in game and approved games from the signed catalog' + (v.hiddenCount ? ` (${v.hiddenCount} hidden)` : '') + '.'));
+      ? 'On: the Games tab also lists local folders, community games, test catalogs and copies of the built-in game, and offers Add local folder….'
+      : 'Off: the Games tab lists only the built-in game and approved games from the signed catalog' + (v.hiddenCount ? ` (${v.hiddenCount} hidden)` : '') + '.'));
   }
 
   function renderWindow(): void {

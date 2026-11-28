@@ -69,7 +69,7 @@ export function resizeFromGrip(start: Bounds, grip: Corner, dx: number, dy: numb
   return { x, y, width, height };
 }
 
-// The Games window: a normal window, about 960 × 680, never larger than the work area (less a margin) nor smaller than
+// The Games and Settings window: a normal window, about 960 × 680, never larger than the work area (less a margin) nor smaller than
 // its minimum unless the work area itself is, centred on the display the game is on.
 export const GAMES_WINDOW = { width: 960, height: 680, minWidth: 640, minHeight: 480 };
 export function gamesWindowBounds(area: Area): Bounds {

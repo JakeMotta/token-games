@@ -5,6 +5,7 @@ import type { GameRow, PendingRequest } from './catalog/catalog';
 import type { Tier } from './catalog/registry';
 import type { UsageEvent } from './events';
 import type { HostedStatus } from './hosted';
+import type { HubTab } from './hub';
 import type { Scale, ShellEvent, ShellState } from './modes';
 import type { OrbGeo } from './orb';
 import type { ShellSettings } from './settings';
@@ -26,13 +27,13 @@ export interface ShellBoot<S extends ShellSettings = ShellSettings> {
   mode: ModeInfo;
   shortcut: string;
   hosted: HostedBoot | null; // a catalog game is the active one: the page hosts it instead of its own game
-  settingsOpen: boolean; // the Settings window is open (the page was reloaded under it, switching games)
+  settingsOpen: boolean; // the Games and Settings window shows Settings (the page was reloaded under it, switching games)
 }
 
 // The catalog game the shell hosts in place of its own (docs/catalog.md).
 export interface HostedBoot { id: string; name: string; version: string; tier: Tier; icon: string } // icon: a data: URL or ''
 
-// The Games window (the Games buttons, the tray's Games…, Settings → Games): what is installed, what the catalog offers,
+// The Games tab (the Games buttons, the tray's Games…, Settings → Games): what is installed, what the catalog offers,
 // and requests waiting for the player. rows are the games shown: the built-in one, approved catalog games and what is
 // on this computer, plus every developer and unapproved game while developer is on (Catalog.shown()).
 export interface GamesView {
@@ -86,15 +87,15 @@ export interface ShellApi<S extends ShellSettings = ShellSettings> {
   onFeed(fn: (f: FeedStatus) => void): void;
   onCommand(fn: (c: ShellCommand) => void): void;
   onMode(fn: (m: ModeInfo) => void): void;
-  // the catalog (the Games window, Settings → Games) and a hosted catalog game
+  // the catalog (the Games tab, Settings → Games) and a hosted catalog game
   games(): Promise<GamesView>;
-  gamesDo(op: GamesOp): Promise<GamesResult>; // approving is only possible in the app: here or in the Games window
+  gamesDo(op: GamesOp): Promise<GamesResult>; // approving is only possible in the app: here or in the Games tab
   onGames(fn: (v: GamesView) => void): void;
-  openGames(): void; // open the Games window, or bring it to the front
-  // the Settings window: the page keeps the Settings sheet (the game's own sections, Display, Games, Reset) and its
-  // logic, hidden; the window shows a copy of it and sends the player's clicks and drags back (page/mirror.ts)
-  openSettings(open: boolean): void; // open it (or bring it to the front), or close it
-  onSettingsWindow(fn: (open: boolean) => void): void; // it opened or closed, however that happened
+  openGames(): void; // open the Games and Settings window on Games, or bring it forward and switch to Games
+  // Settings: the page keeps the Settings sheet (the game's own sections, Display, Games, Reset) and its code; the
+  // window's Settings tab shows a copy (page/mirror.ts) and sends the player's input back
+  openSettings(open: boolean): void; // open the window on Settings (or bring it forward and switch), or close it
+  onSettingsWindow(fn: (open: boolean) => void): void; // the Settings tab started or stopped showing, however that happened
   settingsSnap(s: SettingsSnap): void; // what the sheet looks like now
   onSettingsInput(fn: (i: SettingsInput) => void): void; // the player did something in the window
   hostedRect(r: GameRect | null, scale: Scale): void; // where the hosted game goes in the window; null hides it
@@ -102,23 +103,22 @@ export interface ShellApi<S extends ShellSettings = ShellSettings> {
   onHostedKey(fn: (k: { key: string; meta: boolean; ctrl: boolean }) => void): void; // a shell key pressed in the game
 }
 
-// The catalog calls, all the Games window's page gets (window.tokenGames, games-window-preload.ts).
+// The catalog calls, all the Games tab gets.
 export type GamesApi = Pick<ShellApi, 'games' | 'gamesDo' | 'onGames'>;
-export interface GamesBoot { name: string; smoke: boolean } // name: the app's built-in game
-export interface GamesWindowApi extends GamesApi {
-  boot(): Promise<GamesBoot>;
-  close(): void;
-}
 
-// The Settings sheet as the Settings window shows it: its HTML (live values written in, canvases as images) and the
+// The Settings sheet as the Settings tab shows it: its HTML (live values written in, canvases as images) and the
 // game's own stylesheets (file names next to the page, shell.css left out).
 export interface SettingsSnap { html: string; css: string[] }
 // A click, or a new value, on the element at path (child indexes from the sheet's root, elements only).
 export interface SettingsInput { path: number[]; type: 'click' | 'input' | 'change'; value?: string; checked?: boolean }
-// The Settings window's bridge (window.tokenSettings, settings-window-preload.ts): the sheet, input back, closing.
-export interface SettingsBoot { name: string; smoke: boolean; snap: SettingsSnap | null }
-export interface SettingsWindowApi {
-  boot(): Promise<SettingsBoot>;
+
+// The Games and Settings window's bridge (window.tokenHub, hub-window-preload.ts): the catalog calls, the Settings
+// sheet and the player's input back to it, the tab, closing. Nothing else of Node, Electron or the shell.
+export interface HubBoot { name: string; smoke: boolean; tab: HubTab; snap: SettingsSnap | null } // name: the app's built-in game
+export interface HubWindowApi extends GamesApi {
+  boot(): Promise<HubBoot>;
+  onTab(fn: (tab: HubTab) => void): void; // opened again from the game, on this tab
+  tab(tab: HubTab): void; // the player picked this tab in the window
   onSnap(fn: (s: SettingsSnap) => void): void;
   input(i: SettingsInput): void;
   close(): void;
@@ -130,8 +130,7 @@ export const CH = {
   settings: 'shell:settings', dark: 'shell:dark', sleep: 'shell:sleep', event: 'shell:event', feed: 'shell:feed', command: 'shell:command', mode: 'shell:mode',
   save: 'shell:save', saveNow: 'shell:save-now', load: 'shell:load',
   games: 'shell:games', gamesDo: 'shell:games-do', gamesChanged: 'shell:games-changed',
-  gamesOpen: 'shell:games-open', gamesBoot: 'shell:games-boot', gamesClose: 'shell:games-close',
-  settingsOpen: 'shell:settings-open', settingsWin: 'shell:settings-win', settingsSnap: 'shell:settings-snap', settingsInput: 'shell:settings-input',
-  settingsBoot: 'shell:settings-boot', settingsClose: 'shell:settings-close',
+  gamesOpen: 'shell:games-open', settingsOpen: 'shell:settings-open', settingsWin: 'shell:settings-win', settingsSnap: 'shell:settings-snap',
+  settingsInput: 'shell:settings-input', hubBoot: 'shell:hub-boot', hubTab: 'shell:hub-tab', hubClose: 'shell:hub-close',
   hostedRect: 'shell:hosted-rect', hostedStatus: 'shell:hosted-status', hostedKey: 'shell:hosted-key',
 } as const;

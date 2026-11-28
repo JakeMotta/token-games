@@ -36,8 +36,8 @@ export interface SmokeContext<S extends ShellSettings> {
   show(): void;
   hide(): void;
   ignoresMouse(): boolean; // clicks pass through the window
-  gamesWin(): BrowserWindow | null; // the Games window, while it is open
-  settingsWin(): BrowserWindow | null; // the Settings window, while it is open
+  hubWin(): BrowserWindow | null; // the Games and Settings window, while it is open
+  hubTab(): 'games' | 'settings'; // the tab it shows (or showed last)
   catalog?: CatalogSmoke; // for the catalog run
 }
 
@@ -50,12 +50,13 @@ export interface SmokeKit<S extends ShellSettings> extends SmokeContext<S> {
   js<T = any>(code: string): Promise<T>;
   shot(name: string): Promise<void>; // the window as it is (the orb's shape alone while in the corner)
   shots(name: string): Promise<void>; // the same twice: <name>-dark and <name>-light
-  gjs<T = any>(code: string): Promise<T>; // run in the Games window's page (rejects while it is closed)
-  gamesReady(): Promise<boolean>; // the Games window is open and shows the games
-  gamesShot(name: string): Promise<void>; // the Games window as it is (always dark)
-  sjs<T = any>(code: string): Promise<T>; // run in the Settings window's page (rejects while it is closed)
-  settingsReady(): Promise<boolean>; // the Settings window is open and shows the sheet
-  settingsShot(name: string): Promise<void>; // the Settings window as it is (always dark)
+  gjs<T = any>(code: string): Promise<T>; // run in the Games and Settings window's page (rejects while it is closed)
+  gamesReady(): Promise<boolean>; // that window is open on its Games tab and shows the games
+  gamesShot(name: string): Promise<void>; // that window as it is
+  sjs<T = any>(code: string): Promise<T>; // the same as gjs, for the Settings tab's helpers
+  settingsReady(): Promise<boolean>; // that window is open on its Settings tab and shows the sheet
+  settingsShot(name: string): Promise<void>; // that window as it is
+  hubShots(name: string): Promise<void>; // that window twice: <name>-dark and <name>-light
   docked(dock: 'tl' | 'tr' | 'bl' | 'br', w: number, h: number): boolean;
   transcript(usage: Record<string, number>, id: string): void; // append a real Claude Code transcript line
   note(key: string, value: unknown): void; // a measurement for the result file (the perf run prints them)
@@ -139,27 +140,34 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     for (const key of Object.keys(u) as (keyof CpuUse)[]) u[key] = Math.round(u[key] * 10) / 10;
     return u;
   };
+  // the Games and Settings window: one page, two tabs, each with its own helpers
   const gjs = <T = any>(code: string): Promise<T> => {
-    const g = c.gamesWin();
-    return g ? g.webContents.executeJavaScript(code) : Promise.reject(new Error('the Games window is not open'));
+    const w = c.hubWin();
+    return w ? w.webContents.executeJavaScript(code) : Promise.reject(new Error('the Games and Settings window is not open'));
   };
-  const gamesReady = () => until(async () => !!c.gamesWin() && await gjs<boolean>('!!window.gamesTest && !!gamesTest.view()').catch(() => false), 8000);
-  const gamesShot = async (name: string) => {
+  const sjs = gjs;
+  const shown = (tab: string) => gjs<boolean>(`!!window.hubTest && hubTest.tab() === ${JSON.stringify(tab)}`).catch(() => false);
+  const gamesReady = () => until(async () => c.hubTab() === 'games' && await shown('games') && await gjs<boolean>('!!window.gamesTest && !!gamesTest.view()').catch(() => false), 8000);
+  const settingsReady = () => until(async () => c.hubTab() === 'settings' && await shown('settings')
+    && await gjs<boolean>('!!window.settingsTest && settingsTest.has("#tg-reducedMotion")').catch(() => false), 8000);
+  const hubShot = async (name: string) => {
     await wait(300);
-    const g = c.gamesWin();
-    if (g) fs.writeFileSync(path.join(c.outDir, name + '.png'), (await g.webContents.capturePage()).toPNG());
-  };
-  const sjs = <T = any>(code: string): Promise<T> => {
-    const w = c.settingsWin();
-    return w ? w.webContents.executeJavaScript(code) : Promise.reject(new Error('the Settings window is not open'));
-  };
-  const settingsReady = () => until(async () => !!c.settingsWin() && await sjs<boolean>('!!window.settingsTest && settingsTest.has("#tg-reducedMotion")').catch(() => false), 8000);
-  const settingsShot = async (name: string) => {
-    await wait(300);
-    const w = c.settingsWin();
+    const w = c.hubWin();
     if (w) fs.writeFileSync(path.join(c.outDir, name + '.png'), (await w.webContents.capturePage()).toPNG());
   };
-  const k: SmokeKit<S> = { ...c, mode, check, wait, until, js, shot, shots, gjs, gamesReady, gamesShot, sjs, settingsReady, settingsShot, docked, transcript, note, cpu };
+  const hubDark = () => gjs<boolean>('hubTest.look().dark').catch(() => null);
+  const hubShots = async (name: string) => {
+    const was = nativeTheme.themeSource;
+    nativeTheme.themeSource = 'dark';
+    await until(async () => (await hubDark()) === true, 2000);
+    await hubShot(name + '-dark');
+    nativeTheme.themeSource = 'light';
+    await until(async () => (await hubDark()) === false, 2000);
+    await hubShot(name + '-light');
+    nativeTheme.themeSource = was;
+    await until(async () => (await hubDark()) === nativeTheme.shouldUseDarkColors, 2000);
+  };
+  const k: SmokeKit<S> = { ...c, mode, check, wait, until, js, shot, shots, gjs, gamesReady, gamesShot: hubShot, sjs, settingsReady, settingsShot: hubShot, hubShots, docked, transcript, note, cpu };
 
   // the window sits in the orb's corner and the page shows this shape at its size
   const inCorner = () => same(c.win.getBounds(), orbWindowBounds(c.geo()));
@@ -233,12 +241,13 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     const sum = await k.sjs<string>('settingsTest.text()');
     check('Settings → Games sums the games up, with the developer switch off, and offers Open Games…', /Playing/.test(sum) && /Open Games…/.test(sum) && !/Check for games/.test(sum)
       && /Show developer and unapproved games/.test(sum) && (await k.sjs('settingsTest.value("#tg-developer")')) === false, sum);
+    const one = c.hubWin();
     await k.sjs(`settingsTest.click('[data-games="open"]')`);
-    check('Open Games… opens the Games window', await k.gamesReady());
+    check('Open Games… switches the same window to its Games tab, never a second one', await k.gamesReady() && c.hubWin()?.id === one?.id && hubWindows() === 1
+      && await until(async () => !(await page()).panelOpen, 3000), hubWindows());
     await k.gjs('gamesTest.key("w", true)');
-    check('Cmd+W closes the Games window', await until(() => !c.gamesWin()));
-    await k.sjs('settingsTest.key("Escape")');
-    await until(async () => !c.settingsWin() && !(await page()).panelOpen);
+    check('Cmd+W closes the Games and Settings window', await until(async () => !c.hubWin() && !(await page()).panelOpen));
+    await hubTabs(k);
     await js('shellTest.click("tg-shrink")');
     check('– folds the card back into the orb', await shows('orb') && c.ignoresMouse());
 
@@ -251,12 +260,17 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     await js('shellTest.key("Escape")');
     check('Esc folds the card', await shows('orb'));
 
-    // the tray's Games… opens the Games window and leaves the orb in its corner
+    // the tray's Games… and Settings… open the one window on their tab and leave the orb in its corner
     check('the tray offers Games… next to Settings…', labels(c.trayItems()).join('|').includes('Games…|Settings…'), labels(c.trayItems()));
     c.tray({ do: 'games' });
-    check('the tray\'s Games… opens the Games window, the orb stays in its corner', await k.gamesReady() && c.state() === 'orb' && inCorner() && c.visible(), c.state());
+    check('the tray\'s Games… opens the window on Games, the orb stays in its corner', await k.gamesReady() && c.state() === 'orb' && inCorner() && c.visible(), c.state());
+    const tw = c.hubWin();
+    c.tray({ do: 'settings' });
+    check('the tray\'s Settings… switches the same window to Settings', await k.settingsReady() && c.hubWin()?.id === tw?.id && hubWindows() === 1 && (await page()).panelOpen);
+    c.tray({ do: 'games' });
+    check('the tray\'s Games… switches it back to Games', await k.gamesReady() && c.hubWin()?.id === tw?.id && await until(async () => !(await page()).panelOpen, 3000));
     await k.gjs('document.getElementById("gw-close").click()');
-    check('the Games window\'s Close button closes it', await until(() => !c.gamesWin()));
+    check('the window\'s Close button closes it', await until(() => !c.hubWin()));
 
     // never stuck without a way back: hidden, the shortcut and the tray bring it back
     c.hide();
@@ -351,11 +365,11 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     c.dispatch('toggle');
     await shows('card');
     await js('shellTest.key(",")');
-    check(', opens the Settings window', await k.settingsReady());
+    check(', opens the window on Settings', await k.settingsReady());
     await k.sjs(`settingsTest.click('[data-pres="floating"]')`);
     check('Settings → Floating window pops it out', await settled('popped') && c.store.get().presentation === 'floating');
     await k.sjs('settingsTest.key("Escape")');
-    await until(() => !c.settingsWin());
+    await until(() => !c.hubWin());
     c.update({ reducedMotion: true } as Partial<S>);
     c.dispatch('dock');
     check('with reduced motion it docks at once', c.state() === 'orb');
@@ -374,7 +388,7 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
       return s.presentation === 'orb' && s.corner === 'br' && s.display === null && s.size === 'small' && s.dock === 'br' && !s.reducedMotion && !s.clickThrough && s.opacity === 1;
     }) && await until(() => inCorner() && c.geo().corner === 'br'), c.store.get());
     await k.sjs('settingsTest.key("Escape")').catch(() => undefined);
-    await until(() => !c.settingsWin());
+    await until(() => !c.hubWin());
     await game.reset?.(k);
 
     // ---------- leave it popped out, large, top left (the orb's corner top right) for the reopen run ----------
@@ -394,74 +408,84 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
 const same = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) =>
   a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 
-// The Games button next to Settings (in the card, or the window's title bar) opens the Games window: a normal window of
-// its own, centred on the game's display, isolated like the shell's page, with the catalog in large type. The game
-// stays as it was. Games again brings the same window forward; Esc closes it.
+// How many Games and Settings windows there are: never more than one.
+const hubWindows = () => BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed() && w.webContents.getURL().endsWith('/hub.html')).length;
+
+// What the window's page is given: no Node (no require, process, module or Buffer), nothing of the preload but the bridge
+// it exposes (window.tokenHub), and on it only the catalog, tab and Settings calls.
+async function isolated<S extends ShellSettings>(c: SmokeKit<S>, where: string): Promise<void> {
+  const env = await c.gjs<Record<string, string>>(`({ require: typeof require, process: typeof process, module: typeof module, buffer: typeof Buffer,
+    ipc: typeof window.ipcRenderer, shell: typeof window.tokenShell, games: typeof window.tokenGames, settings: typeof window.tokenSettings,
+    api: Object.keys(window.tokenHub).sort().join(',') })`);
+  c.check(`${where}: its page is isolated and sandboxed, with only the catalog, tab and Settings calls (window.tokenHub)`, env.require === 'undefined'
+    && env.process === 'undefined' && env.module === 'undefined' && env.buffer === 'undefined' && env.ipc === 'undefined' && env.shell === 'undefined'
+    && env.games === 'undefined' && env.settings === 'undefined' && env.api === 'boot,close,games,gamesDo,input,onGames,onSnap,onTab,tab', env);
+}
+
+// The page's background in the shell's quiet colours, dark or light with the system like the orb.
+const hubBack = (dark: boolean) => (dark ? 'rgb(23, 24, 27)' : 'rgb(243, 242, 238)');
+
+// The Games button next to Settings (in the card, or the window's title bar) opens the Games and Settings window on its
+// Games tab: a normal window of its own, centred on the game's display, isolated like the shell's page, with the catalog
+// in large type. The game stays as it was. Games again brings the same window forward; Esc closes it.
 async function gamesWindow<S extends ShellSettings>(c: SmokeKit<S>, where: string, button: string, shotName?: string): Promise<void> {
   const { check, until, js, gjs } = c;
   const before = { state: c.state(), visible: c.visible(), bounds: c.win.getBounds() };
   const shown = (sel: string) => js<boolean>(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); return !!e && e.getClientRects().length > 0; })()`);
   check(`${where}: a Games button sits next to Settings`, await shown('#' + button) && await js<boolean>(`document.getElementById(${JSON.stringify(button)}).textContent === 'Games'`));
   await js(`shellTest.click(${JSON.stringify(button)})`);
-  check(`${where}: Games opens the Games window`, await c.gamesReady());
-  const g = c.gamesWin();
+  check(`${where}: Games opens the window on its Games tab`, await c.gamesReady());
+  const g = c.hubWin();
   if (!g) return;
   const area = screen.getDisplayMatching(c.win.getBounds()).workArea, want = gamesWindowBounds(area), b = g.getBounds(), min = g.getMinimumSize();
   check(`${where}: it is centred on the game's display, about 960 × 680 and inside the work area`, same(b, want), { bounds: b, want, area });
-  check(`${where}: a normal window: resizable, a minimum size, a title bar with its name`, g.isResizable() && min[0] === Math.min(GAMES_WINDOW.minWidth, area.width)
-    && min[1] === Math.min(GAMES_WINDOW.minHeight, area.height) && g.getContentBounds().height < b.height && /^Games/.test(g.getTitle()),
+  check(`${where}: a normal window: resizable, a minimum size, a title bar named after the tab`, g.isResizable() && min[0] === Math.min(GAMES_WINDOW.minWidth, area.width)
+    && min[1] === Math.min(GAMES_WINDOW.minHeight, area.height) && g.getContentBounds().height < b.height && await until(() => /^Games · /.test(g.getTitle()), 2000),
   { min, content: g.getContentBounds(), title: g.getTitle() });
-  // isolated and sandboxed: the page has no Node (no require, process, module or Buffer), nothing of the preload but
-  // the bridge it exposes, and only the catalog calls on it
-  const env = await gjs<Record<string, string>>(`({ require: typeof require, process: typeof process, module: typeof module, buffer: typeof Buffer,
-    ipc: typeof window.ipcRenderer, shell: typeof window.tokenShell, api: Object.keys(window.tokenGames).sort().join(',') })`);
-  check(`${where}: its page is isolated and sandboxed, with only the catalog calls (window.tokenGames)`, env.require === 'undefined' && env.process === 'undefined'
-    && env.module === 'undefined' && env.buffer === 'undefined' && env.ipc === 'undefined' && env.shell === 'undefined' && env.api === 'boot,close,games,gamesDo,onGames', env);
+  await isolated(c, where);
   const text = await gjs<string>('gamesTest.text()');
-  check(`${where}: it lists the games (the built-in one playing) and Check for games`, /^Games/.test(text.trim()) && /Playing/.test(text) && /built in/i.test(text) && /Check for games/.test(text), text.slice(0, 400));
+  check(`${where}: it lists the games (the built-in one playing) and Check for games`, /Playing/.test(text) && /built in/i.test(text) && /Check for games/.test(text), text.slice(0, 400));
   const look = await gjs<{ name: number; desc: number; button: number; cards: number; icons: number; back: string }>('gamesTest.look()');
-  check(`${where}: game cards in large type on the dark page, with the game's icon`, look.name >= 16 && look.desc >= 14 && look.button >= 14 && look.cards >= 1 && look.icons >= 1
-    && look.back === 'rgb(23, 24, 27)', look);
-  check(`${where}: the game stays as it was: same mode, same place, still shown, Settings not opened`, c.state() === before.state && c.visible() === before.visible
+  const dark = await gjs<boolean>('hubTest.look().dark');
+  check(`${where}: game cards in large type on the page in the system's light or dark, with the game's icon`, look.name >= 16 && look.desc >= 14 && look.button >= 14
+    && look.cards >= 1 && look.icons >= 1 && look.back === hubBack(dark), { look, dark });
+  check(`${where}: the game stays as it was: same mode, same place, still shown, Settings not showing`, c.state() === before.state && c.visible() === before.visible
     && same(c.win.getBounds(), before.bounds) && !(await js<boolean>('shellTest.state().panelOpen')), { state: c.state(), before });
-  if (shotName) await c.gamesShot(shotName);
+  if (shotName) await c.hubShots(shotName);
   await js(`shellTest.click(${JSON.stringify(button)})`);
   await c.wait(300);
-  const all = BrowserWindow.getAllWindows().filter((w) => w.webContents.getURL().endsWith('/games.html'));
-  check(`${where}: Games again brings the same window forward, never a second one`, c.gamesWin()?.id === g.id && all.length === 1, all.length);
+  check(`${where}: Games again brings the same window forward, never a second one`, c.hubWin()?.id === g.id && hubWindows() === 1, hubWindows());
   await gjs('gamesTest.key("Escape")');
-  check(`${where}: Esc closes the Games window, the game still there`, await until(() => !c.gamesWin()) && c.state() === before.state && c.visible() === before.visible);
+  check(`${where}: Esc closes the window, the game still there`, await until(() => !c.hubWin()) && c.state() === before.state && c.visible() === before.visible);
 }
 
-// Settings (the button next to Games, the gear in the window's title bar, the , key, the tray's Settings…) opens in a
-// window of its own, centred like the Games window and the same size, showing the game page's Settings sheet in large
-// type. Clicks and sliders there change the real settings. Settings again brings the same window forward; Esc, Cmd+W,
-// its Close button and the sheet's own Close each close it. The game stays where it was.
+// Settings (the button next to Games, the gear in the window's title bar, the , key, the tray's Settings…) opens the
+// same window on its Settings tab, showing the game page's Settings sheet in large type. Clicks and sliders there change
+// the real settings. Settings again brings the same window forward; Esc, Cmd+W, its Close button and the sheet's own
+// Close each close it. The game stays where it was.
 async function settingsWindow<S extends ShellSettings>(c: SmokeKit<S>, where: string, button: string, shotName?: string): Promise<void> {
   const { check, until, js, sjs } = c;
   const before = { state: c.state(), visible: c.visible(), bounds: c.win.getBounds() };
   const open = () => js<boolean>('shellTest.state().panelOpen');
   const stays = () => c.state() === before.state && c.visible() === before.visible && same(c.win.getBounds(), before.bounds);
-  const closed = () => until(async () => !c.settingsWin() && !(await open()), 3000);
+  const closed = () => until(async () => !c.hubWin() && !(await open()), 3000);
   check(`${where}: a Settings button sits next to Games`, await js<boolean>(`(() => { const e = document.getElementById(${JSON.stringify(button)}); return !!e && e.getClientRects().length > 0; })()`));
   await js(`shellTest.click(${JSON.stringify(button)})`);
-  check(`${where}: Settings opens the Settings window`, await c.settingsReady() && await open());
-  const w = c.settingsWin();
+  check(`${where}: Settings opens the window on its Settings tab`, await c.settingsReady() && await open());
+  const w = c.hubWin();
   if (!w) return;
   const area = screen.getDisplayMatching(c.win.getBounds()).workArea, want = gamesWindowBounds(area), b = w.getBounds(), min = w.getMinimumSize();
-  check(`${where}: it is centred on the game's display, the Games window's size, inside the work area`, same(b, want), { bounds: b, want, area });
-  check(`${where}: a normal window: resizable, a minimum size, a title bar with its name`, w.isResizable() && min[0] === Math.min(GAMES_WINDOW.minWidth, area.width)
-    && min[1] === Math.min(GAMES_WINDOW.minHeight, area.height) && w.getContentBounds().height < b.height && /^Settings/.test(w.getTitle()),
+  check(`${where}: it is centred on the game's display, about 960 × 680, inside the work area`, same(b, want), { bounds: b, want, area });
+  check(`${where}: a normal window: resizable, a minimum size, a title bar named after the tab`, w.isResizable() && min[0] === Math.min(GAMES_WINDOW.minWidth, area.width)
+    && min[1] === Math.min(GAMES_WINDOW.minHeight, area.height) && w.getContentBounds().height < b.height && await until(() => /^Settings · /.test(w.getTitle()), 2000),
   { min, title: w.getTitle() });
-  const env = await sjs<Record<string, string>>(`({ require: typeof require, process: typeof process, module: typeof module, buffer: typeof Buffer,
-    shell: typeof window.tokenShell, games: typeof window.tokenGames, api: Object.keys(window.tokenSettings).sort().join(',') })`);
-  check(`${where}: its page is isolated and sandboxed, with only the Settings calls (window.tokenSettings)`, env.require === 'undefined' && env.process === 'undefined'
-    && env.module === 'undefined' && env.buffer === 'undefined' && env.shell === 'undefined' && env.games === 'undefined' && env.api === 'boot,close,input,onSnap', env);
+  await isolated(c, where);
   const text = await sjs<string>('settingsTest.text()');
-  check(`${where}: it shows Display (the corner, the floating window), Games with the developer switch, and Reset`, /^Settings/.test(text.trim()) && /In the corner/.test(text)
+  check(`${where}: it shows Display (the corner, the floating window), Games with the developer switch, and Reset`, /In the corner/.test(text)
     && /Floating window/.test(text) && /Corner/.test(text) && /Show developer and unapproved games/.test(text) && /Reset to defaults/.test(text), text.slice(0, 600));
   const look = await sjs<{ body: number; back: string; sections: number }>('settingsTest.look()');
-  check(`${where}: in large type on the Games window's dark page`, look.body >= 15 && look.back === 'rgb(23, 24, 27)' && look.sections >= 2, look);
+  const dark = await sjs<boolean>('hubTest.look().dark');
+  check(`${where}: in large type on the page in the system's light or dark`, look.body >= 15 && look.back === hubBack(dark) && look.sections >= 2, { look, dark });
   check(`${where}: the game stays as it was: same mode, same place, still shown`, stays(), { state: c.state(), before });
 
   // what the player does in the window happens in the game's real settings, and the window follows
@@ -477,14 +501,13 @@ async function settingsWindow<S extends ShellSettings>(c: SmokeKit<S>, where: st
     && await until(async () => /60%/.test(await sjs<string>('settingsTest.text()')), 3000), c.store.get().opacity);
   await sjs(`settingsTest.slide("#tg-opacity", ${Math.round(op * 100)})`);
   await until(() => c.store.get().opacity === op, 3000);
-  if (shotName) { await sjs('document.activeElement.blur(); scrollTo(0, 0)'); await c.settingsShot(shotName); }
+  if (shotName) { await sjs('document.activeElement.blur(); scrollTo(0, 0)'); await c.hubShots(shotName); }
 
   await js(`shellTest.click(${JSON.stringify(button)})`);
   await c.wait(300);
-  const all = BrowserWindow.getAllWindows().filter((x) => x.webContents.getURL().endsWith('/settings.html'));
-  check(`${where}: Settings again brings the same window forward, never a second one`, c.settingsWin()?.id === w.id && all.length === 1 && await open(), all.length);
+  check(`${where}: Settings again brings the same window forward, never a second one`, c.hubWin()?.id === w.id && hubWindows() === 1 && await open(), hubWindows());
   await sjs('settingsTest.key("Escape")');
-  check(`${where}: Esc closes the Settings window, the game still there`, await closed() && stays());
+  check(`${where}: Esc closes the window, the game still there`, await closed() && stays());
   for (const [how, code] of [['Cmd+W', 'settingsTest.key("w", true)'], ['its Close button', 'document.getElementById("gw-close").click()'],
     ['the sheet\'s own Close', 'settingsTest.click("#tg-close")']] as const) {
     await js('shellTest.key(",")');
@@ -496,4 +519,92 @@ async function settingsWindow<S extends ShellSettings>(c: SmokeKit<S>, where: st
   check(`${where}: the tray's Settings… opens it too, the game where it was`, await c.settingsReady() && stays());
   await sjs('settingsTest.key("Escape")');
   await closed();
+}
+
+// The two tabs: real buttons in a tablist, one selected at a time, each showing its own panel. Every way in opens the
+// one window on its tab and, while it is open, switches the same window to that tab; Cmd+1 and Cmd+2, the arrow keys
+// on a tab and Cmd+, switch from the keyboard. The game's page hears Settings show only while that tab shows. Nothing
+// is remembered between opens beyond the tab asked for. Starts and ends with the window closed, in the card.
+async function hubTabs<S extends ShellSettings>(c: SmokeKit<S>): Promise<void> {
+  const { check, until, js, gjs } = c;
+  type Tab = { tab: string; tag: string; role: string; name: string; selected: string; controls: string; tabIndex: number; shown: boolean };
+  const tabs = () => gjs<Tab[]>('hubTest.tabs()');
+  const panel = () => js<boolean>('shellTest.state().panelOpen');
+  // the window shows this tab and only this one, and the main process and the game's page agree
+  const on = (t: 'games' | 'settings') => until(async () => {
+    const ts = await tabs().catch(() => null);
+    return !!ts && c.hubTab() === t && ts.every((x) => (x.tab === t) === (x.selected === 'true') && (x.tab === t) === x.shown && (x.tab === t) === (x.tabIndex === 0))
+      && (await panel()) === (t === 'settings');
+  }, 3000);
+  await js('shellTest.click("tg-set")');
+  check('tabs: Settings opens the window on its Settings tab', await c.settingsReady() && await on('settings'));
+  const w = c.hubWin();
+  if (!w) return;
+  const ts = await tabs();
+  check('tabs: two real buttons, Games then Settings, with the tab role and the panel each controls', ts.length === 2 && ts.every((t) => t.tag === 'BUTTON' && t.role === 'tab')
+    && ts[0].name === 'Games' && ts[1].name === 'Settings' && ts[0].controls === 'hw-games' && ts[1].controls === 'hw-settings', ts);
+  check('tabs: in a tablist with an accessible name, each panel labelled by its tab', await gjs<boolean>(`(() => { const l = document.querySelector('[role=tablist]');
+    return !!l && l.getAttribute('aria-label') === 'Games and Settings' && [...document.querySelectorAll('[role=tabpanel]')].every((p) => document.getElementById(p.getAttribute('aria-labelledby')).getAttribute('aria-controls') === p.id); })()`));
+  const look = await gjs<{ on: string; off: string; line: string }>('hubTest.look()');
+  check('tabs: the active tab stands out: brighter ink and a line under it', look.on !== look.off && look.line !== 'rgba(0, 0, 0, 0)', look);
+  const one = () => c.hubWin()?.id === w.id && hubWindows() === 1;
+
+  // every way in, while it is open, switches the same window
+  await js('shellTest.click("tg-gamesbtn")');
+  check('tabs: the Games button switches the open window to Games, the same window', await c.gamesReady() && await on('games') && one(), hubWindows());
+  check('tabs: the title follows the tab', await until(() => /^Games · /.test(w.getTitle()), 2000), w.getTitle());
+  await js('shellTest.click("tg-set")');
+  check('tabs: the Settings button switches it back to Settings, the same window', await c.settingsReady() && await on('settings') && one());
+  check('tabs: …and the title follows', await until(() => /^Settings · /.test(w.getTitle()), 2000), w.getTitle());
+  await js('shellTest.click("tg-gamesbtn")');
+  await on('games');
+  await js('shellTest.key(",")');
+  check('tabs: , switches the open window to Settings', await on('settings') && one());
+
+  // the tabs themselves, by mouse and by keyboard
+  await gjs('hubTest.click("games")');
+  check('tabs: a click on Games shows the Games tab and the game\'s page stops mirroring Settings', await on('games') && one());
+  await gjs('hubTest.click("settings")');
+  check('tabs: a click on Settings shows the sheet again', await on('settings') && await c.settingsReady());
+  await gjs('hubTest.key("1", true)');
+  check('tabs: Cmd+1 picks Games', await on('games'));
+  await gjs('hubTest.key("2", true)');
+  check('tabs: Cmd+2 picks Settings', await on('settings'));
+  await gjs('hubTest.key("1", true)');
+  await on('games');
+  await gjs('hubTest.key(",", true)');
+  check('tabs: Cmd+, in the window picks Settings', await on('settings'));
+  await gjs('hubTest.focus("settings")');
+  await gjs('hubTest.key("ArrowLeft")');
+  check('tabs: ← on a focused tab picks the one before, and the focus moves with it', await on('games') && (await gjs('hubTest.focused()')) === 'games');
+  await gjs('hubTest.key("ArrowRight")');
+  check('tabs: → picks the next one', await on('settings') && (await gjs('hubTest.focused()')) === 'settings');
+  await gjs('hubTest.key("ArrowRight")');
+  check('tabs: → on the last wraps to the first', await on('games') && (await gjs('hubTest.focused()')) === 'games');
+  await gjs('hubTest.key("End")');
+  check('tabs: End picks the last tab', await on('settings'));
+  await gjs('hubTest.key("Home")');
+  check('tabs: Home picks the first tab', await on('games'));
+  await gjs('hubTest.click("settings")');
+  await on('settings');
+  await c.settingsReady();
+  await gjs('document.querySelector("#tg-opacity").focus()');
+  await gjs('hubTest.key("ArrowLeft")');
+  await c.wait(200);
+  check('tabs: arrows on a slider move the slider, not the tabs', c.hubTab() === 'settings' && (await gjs('hubTest.tab()')) === 'settings');
+  await gjs('document.activeElement.blur()');
+
+  // closed on Settings, the next Games opens on Games: nothing is remembered beyond the tab asked for
+  await gjs('hubTest.key("Escape")');
+  check('tabs: Esc closes the window from either tab', await until(async () => !c.hubWin() && !(await panel()), 3000));
+  await js('shellTest.click("tg-gamesbtn")');
+  check('tabs: closed on Settings, Games opens it on Games', await c.gamesReady() && await on('games'));
+  await gjs('hubTest.key("w", true)');
+  await until(() => !c.hubWin());
+  await js('shellTest.click("tg-set")');
+  check('tabs: closed on Games, Settings opens it on Settings', await c.settingsReady() && await on('settings'));
+  await gjs('hubTest.click("games")');
+  await on('games');
+  await gjs('document.getElementById("gw-close").click()');
+  check('tabs: Close closes it from the Games tab and Settings stays shut in the game\'s page', await until(async () => !c.hubWin() && !(await panel()), 3000));
 }

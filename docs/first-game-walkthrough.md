@@ -105,9 +105,9 @@ installed copies running too, use the blocklist (Roll back, below).
 
 On the player's Mac, with Token Games running (shell 1.3.0 or newer):
 
-- **In the app:** click the orb → **Games** (the Games window opens) → **Check for games** → **Install** on
-  *Ink Tower Defense* → read the permission sheet (it reads only the token counts your Claude Code sessions use, no
-  network) → **Approve** → **Play**.
+- **In the app:** click the orb → **Games** (the Games and Settings window opens on its Games tab) → **Check for
+  games** → **Install** on *Ink Tower Defense* → read the permission sheet (it reads only the token counts your Claude
+  Code sessions use, no network) → **Approve** → **Play**.
 - **From an agent or a terminal** (they can only ask; the player still approves in the app):
 
   ```sh
@@ -134,7 +134,7 @@ app. Its files go; **its save stays**, so installing it again brings the same ga
 ## 5. Update
 
 Release a newer version (steps 1 to 5 of Publish with a higher `version`) and change the pointer's `commit`, `tag` and
-`bundle`. Players see **Update available** and **Update to …** in the Games window
+`bundle`. Players see **Update available** and **Update to …** on the Games tab
 once their app has the new index (Check for games), a dot on the Games button and **Games… (1 update)** in the tray,
 and approve it like an install. The save
 carries over. A released zip is never replaced: `release-bundle.yml` refuses an existing tag.
