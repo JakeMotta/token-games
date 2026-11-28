@@ -14,8 +14,7 @@ it stays there. See [docs/presentation.md](docs/presentation.md).
 | Game | What |
 |---|---|
 | [Ant Farm](ant-farm/) | A colony that digs, eats and lives on the real clock, fed only by your tokens. Design: [docs/ant-farm-design.md](docs/ant-farm-design.md) |
-
-Planned: a tower defense where tokens queue the waves.
+| [Ink Tower Defense](tower-defense/) | A hand-drawn tower defense on notebook paper: tokens send the waves, finished turns pay gold, twelve towers level up without end. Its own app for now (`cd tower-defense && npm start`), not yet in the catalog |
 
 In the lab (browser prototypes, not shipped yet): Creatures (Hatchery), a pet that hatches from an egg and grows from
 Claude usage, made with the generative-creature technique. Prototypes, design and the v1/v2/v3 compare page:
@@ -73,8 +72,8 @@ window forward, and Esc, Cmd+W or Close closes it. Games pause their drawing whi
 ## Make a game
 
 ```sh
-npm run new-game -- tower-defense "Tower Defense"
-cd tower-defense && npm install && npm start
+npm run new-game -- creature-pet "Creature Pet"
+cd creature-pet && npm install && npm start
 ```
 
 That copies [templates/game](templates/game) (a jar that fills with sand) with the shell already around it. Replace

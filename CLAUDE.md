@@ -53,6 +53,7 @@ the **shell** (`shell/`); a game only draws itself and reacts to usage.
 | `shell/src/page/games-page.ts`, `games.html`, `games.css`, `shell/src/main/games-window-preload.ts` | The Games window: a normal window of its own (`openGames()` in `shell.ts`, sized by `gamesWindowBounds` in `geometry.ts`), opened by the Games buttons and the tray's Games…; its bridge `window.tokenGames` has only the catalog calls |
 | `shell/scripts/build-game.mjs`, `smoke.mjs` | Build any game; run its hidden end-to-end smoke test |
 | `ant-farm/` | The first game ([ant-farm/README.md](ant-farm/README.md)); `ant-farm/catalog/` is its built catalog bundle, `ant-farm-web` ([docs/first-game-walkthrough.md](docs/first-game-walkthrough.md)) |
+| `tower-defense/` | The second game, Ink Tower Defense ([tower-defense/README.md](tower-defense/README.md)): `src/sim/` is the pure simulation (map, towers, enemies, placement, big numbers), `src/game/` the ink renderer and the page |
 | `samples/token-garden/` | The sample catalog (web) game |
 | `templates/game/`, `templates/web-game/` | The starter games; `npm run new-game -- <id>` copies the first to `<id>/`, `--web` the second to `samples/<id>/` |
 | `cli/` | `tokengames` (CLI), `token-games-mcp` (MCP server), `tg-registry` (pack, check, build and sign the index; `src/keychain.ts` keeps the key in the macOS Keychain) |
@@ -80,6 +81,7 @@ From a game folder (`cd ant-farm`):
 | `npm run perf [-- --profile <folder>]` | Hidden frame-cost benchmark in every mode (fps, ms, CPU) into `perf.json`; `--profile` measures a copy of a real profile's settings and save |
 | `npm run build:catalog`, `npm run check:catalog` | The Ant Farm only: build its catalog bundle into `catalog/`, or check the committed one matches the source |
 | `npm run busy-farm -- <folder>`, `npm run facing-trace -- <folder>` | The Ant Farm only: a profile with a busy colony (for `perf --profile`); a frame-by-frame trace of how ants move and face |
+| `npm run autoplay -- [--balance \| <folder> [--waves N]]` | Ink Tower Defense only: a headless bot plays it; `--balance` prints how far it gets, `<folder>` writes a late-game profile (for `perf --profile`) |
 
 From the root: `npm run new-game -- <id> ["Name"] [--web] [--into <folder>]`, `npm run docs-check`, `npm run test:scripts`.
 
