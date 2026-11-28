@@ -1,0 +1,24 @@
+{
+  "name": "tower-defense",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Token Games: Ink Tower Defense. It lives in an orb in a corner of the screen and pops out into a window.",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "node ../shell/scripts/build-game.mjs",
+    "start": "npm run build && electron .",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test dist/test/",
+    "test:smoke": "npm run build && node ../shell/scripts/smoke.mjs",
+    "shots": "npm run build && node ../shell/scripts/smoke.mjs --shots shots",
+    "perf": "npm run build && node ../shell/scripts/smoke.mjs --perf",
+    "autoplay": "node ../shell/scripts/build-game.mjs --extra scripts/autoplay.ts:autoplay.js && node dist/autoplay.js"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "electron": "38.2.2",
+    "esbuild": "0.24.0",
+    "typescript": "5.6.3"
+  }
+}
