@@ -14,7 +14,7 @@ All three open straight from disk with no build step:
 | Version 1 | `prototype/index.html` | `prototype/creatures-standalone.html` |
 | Version 2 | `prototype-v2/index.html` | `prototype-v2/creatures-v2-standalone.html` |
 | Version 3 (top-down) | `prototype-v3/index.html` | `prototype-v3/creatures-v3-standalone.html` |
-| Compare lab | `prototype-v2/compare.html` | (needs the folders beside it) |
+| Compare lab | `prototype-v2/compare.html` | `prototype-v2/creatures-compare-standalone.html` |
 
 Each page has links to the others. The compare lab runs all three versions on one clock (below). Version 3 is described in [v3-topdown.md](v3-topdown.md).
 
@@ -57,7 +57,7 @@ What the numbers show (seed `moss`, level 100, the full length of each scenario)
 
 The clearest difference is the spine: version 2's body bends 10 to 20 times more along its length, and that is what makes it read as a lizard rather than a rod. Turns are close on these paths because both are steered along the same line; in the U-turn and the spin version 1 turns tighter (it pivots; a chain can only loop). Planted feet barely slide in either (under 2% of a body length), so foot sliding is not what tells them apart. Leg crossings show up with many legs on a short body (version 2's neighbour rule lets adjacent feet cross more). Creatures with short legs walk slowly with 6 or 8 legs (seed `moss` covers under a body length in the 8-leg scenario); try seed `g37` or `g12` for those.
 
-The lab's pure part is `prototype-v2/lab.js` (scenarios, steering, measures, the sentences), unit-tested in `test/lab.test.js`; the page is `compare.js`. Query parameters: `seed`, `level`, `scenario`, `style` (gochi, cel, pixel), `speed`, `t` (start paused at that time), `m1` `m2` `m3` (`0` hides a version's machinery), `trails=0`, `film=1` (record the filmstrip on load), `theme`.
+The lab's pure part is `prototype-v2/lab.js` (scenarios, steering, measures, the sentences), unit-tested in `test/lab.test.js`; the page is `compare.js`. Query parameters: `seed`, `level`, `scenario`, `style` (gochi, cel, pixel), `speed`, `t` (start paused at that time), `debug=1` (every debug drawing on), `m1` `m2` `m3` (`1` or `0` turns a version's machinery on or off), `trails=1`, `body` (own, legs-2, legs-4, legs-6, legs-8), `s1` `s2` `s3` (a seed per column, which unlocks them), `lock=0`, `feed=<seconds>` (drop a berry then), `film=1` (record the filmstrip on load). The page is dark only. Measured results across many seeds: [compare-results.md](compare-results.md).
 
 ## How each works
 

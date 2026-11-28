@@ -126,3 +126,77 @@ test('the what-is-different panel: 4 to 6 lines and a two-part verdict for every
     if (d.scores.v1 && d.scores.v1 === d.scores.v2) assert.match(d.byNumbers, /split \(version 1: .+; version 2: .+\)/, s.id);
   }
 });
+
+const TD = require('../../prototype-v3/topdown.js');
+const ALL = ['v1', 'v2', 'v3'];
+
+test('body presets set the leg count in every version, and a column may have its own seed', () => {
+  for (const b of Lab.BODIES) {
+    if (b.pairs == null) continue;
+    const run = Lab.createRun({ scenario: 's-curve', seed: 'moss', kinds: ALL, topRig: TD.rig, body: b.id });
+    Lab.step(run);
+    for (const a of run.actors) assert.equal(a.w.feet.length, b.pairs * 2, b.id + ' ' + a.kind);
+  }
+  const run = Lab.createRun({ scenario: 's-curve', seed: 'moss', kinds: ALL, topRig: TD.rig, seeds: { v1: 'moss', v2: 'fern', v3: 'moss' } });
+  assert.deepEqual(run.actors.map((a) => a.seed), ['moss', 'fern', 'moss']);
+  assert.notEqual(actor(run, 'v2').ph, run.ph, 'the odd one out has its own creature');
+  assert.equal(actor(run, 'v1').ph, actor(run, 'v3').ph, 'the rest share one');
+});
+
+test('Feed: every version notices the berry, walks over and eats it in its own stages, the same berry for all', () => {
+  const run = Lab.createRun({ scenario: 's-curve', seed: 'moss', kinds: ALL, topRig: TD.rig, feeds: [{ at: 1 }] });
+  const seen = { v1: [], v2: [], v3: [] };
+  for (let i = 0; i < 30 / Lab.DT && (run.t < 1.5 || run.actors.some((a) => a.food || a.w.mode === 'eat')); i++) {
+    Lab.step(run);
+    for (const a of run.actors) { const s = Lab.eatingState(a).stage; if (seen[a.kind][seen[a.kind].length - 1] !== s) seen[a.kind].push(s); }
+  }
+  for (const a of run.actors) {
+    const m = a.meals[0];
+    assert.equal(a.meals.length, 1, a.kind + ' one berry');
+    assert.ok(m.reach > m.drop && m.swallow > m.reach && m.done >= m.swallow, a.kind + ' reached, swallowed, done: ' + JSON.stringify(m));
+    for (const s of ['go', 'lower', 'bite', 'chew', 'swallow', 'fed']) assert.ok(seen[a.kind].includes(s), a.kind + ' ' + s + ' in ' + seen[a.kind]);
+    assert.ok(seen[a.kind].indexOf('bite') < seen[a.kind].indexOf('swallow'), a.kind + ' bites before it swallows');
+    assert.match(Lab.eatingState(a).text, /^Fed: got there in [\d.]+ s, ate in [\d.]+ s$/);
+  }
+  // measured from the mouth: every version has about the same walk to make
+  const reach = run.actors.map((a) => a.meals[0].reach - a.meals[0].drop);
+  assert.ok(Math.max(...reach) - Math.min(...reach) < 2, 'similar reach times ' + reach);
+});
+
+test('a feed for one column only feeds that column, and scrubbing replays it the same', () => {
+  const go = () => {
+    const run = Lab.createRun({ scenario: 's-curve', seed: 'moss', kinds: ALL, topRig: TD.rig, feeds: [{ at: 0.5, kind: 'v2' }] });
+    for (let i = 0; i < 4 / Lab.DT; i++) Lab.step(run);
+    return run;
+  };
+  const a = go(), b = go();
+  assert.equal(actor(a, 'v1').meals.length, 0);
+  assert.equal(actor(a, 'v2').meals.length, 1);
+  assert.equal(actor(a, 'v3').meals.length, 0);
+  for (const k of ALL) assert.equal(actor(a, k).w.x, actor(b, k).w.x);
+});
+
+test('the smoothness measures: step timing spread and hip jitter are there and sensible', () => {
+  const run = Lab.createRun({ scenario: 's-curve', seed: 'moss', kinds: ALL, topRig: TD.rig });
+  for (let i = 0; i < run.scn.seconds / Lab.DT; i++) Lab.step(run);
+  for (const a of run.actors) {
+    const s = Lab.summary(a.meter);
+    assert.ok(s.strideCV != null && s.strideCV >= 0 && s.strideCV < 150, a.kind + ' strideCV ' + s.strideCV);
+    assert.ok(s.steps > 3, a.kind + ' steps ' + s.steps);
+    assert.ok(s.hipJitter > 0 && s.hipJitter < 5, a.kind + ' hipJitter ' + s.hipJitter);
+  }
+  // the chain glides: version 2's hips judder less than version 1's
+  assert.ok(Lab.summary(actor(run, 'v2').meter).hipJitter < Lab.summary(actor(run, 'v1').meter).hipJitter);
+});
+
+test('makeActor and advance: one creature on its own, driven without a run (what the benchmark times)', () => {
+  const ph = Lab.creatureFor(Lab.byId('s-curve'), 'moss', 100, 'legs-4');
+  for (const k of ALL) {
+    const a = Lab.makeActor(k, ph, 'moss', { topRig: TD.rig });
+    const x0 = a.w.x;
+    for (let i = 0; i < 120; i++) Lab.advance(a, { v: 1, om: 0 });
+    assert.ok(a.out && a.w.feet.length === 4, k + ' has a pose and four feet');
+    assert.ok(Math.abs(a.w.x - x0) > 0.05, k + ' moved');
+    assert.equal(a.scene == null, k === 'v3', k + ' scene only for the ray-marched versions');
+  }
+});

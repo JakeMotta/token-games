@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Creatures Benchmark</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; background: #1a1826; color: #ece6f2; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { padding: 16px; max-width: 900px; }
+  pre { white-space: pre-wrap; word-break: break-word; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Creatures benchmark</h1>
+  <p>Times versions 1, 2 and 3 with 1, 5 and 20 creatures: the walk update and the drawing, per frame. It runs once
+    as the page loads and writes JSON below. <code>tools/bench.js</code> runs it in headless Chrome. The compare
+    lab's "Run the benchmark here" button does the same in your own browser. Query: frames, warm, counts=1,5,20,
+    style, shadow=0.</p>
+  <pre id="result">running…</pre>
+</main>
+<script src="../prototype/genome.js"></script>
+<script src="../prototype/body.js"></script>
+<script src="../prototype/render.js"></script>
+<script src="../prototype/motion.js"></script>
+<script src="chain.js"></script>
+<script src="light.js"></script>
+<script src="motion2.js"></script>
+<script src="../prototype-v3/topdown.js"></script>
+<script src="lab.js"></script>
+<script src="bench.js"></script>
+<script>
+  (function () {
+    const q = new URLSearchParams(location.search);
+    const opts = {
+      frames: Number(q.get('frames') || 300), warm: Number(q.get('warm') || 60), style: q.get('style') || 'gochi',
+      shadow: q.get('shadow') !== '0', counts: (q.get('counts') || '1,5,20').split(',').map(Number),
+    };
+    const t0 = performance.now();
+    const out = window.CreatureBench.run(opts);
+    out.totalMs = Math.round(performance.now() - t0);
+    document.getElementById('result').textContent = JSON.stringify(out);
+  })();
+</script>
+</body>
+</html>

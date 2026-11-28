@@ -1373,12 +1373,14 @@
       return { rgb, ink: mix(rp[0], [20, 16, 24], 0.5) };
     },
     inkWidth: 2,
+    shadowEdge: 'hard',
   });
   registerLook('pixel', {
     label: 'Pixel',
     // Pixel art: drawn at half size (a 75x60 sprite in the overlay), blown up with hard edges; four tones of the
     // creature's own ramp blended with an ordered dither; a 1px outline. opts.palette swaps in a fixed palette.
     pixel: 2,
+    shadowEdge: 'hard',
     shade(scene, pal, h, ro) {
       const rp = rampOf(scene, pal, h);
       return { rgb: rp[gochiBand(scene, h, ro, h.light + (bayer(h.x, h.y) - 0.5) * 0.22)], ink: rp[0] };
@@ -1442,7 +1444,8 @@
 
   // ---------- the renderer ----------
   // scene: from CreatureBody.build/buildEgg (plus .ph for creatures). cam: { w, h, px, yaw, pitch, center }.
-  // opts: { style, shine: 0..1, palette: 'own' | 'gameboy' | 'pico8' | 'earth', shadow: true }.
+  // opts: { style, shine: 0..1, palette: 'own' | 'gameboy' | 'pico8' | 'earth', shadow: true, light }, where light is
+  // { dir: towards the light in the body's frame, strength: 0..1, soft: edge sharpness, rgb: shadow colour }.
   // Returns { w, h, rgba, depth, mask, info, cam, stats }.
   function render(scene, camIn, opts) {
     opts = opts || {};
@@ -1481,8 +1484,12 @@
       }
     });
 
-    // Light from the upper left, a little toward the viewer.
-    const Lw = B.v.norm(B.v.add(B.v.add(B.v.mul(cam.r, -0.65), B.v.mul(cam.u, 1)), B.v.mul(cam.toCam, 0.55)));
+    // The key light. With no light given: from the upper left, a little toward the viewer. With a light (the sun or the
+    // moon, see light.js) its side and height follow it, still a little toward the viewer so faces stay readable.
+    const light = lightFor(opts.light, cam);
+    const Lw = opts.light
+      ? B.v.norm(B.v.add(B.v.add(B.v.mul(cam.r, B.v.dot(light.dir, cam.r) * 0.9), B.v.mul(cam.u, Math.max(0.5, B.v.dot(light.dir, cam.u)))), B.v.mul(cam.toCam, 0.55)))
+      : B.v.norm(B.v.add(B.v.add(B.v.mul(cam.r, -0.65), B.v.mul(cam.u, 1)), B.v.mul(cam.toCam, 0.55)));
     const Hv = B.v.norm(B.v.add(Lw, cam.toCam));
     const eps = cam.px * 0.5;
     let steps = 0, hits = 0;
@@ -1550,22 +1557,8 @@
       for (let i = 0; i < N; i++) if (out[i]) { const k = ink[i]; rgba[i * 4] = k[0]; rgba[i * 4 + 1] = k[1]; rgba[i * 4 + 2] = k[2]; }
     }
 
-    // Ground shadow: a flat ellipse under the body, see-through.
-    if (opts.shadow !== false && scene.shadow) {
-      const sh = scene.shadow;
-      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-        const i = y * W + x;
-        if (mask[i]) continue;
-        const ox = cam.center[0] + cam.r[0] * (x + 0.5 - W / 2) * cam.px + cam.u[0] * (H / 2 - y - 0.5) * cam.px;
-        const oy = cam.center[1] + cam.r[1] * (x + 0.5 - W / 2) * cam.px + cam.u[1] * (H / 2 - y - 0.5) * cam.px;
-        const oz = cam.center[2] + cam.r[2] * (x + 0.5 - W / 2) * cam.px + cam.u[2] * (H / 2 - y - 0.5) * cam.px;
-        if (cam.d[1] >= 0) continue;
-        const tt = (sh.y - oy) / cam.d[1];
-        const gx = ox + cam.d[0] * tt, gz = oz + cam.d[2] * tt;
-        const ex = (gx - sh.cx) / sh.rx, ez = (gz - sh.cz) / sh.rz;
-        if (ex * ex + ez * ez < 1) { rgba[i * 4 + 3] = Math.round(255 * (sh.alpha || 0.2)); mask[i] = 2; }
-      }
-    }
+    // The ground shadow: the body itself, cast onto the floor along the light (see castShadow).
+    if (opts.shadow !== false && scene.shadow) castShadow(scene, list, cam, { W, H, rgba, mask }, light, style.shadowEdge || 'soft');
 
     const res = { w: W, h: H, rgba, depth, mask, info, cam, stats: { steps, hits } };
     if (style.decals) drawDecals(scene, list, res);
@@ -1592,6 +1585,128 @@
       }
     }
     return { w: W, h: H, rgba, depth, mask, info, cam: full, stats: low.stats, low };
+  }
+
+  // ---------- the cast shadow ----------
+  const SHADOW_DIRECT = 0.36, SHADOW_CONTACT = 0.3;
+  // The light to cast with: the one given, or a fixed one up and to the left, a little behind (the shadow falls right
+  // and slightly toward the viewer) for sheets and thumbnails.
+  function lightFor(l, cam) {
+    if (l && l.dir) return { dir: B.v.norm(l.dir), strength: l.strength != null ? l.strength : 1, soft: l.soft || 8, rgb: l.rgb || [22, 26, 52] };
+    return { dir: B.v.norm(B.v.add(B.v.add(B.v.mul(cam.r, -0.55), B.v.mul(cam.u, 1)), B.v.mul(cam.d, 0.3))), strength: 1, soft: 8, rgb: [22, 26, 52] };
+  }
+  // The creature's real body projected onto the ground (y = 0) along the light. Every floor pixel round the body sends a
+  // ray toward the light through the same melted distance field the body is drawn from: a hit means shadow, so the
+  // shadow has the legs, tail, head and horns in it and moves with every step and turn. How close a miss passes (over
+  // how far it travelled) gives the soft edge, which widens with height above the ground; and how close the floor is
+  // to the body darkens the contact spots under planted feet and a low belly, by day and by night.
+  // edge 'soft' (Original and the debug views): smooth penumbra; 'hard' (Cel, Pixel): one flat tone plus a darker flat
+  // contact tone, no blur (the pixel look casts at its own half resolution, so the shadow is made of its pixels).
+  function castShadow(scene, list, cam, buf, light, edge) {
+    const { W, H, rgba, mask } = buf, L = light.dir;
+    if (L[1] < 0.05 || !list.length) return;
+    const hard = edge === 'hard', lift = scene.lift || 0;
+    let top = 0;
+    for (const q of list) top = Math.max(top, q.src.bs[1] + q.src.bs[3]);
+    const size = scene.kind === 'egg' ? 0.45 : scene.scale || 1;
+    const r0 = 0.14 * size;                                  // the floor darkens within this distance of the body
+    const k = hard ? 60 : light.soft;                        // penumbra sharpness
+    const tTop = (top + 0.05) / L[1];
+    const m = hard ? cam.px : Math.min(0.6 * size, Math.max(cam.px, tTop / k)); // rays this close to a piece can be dimmed by it
+    // The floor area that can be dark: each piece's bounding sphere cast along the light, and the floor right under it.
+    let gx0 = Infinity, gx1 = -Infinity, gz0 = Infinity, gz1 = -Infinity;
+    const grow = (x, z, e) => { gx0 = Math.min(gx0, x - e); gx1 = Math.max(gx1, x + e); gz0 = Math.min(gz0, z - e); gz1 = Math.max(gz1, z + e); };
+    for (const q of list) {
+      const b = q.src.bs, R = b[3] + q.k2 * 0.6;
+      const t = b[1] / L[1];
+      grow(b[0] - L[0] * t, b[2] - L[2] * t, (R + m) / L[1]);
+      if (b[1] - R < r0) grow(b[0], b[2], R + r0);
+    }
+    let sx0 = Infinity, sx1 = -Infinity, sy0 = Infinity, sy1 = -Infinity;
+    for (const [x, z] of [[gx0, gz0], [gx1, gz0], [gx0, gz1], [gx1, gz1]]) {
+      const p = project(cam, [x, 0, z]);
+      sx0 = Math.min(sx0, p.x); sx1 = Math.max(sx1, p.x); sy0 = Math.min(sy0, p.y); sy1 = Math.max(sy1, p.y);
+    }
+    sx0 = Math.max(0, Math.floor(sx0)); sx1 = Math.min(W - 1, Math.ceil(sx1)); sy0 = Math.max(0, Math.floor(sy0)); sy1 = Math.min(H - 1, Math.ceil(sy1));
+    if (cam.d[1] >= 0) return;
+    const cands = [], near = [];
+    const liftFade = 1 - Math.min(0.5, lift * 0.8 / size);  // a hop or flight lifts the body and pales its shadow
+    // Where the camera ray through screen point (x, y) meets the floor.
+    const floorAt = (x, y, out) => {
+      const sx = (x - W / 2) * cam.px, sy = (H / 2 - y) * cam.px;
+      const oy = cam.center[1] + cam.r[1] * sx + cam.u[1] * sy, tt = -oy / cam.d[1];
+      out[0] = cam.center[0] + cam.r[0] * sx + cam.u[0] * sy + cam.d[0] * tt;
+      out[1] = cam.center[2] + cam.r[2] * sx + cam.u[2] * sy + cam.d[2] * tt;
+      return out[0] >= gx0 && out[0] <= gx1 && out[1] >= gz0 && out[1] <= gz1;
+    };
+    // How dark the direct light leaves this bit of floor (0 lit .. 1 fully shaded), marching toward the light.
+    const direct = (gx, gz) => {
+      cands.length = 0;
+      let t0 = Infinity, t1 = -Infinity;
+      for (const q of list) {
+        const b = q.src.bs, R = b[3] + q.k2 * 0.6;
+        const wx = b[0] - gx, wy = b[1], wz = b[2] - gz;
+        const tc = wx * L[0] + wy * L[1] + wz * L[2], Rm = R + m;
+        if (tc + Rm < 0 || wx * wx + wy * wy + wz * wz - tc * tc > Rm * Rm) continue;
+        cands.push(q);
+        t0 = Math.min(t0, tc - Rm); t1 = Math.max(t1, tc + Rm);
+      }
+      if (!cands.length) return 0;
+      let res = 1, tOcc = 0, t = Math.max(cam.px * 0.5, t0);
+      for (let n = 0; n < 64 && t < t1; n++) {
+        const d = field(cands, gx + L[0] * t, L[1] * t, gz + L[2] * t, null);
+        if (d < cam.px * 0.15) { res = 0; tOcc = t; break; }
+        const r = k * d / t;
+        if (r < res) { res = r; tOcc = t; }
+        t += Math.max(d, cam.px * 0.5);
+      }
+      if (hard) return res < 0.5 ? 1 : 0;
+      const s = Math.min(1, res), lit = s * s * (3 - 2 * s);
+      const high = Math.min(1, tOcc * L[1] / Math.max(0.1, top)); // shadows of high parts are a little paler
+      return (1 - lit) * (1 - 0.3 * high);
+    };
+    // The direct term changes slowly, so it is worked out on a grid every STEP pixels: the soft look blends between
+    // grid points; the hard look keeps a cell flat when its four corners agree and works each pixel out on the edges.
+    const STEP = hard ? 2 : k < 9 ? 4 : 3, gw = Math.floor((sx1 - sx0) / STEP) + 2, gh = Math.floor((sy1 - sy0) / STEP) + 2;
+    const grid = new Float32Array(gw * gh), g = [0, 0];
+    if (light.strength > 0) {
+      for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+        grid[j * gw + i] = floorAt(sx0 + i * STEP + 0.5, sy0 + j * STEP + 0.5, g) ? direct(g[0], g[1]) : 0;
+      }
+    }
+    const dScale = light.strength * (hard ? 0.95 * liftFade : 1);
+    for (let y = sy0; y <= sy1; y++) for (let x = sx0; x <= sx1; x++) {
+      const i = y * W + x;
+      if (mask[i]) continue;
+      if (!floorAt(x + 0.5, y + 0.5, g)) continue;
+      const gx = g[0], gz = g[1];
+      let sh = 0;
+      if (light.strength > 0) {
+        const fx = (x - sx0) / STEP, fy = (y - sy0) / STEP, ix = Math.floor(fx), iy = Math.floor(fy), ax = fx - ix, ay = fy - iy;
+        const c00 = grid[iy * gw + ix], c10 = grid[iy * gw + ix + 1], c01 = grid[(iy + 1) * gw + ix], c11 = grid[(iy + 1) * gw + ix + 1];
+        if (!hard) sh = (c00 * (1 - ax) + c10 * ax) * (1 - ay) + (c01 * (1 - ax) + c11 * ax) * ay;
+        else if (c00 === c10 && c00 === c01 && c00 === c11) sh = c00;
+        else sh = direct(gx, gz);
+      }
+      // Contact: how close the body is to this bit of floor.
+      near.length = 0;
+      for (const q of list) {
+        const b = q.src.bs, R = b[3] + q.k2 * 0.6, wx = b[0] - gx, wz = b[2] - gz;
+        if (wx * wx + b[1] * b[1] + wz * wz < (R + r0) * (R + r0)) near.push(q);
+      }
+      let contact = 0;
+      if (near.length) {
+        const f = field(near, gx, 0, gz, null);
+        contact = f <= 0 ? 1 : Math.max(0, 1 - f / r0);
+        contact *= contact;
+      }
+      const aD = SHADOW_DIRECT * dScale * sh;
+      const aC = hard ? (contact > 0.45 ? SHADOW_CONTACT : 0) : SHADOW_CONTACT * contact;
+      const a = 1 - (1 - aD) * (1 - aC);
+      if (a < 0.012) continue;
+      rgba[i * 4] = light.rgb[0]; rgba[i * 4 + 1] = light.rgb[1]; rgba[i * 4 + 2] = light.rgb[2]; rgba[i * 4 + 3] = Math.round(255 * a);
+      mask[i] = 2;
+    }
   }
 
   // ---------- face marks ----------
@@ -1776,7 +1891,8 @@
     }
   }
 
-  // Shadow and framing helpers for a built scene.
+  // Framing helpers for a built scene: scene.shadow is the floor footprint under the body (cameras and sprite boxes keep
+  // room for it); the shadow itself is cast from the body by castShadow.
   function withShadow(scene) {
     if (scene.kind === 'egg') { scene.shadow = { cx: 0, cz: 0, rx: 0.3, rz: 0.24, y: 0, alpha: 0.2 }; return scene; }
     const L = scene.layout;
@@ -1836,7 +1952,7 @@
     ctx2d.drawImage(off, x, y, res.w * size, res.h * size);
   }
 
-  const api = { render, camera, project, styles, looks, registerStyle, registerLook, PALETTES, palette, ramp, hsl, vnoise, smin, field, prep, dist, withShadow, blit, creatureScene, eggScene, frameCamera };
+  const api = { render, camera, project, styles, looks, registerStyle, registerLook, PALETTES, palette, ramp, hsl, vnoise, smin, field, prep, dist, withShadow, castShadow, lightFor, blit, creatureScene, eggScene, frameCamera };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.CreatureRender = api;
 })(typeof window !== 'undefined' ? window : globalThis);

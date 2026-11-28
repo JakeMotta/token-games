@@ -50,6 +50,7 @@ A second, separate prototype in `prototype-v2/` (Version 1 above is unchanged). 
 - Open `prototype-v2/index.html` (or `prototype-v2/creatures-v2-standalone.html`). Every page links to the others.
 - [docs/argonaut-technique-analysis.md](docs/argonaut-technique-analysis.md): what argonaut's video shows (frames only, no transcript), the method, formulas, pseudo-code, parameters and open questions.
 - [docs/v2-vs-v1.md](docs/v2-vs-v1.md): how each version works, strengths, weaknesses, performance, what to look for, the lighting model and its commands.
+- [docs/compare-results.md](docs/compare-results.md): versions 1, 2 and 3 measured: draw and update cost, smoothness, eating, the verdict and the pick.
 - [docs/shots-v2](docs/shots-v2/): screenshots (light, dark, sun left, noon and right, night, pixel cave, egg, narrow, compare) and proof sheets.
 
 ## Version 3: top-down
@@ -62,4 +63,11 @@ A third prototype in `prototype-v3/`: version 2's chain walker seen from straigh
 
 ## Compare lab
 
-`prototype-v2/compare.html` runs all three versions on one clock with the same seed and the same scripted scenario (S-curve, figure eight, U-turn, spin, speed ramp, stops, long and short bodies, 2 to 8 legs, follow a target), with play, pause, frame steps, 0.1× to 2× speed and a scrubber. A *machinery* toggle per version draws how it works (version 1's rings and gait clock; the chain, angle limits, foot targets and step triggers of versions 2 and 3), with trails, live numbers (foot slide, turn radius, leg crossings, wobble, spine bend, ms per frame), a "what is different" panel with a verdict, and a one-click filmstrip. See "How to see the difference" in [docs/v2-vs-v1.md](docs/v2-vs-v1.md).
+`prototype-v2/compare.html` (or the single file `prototype-v2/creatures-compare-standalone.html`, made by `node prototype-v2/tools/bundle.js`) runs all three versions on one clock with the same seed and the same scripted scenario (S-curve, figure eight, U-turn, spin, speed ramp, stops, long and short bodies, 2 to 8 legs, follow a target), with play, pause, frame steps, 0.1× to 2× speed and a scrubber. It opens dark, showing only the creatures.
+
+- **Debug drawings**: one switch per drawing (bones B, joints J, body outline O, foot targets F, gait G, trails T, path P, labels L, shadow S, grid R) for all three at once, a switch row per version (1, 2, 3 toggles a whole version), and **All debug** (D). All start off and are remembered in this browser.
+- **New creatures** (N) rolls a random seed. It shows the seed, and **Previous** returns to the one before. **Same creature in all three** (K) locks one seed; unlocked, each column rolls its own. Body presets (the seed's own, 2, 4, 6 and many legs; `[` `]`) swap the body plan.
+- **Feed** (E, or click a view) drops a berry in front of each version. Each walks to it and eats it its own way, with the stage labelled. The berry is a prototype tool, not part of the game.
+- **Results**: a table of measured smoothness (35 runs), eating (20 feedings) and draw cost at 1, 5 and 20 creatures, with a verdict per version. It is read from `compare-results.js`, made by `node prototype-v2/tools/compare-results.js` (it runs `tools/bench.js`, the headless benchmark; `bench.html` is its page). **Run the benchmark here** times this browser instead. The write-up is [docs/compare-results.md](docs/compare-results.md).
+
+There are also live numbers (foot slide, turn radius, leg crossings, wobble, hip jitter, step timing, spine bend, meals, ms per frame), a "what is different" panel with a verdict, and a one-click filmstrip. See "How to see the difference" in [docs/v2-vs-v1.md](docs/v2-vs-v1.md).

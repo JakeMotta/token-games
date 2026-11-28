@@ -24,7 +24,9 @@ const STANDARD = {
   'v2-egg': 'seed=moss',
   'v2-narrow': 'seed=moss&level=60&size=520x900',
   'compare': 'page=compare.html&seed=moss&level=100&scenario=s-curve&t=6&size=1440x1300',
-  'compare-uturn-dark': 'page=compare.html&seed=moss&level=100&scenario=u-turn&t=4.2&theme=dark&size=1440x1300',
+  'compare-uturn': 'page=compare.html&seed=moss&level=100&scenario=u-turn&t=4.2&size=1440x1300',
+  'compare-debug': 'page=compare.html&seed=moss&level=100&scenario=s-curve&t=6&debug=1&size=1440x1300',
+  'compare-eating': 'page=compare.html&seed=moss&level=100&scenario=s-curve&feed=1&t=5&size=1440x1300',
   'compare-uturn-film': 'page=compare.html&seed=moss&level=100&scenario=u-turn&t=2&film=1',
   'compare-long-film': 'page=compare.html&seed=moss&level=100&scenario=long&t=3&film=1',
 };

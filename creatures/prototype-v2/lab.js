@@ -5,7 +5,10 @@
    how much the heading wobbles, and how far the creature strays from the path it is asked to follow.
    Everything here is deterministic: a fixed step of 1/60 s and seeded walkers, so scrubbing back re-simulates the same
    frames. The scenario only steers (opts.drive: speed and turn rate, or the walkers' own turn() and spin()); it never
-   feeds or grows the creature. No DOM. */
+   grows the creature. Feed (prototype only, like every page's food drop) puts a berry down for each version and hands
+   that version its own behaviour until it has eaten: it notices, walks over and eats with its own technique.
+   Every column can hatch its own seed (seeds: { v1, v2, v3 }), and a body preset sets the leg count for all of them.
+   No DOM. */
 (function (root) {
   'use strict';
   const req = (name, file) => root[name] || (typeof require === 'function' ? require(file) : null);
@@ -60,15 +63,26 @@
       about: 'The target jumps to a new spot every few seconds (click the floor to place it yourself). Each version heads for it.' },
   ];
   const byId = (id) => SCENARIOS.find((s) => s.id === id) || SCENARIOS[0];
+  // Body presets: the seed's creature with its leg count set, so the walk cycles can be compared on one body plan.
+  const BODIES = [
+    { id: 'own', name: 'The seed\'s own body' },
+    { id: 'legs-2', name: '2 legs', pairs: 1 },
+    { id: 'legs-4', name: '4 legs', pairs: 2 },
+    { id: 'legs-6', name: '6 legs', pairs: 3 },
+    { id: 'legs-8', name: 'Many legs (8)', pairs: 4 },
+  ];
+  const bodyById = (id) => BODIES.find((b) => b.id === id) || BODIES[0];
   // Wavy ground is not offered: every version's feet and shadows assume a flat floor at y = 0.
 
   // The genome for a scenario: the seed's own creature, with the body or the leg count overridden when the scenario
   // is about that.
-  function creatureFor(scn, seed, level) {
+  function creatureFor(scn, seed, level, body) {
     const o = {};
     if (scn.body === 'long') Object.assign(o, { 'neck.length': 0.5, 'torso.length': 1.25, 'tail.length': 1.5 });
     if (scn.body === 'short') Object.assign(o, { 'neck.length': 0, 'torso.length': 0.45, 'tail.length': 0 });
     if (scn.pairs != null) Object.assign(o, { 'legs.pairs': scn.pairs, 'wings.size': 0 });
+    const preset = typeof body === 'string' ? bodyById(body) : body;
+    if (preset && preset.pairs != null) o['legs.pairs'] = preset.pairs; // a body preset wins over the scenario's legs
     o['wings.size'] = 0; // the lab is about walking: no flights or flaps
     return G.express(G.randomCreature(String(seed)), { level: level == null ? 100 : level, overrides: o });
   }
@@ -131,7 +145,8 @@
     let w;
     if (kind === 'v1') w = M1.createWalker(ph, hseed, { heading: 0, hunger: 0.2 });
     else w = M2.createWalker(ph, hseed, { heading: 0, hunger: 0.2, rig: kind === 'v3' && opts.topRig ? opts.topRig(ph) : undefined });
-    return { kind, ph, w, BL, out: null, scene: null, legs: [], meter: createMeter(BL), progress: 0, trail: [], footTrail: [] };
+    return { kind, ph, seed: String(seed), w, BL, out: null, scene: null, legs: [], meter: createMeter(BL), progress: 0, trail: [], footTrail: [],
+      food: null, meals: [] };
   }
   // A body length both versions share: the rest chain's length (the same body the genome draws standing straight).
   const lengthCache = new WeakMap();
@@ -149,13 +164,19 @@
   // A lab run: three (or any) actors, one scenario, one clock.
   function createRun(opts) {
     const scn = typeof opts.scenario === 'string' ? byId(opts.scenario) : opts.scenario;
-    const ph = creatureFor(scn, opts.seed, opts.level);
+    const ph = creatureFor(scn, opts.seed, opts.level, opts.body);
     const u = unitFor(ph, scn);
     const kinds = opts.kinds || ['v1', 'v2'];
+    const seeds = opts.seeds || {};
+    // A column with its own seed gets its own creature; the rest share the run's (the same object, so it is cached once).
+    const actorFor = (k) => {
+      const own = seeds[k] != null && String(seeds[k]) !== String(opts.seed);
+      return makeActor(k, own ? creatureFor(scn, seeds[k], opts.level, opts.body) : ph, own ? seeds[k] : opts.seed, opts);
+    };
     const run = {
       scn, ph, u, seed: opts.seed, t: 0, frame: 0, path: samplePath(scn, u), clicks: (opts.clicks || []).slice(),
-      targets: scn.follow ? followTargets(opts.seed, u, scn.seconds) : null, fired: {},
-      actors: kinds.map((k) => makeActor(k, ph, opts.seed, opts)), build: opts.build !== false,
+      targets: scn.follow ? followTargets(opts.seed, u, scn.seconds) : null, fired: {}, feeds: (opts.feeds || []).slice(), fed: {},
+      actors: kinds.map(actorFor), build: opts.build !== false,
     };
     // Start everyone on the path, facing along it.
     const p0 = run.path ? pathAt(run.path, 0) : [0, 0], p1 = run.path ? pathAt(run.path, 0.05 * u) : [1, 0];
@@ -228,17 +249,72 @@
         for (const a of run.actors) { const M = a.kind === 'v1' ? M1 : M2; if (ev.spin) M.spin(a.w, ev.spin); else M.turn(a.w, ev.turn); }
       }
     }
+    run.feeds.forEach((f, i) => {
+      if (t < f.at) return;
+      for (const a of run.actors) {
+        const key = i + ':' + a.kind;
+        if (run.fed[key] || (f.kind && f.kind !== a.kind)) continue;
+        run.fed[key] = true;
+        if (!a.food) dropFood(a, f, t);
+      }
+    });
     for (const a of run.actors) {
       const t0 = now();
-      const cmd = command(run, a, t);
       const M = a.kind === 'v1' ? M1 : M2;
-      a.out = M.step(a.w, DT, AREA, { drive: cmd });
+      // With food down the version's own behaviour takes over (notice, walk over, eat); the scenario steers otherwise.
+      a.out = M.step(a.w, DT, AREA, a.food ? { food: a.food } : { drive: command(run, a, t) });
+      if (a.food) mealProgress(a, t + DT);
       a.scene = buildScene(a, hooks);
       a.legs = groundLegs(a);
       const ms = now() - t0;
       sampleActor(run, a, ms);
     }
     run.t += DT; run.frame++;
+  }
+
+  // ---------- food (prototype only) ----------
+  // Version 1's berry: two bites. Feed drops it the same way for every version: this far ahead of the head and a
+  // little to its left, so each one has the same walk and the same turn to make. A click drops it on a spot instead.
+  const BERRY = { kind: 'berry', bites: 2, value: 0.2 };
+  const FEED_AHEAD = 1.4, FEED_LEFT = 0.5; // body lengths
+  const GIVE_UP = 30; // seconds: food it has not reached by then is taken away (the walkers' own goal timeout)
+  function dropFood(a, f, t) {
+    let x = f.x, z = f.z;
+    if (x == null) {
+      // measured from the mouth, so every version has the same distance to cover
+      const th = steerPoint(a).th, m = a.kind === 'v1' ? M1.toWorld(a.w, a.w.mouthX, 0) : M2.mouthAt(a.w);
+      const d = FEED_AHEAD * a.BL, l = FEED_LEFT * a.BL;
+      x = m[0] + Math.cos(th) * d - Math.sin(th) * l;
+      z = m[1] - Math.sin(th) * d - Math.cos(th) * l;
+    }
+    a.food = { kind: BERRY.kind, x, z, bites: BERRY.bites, maxBites: BERRY.bites, value: BERRY.value, age: 1 };
+    a.meals.push({ drop: t, reach: null, swallow: null, done: null });
+  }
+  // The meal's times: reached (the eating starts), swallowed (the food is gone) and done (back to the scenario).
+  function mealProgress(a, t) {
+    const meal = a.meals[a.meals.length - 1], w = a.w;
+    if (meal.reach == null && w.mode === 'eat') meal.reach = t;
+    if (meal.swallow == null && a.food.gone) meal.swallow = t;
+    if (a.food.gone && w.mode !== 'eat') { meal.done = t; a.food = null; }
+    else if (meal.reach == null && t - meal.drop > GIVE_UP) { meal.gaveUp = t; a.food = null; }
+  }
+  // What the column's creature is doing about food, in words, for the label under each view.
+  function eatingState(a) {
+    const w = a.w, e = w.eat;
+    if (w.mode === 'eat' && e) {
+      if (e.stage === 'lower') return { stage: 'lower', text: 'Eating: lowers its head' };
+      if (e.stage === 'bite') {
+        const f = e.food, n = Math.min(f.maxBites, f.maxBites - f.bites + (e.bitten ? 0 : 1));
+        return e.bitten ? { stage: 'chew', text: 'Eating: chews (bite ' + n + ' of ' + f.maxBites + ')' } : { stage: 'bite', text: 'Eating: bites (' + n + ' of ' + f.maxBites + ')' };
+      }
+      if (e.stage === 'swallow') return { stage: 'swallow', text: 'Eating: swallows' };
+      return { stage: 'happy', text: 'Ate it: happy' };
+    }
+    if (a.food) return w.goal && w.goal.food ? { stage: 'go', text: 'Walks to the food' } : { stage: 'notice', text: 'Notices the food' };
+    const meal = a.meals[a.meals.length - 1];
+    if (meal && meal.done != null) return { stage: 'fed', text: 'Fed: got there in ' + (meal.reach - meal.drop).toFixed(1) + ' s, ate in ' + (meal.swallow - meal.reach).toFixed(1) + ' s' };
+    if (meal && meal.gaveUp != null) return { stage: 'gave-up', text: 'Could not reach the food' };
+    return { stage: 'walk', text: 'Walks the scenario' };
   }
   const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
@@ -289,6 +365,7 @@
       BL, n: 0, footY: [], slideSum: 0, slideMax: 0, slideCount: 0, open: [], crossings: 0, crossing: {},
       hist: [], rates: [], wobbleSq: 0, wobbleN: 0, tightest: null, radiusNow: null, errSum: 0, errN: 0,
       msSum: 0, msN: 0, lastTh: null, bendMax: 0, bendNow: 0,
+      lifts: [], strides: [], hipPrev: [], jitSq: 0, jitN: 0, wasPlanted: [],
     };
   }
   function sampleActor(run, a, ms) {
@@ -315,6 +392,27 @@
       if (x && !m.crossing[k]) m.crossings++;
       m.crossing[k] = x;
     }
+    // Stride regularity: the time between one foot's lifts while walking at a steady speed. A clock gives the same
+    // interval every time; a stepping rule gives whatever the body's motion asks for.
+    const steady = a.w.v > 0.5 * a.w.gaits.walk.speed && !a.food;
+    planted.forEach((p, i) => {
+      if (m.wasPlanted[i] && !p) {
+        if (m.lifts[i] != null && steady) m.strides.push(run.t - m.lifts[i]);
+        m.lifts[i] = steady ? run.t : null;
+      }
+      m.wasPlanted[i] = p;
+    });
+    // Hip jitter: how much each hip's spot on the floor changes speed from one frame to the next (the second
+    // difference). Smooth motion barely changes speed between frames; a shudder shows up here.
+    a.legs.forEach((lg, i) => {
+      const h = m.hipPrev[i] || (m.hipPrev[i] = []);
+      h.push([lg.hip[0], lg.hip[1]]);
+      if (h.length > 3) h.shift();
+      if (h.length === 3) {
+        const dx = h[2][0] - 2 * h[1][0] + h[0][0], dz = h[2][1] - 2 * h[1][1] + h[0][1];
+        m.jitSq += (dx * dx + dz * dz) / (BL * BL); m.jitN++;
+      }
+    });
     // Body path: the middle of the body (version 1's origin, the chain's anchor joint).
     const th = a.w.th, x = a.w.x, z = a.w.z;
     if (m.lastTh != null) {
@@ -380,7 +478,15 @@
       pathError: m.errN ? m.errSum / m.errN / m.BL : null, // body lengths
       ms: m.msN ? m.msSum / m.msN : 0,
       frames: m.n,
+      strideCV: m.strides.length > 3 ? cv(m.strides) * 100 : null, // % spread of one foot's time between steps
+      steps: m.strides.length,
+      hipJitter: m.jitN ? Math.sqrt(m.jitSq / m.jitN) * 1000 : 0,  // thousandths of a body length, per frame per frame
     };
+  }
+  function cv(xs) {
+    const mean = xs.reduce((p, q) => p + q, 0) / xs.length;
+    const sd = Math.sqrt(xs.reduce((p, q) => p + (q - mean) * (q - mean), 0) / xs.length);
+    return mean > 0 ? sd / mean : 0;
   }
 
   // ---------- what is different ----------
@@ -437,8 +543,16 @@
     return { lines: lines.slice(0, 6), verdict, byEye, byNumbers, eye: eye ? eye.win : null, best, scores, summaries: S };
   }
 
-  const api = { DT, SCENARIOS, byId, creatureFor, unitFor, samplePath, pathAt, createRun, step, targetAt, command, summary,
-    differences, legsCross, bodyLength, steerPoint, groundLegs, stepRings };
+  // One frame of one version alone (motion, then the body it draws), without the lab's measuring: what the benchmark
+  // times as "update".
+  function advance(a, drive) {
+    a.out = (a.kind === 'v1' ? M1 : M2).step(a.w, DT, AREA, { drive });
+    a.scene = buildScene(a, {});
+    return a;
+  }
+
+  const api = { DT, SCENARIOS, byId, BODIES, bodyById, creatureFor, unitFor, samplePath, pathAt, createRun, step, targetAt, command,
+    summary, differences, legsCross, bodyLength, steerPoint, groundLegs, stepRings, eatingState, makeActor, advance, BERRY, FEED_AHEAD, FEED_LEFT };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.CreatureLab = api;
 })(typeof window !== 'undefined' ? window : globalThis);
