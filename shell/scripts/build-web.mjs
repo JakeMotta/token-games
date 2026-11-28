@@ -5,7 +5,8 @@
 //   node ../shell/scripts/build-web.mjs            build into catalog/
 //   node ../shell/scripts/build-web.mjs --check    build to a temporary folder and fail if catalog/ differs
 // It expects src/web/game.json (the catalog manifest, "kind": "web"), src/web/main.ts (configures the adapter, then
-// imports the game's page), src/game/index.html and the game's css, and the icon the manifest names. The output is
+// imports the game's page), src/game/index.html and the game's css, and the icon the manifest names; licence files at
+// the game's root (OFL.txt, LICENSE.txt, NOTICE.txt) are copied too. The output is
 // the same bytes for the same source (no source maps, no timestamps), so the bundle's sha256 can be rebuilt by anyone.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -62,6 +63,8 @@ fs.copyFileSync(manifestFile, path.join(out, 'game.json'));
 if (path.basename(manifest.icon) !== manifest.icon) fail([`the icon must sit at the game's root (${manifest.icon})`]);
 if (!fs.existsSync(path.join(root, manifest.icon))) fail([`the icon ${manifest.icon} is missing`]);
 fs.copyFileSync(path.join(root, manifest.icon), path.join(out, manifest.icon));
+// licences of what the page carries (a font's OFL.txt) travel with it, as their licences ask
+for (const f of fs.readdirSync(root)) if (/^(OFL|LICEN[CS]E|NOTICE)[\w.-]*\.txt$/i.test(f)) fs.copyFileSync(path.join(root, f), path.join(out, f));
 
 const listing = (dir) => fs.readdirSync(dir).sort().map((f) => `${f} ${crypto.createHash('sha256').update(fs.readFileSync(path.join(dir, f))).digest('hex')}`);
 if (check) {

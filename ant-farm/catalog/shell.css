@@ -106,6 +106,7 @@ body.tg-thru.tg-grab .tg-bar { opacity: 1; }
 .tg-wbtn { min-width: 18px; height: 16px; display: grid; place-items: center; border: 0; border-radius: 3px; background: transparent; color: var(--g-dim);
   font: 600 9.5px/1 ui-monospace, Menlo, monospace; cursor: pointer; padding: 0; }
 .tg-wbtn.tg-text { padding: 0 5px; white-space: nowrap; }
+.tg-wbtn.tg-gamesbtn { display: flex; align-items: center; }
 body.tg-full .tg-wbtn { min-width: 24px; height: 20px; font-size: 11px; }
 .tg-wbtn:hover { background: var(--g-line); color: var(--g-ink); }
 .tg-wbtn.on { color: var(--g-hot); }
@@ -133,13 +134,6 @@ body.tg-full .tg-grip, body.tg-thru:not(.tg-grab) .tg-grip { display: none; }
 .tg-win > .tg-panel { top: 20px; }
 body.tg-full .tg-win > .tg-panel { top: 26px; }
 .tg-panel[hidden] { display: none; }
-/* the sheet's header: its name and a clear × at the top right, kept in view while the sheet scrolls */
-.tg-phead { position: sticky; top: -6px; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 6px;
-  margin: -6px -10px 6px; padding: 5px 6px 4px 10px; background: var(--g-panel); border-bottom: 1px solid var(--g-line); }
-.tg-phead h3 { margin: 0; font-size: 11px; font-weight: 600; }
-.tg-x { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; color: var(--g-dim); background: transparent;
-  border: 1px solid transparent; border-radius: 5px; cursor: pointer; }
-.tg-x:hover, .tg-x:focus-visible { color: var(--g-ink); border-color: var(--g-line); outline: none; }
 .tg-panel section + section { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--g-line); }
 .tg-panel h4 { margin: 0 0 5px; font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--g-dim); }
 .tg-note { margin: 4px 0; color: var(--g-dim); font-size: 10px; }
@@ -169,17 +163,10 @@ body.tg-rm, body.tg-rm * { transition: none !important; animation: none !importa
 .tg-hicon { display: none; }
 .tg-eye .tg-hicon { display: block; width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
 
-/* ---------- Settings → Games: the game picker and the permission sheet ---------- */
-.tg-glist { display: flex; flex-direction: column; gap: 4px; }
-.tg-game { display: flex; align-items: flex-start; gap: 6px; padding: 5px 6px; border: 1px solid var(--g-line); border-radius: 5px; }
-.tg-game.on { border-color: var(--g-hot); }
-.tg-gi { flex: 1; min-width: 0; }
-.tg-gt b, .tg-sheet-t b { font-weight: 600; }
+/* ---------- Settings → Games: a line about the games, Open Games…, and any request waiting (the permission sheet) ---------- */
+.tg-sheet-t b { font-weight: 600; }
 .tg-ver { color: var(--g-dim); font-variant-numeric: tabular-nums; }
 .tg-tier { margin-left: 6px; font-size: 9px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--g-dim); border: 1px solid var(--g-line); border-radius: 3px; padding: 0 3px; }
-.tg-gd { color: var(--g-dim); font-size: 10px; margin-top: 2px; overflow-wrap: anywhere; }
-.tg-game .tg-chips { flex: none; justify-content: flex-end; max-width: 50%; }
-.tg-playing { color: var(--g-hot); font-size: 10px; padding: 2px 0; }
 .tg-err { color: var(--g-hot); }
 .tg-games > .tg-chips { margin-top: 4px; }
 .tg-sheet { margin: 0 0 8px; padding: 7px 8px; border: 1px solid var(--g-hot); border-radius: 6px; background: var(--g-line); }
@@ -189,3 +176,8 @@ body.tg-rm, body.tg-rm * { transition: none !important; animation: none !importa
 .tg-sheet li.tg-l-warn { color: var(--g-hot); }
 .tg-agent { margin-top: 3px; font-size: 10px; color: var(--g-hot); }
 .tg-chips button.tg-yes { border-color: var(--g-hot); color: var(--g-hot); }
+
+/* the Games buttons (the card's and the title bar's): a quiet dot when an installed game has an update */
+body.tg-update .tg-gamesbtn::after { content: ''; display: inline-block; width: 6px; height: 6px; margin-left: 5px; vertical-align: 1px; border-radius: 50%;
+  background: var(--o-warm); }
+body.tg-update .tg-wbtn.tg-gamesbtn::after { width: 5px; height: 5px; margin-left: 4px; background: var(--g-hot); }

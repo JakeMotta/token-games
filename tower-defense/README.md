@@ -79,6 +79,8 @@ The window starts at the shell's small size; press 2 (or Settings â†’ Display â†
 | `src/game/app.ts` | The page: the frame loop (interpolated, cheap in the orb), the HUD, cards, ghost and tips |
 | `src/game/index.html`, `style.css`, `font.css` | The view; the hand is Caveat (SIL Open Font License, `OFL.txt`) |
 | `src/main/main.ts`, `smoke.ts` | Starts the shell; the game's own smoke checks and perf run |
+| `src/web/` | The game as a catalog game, **Ink Tower Defense** (`tower-defense-web`, the one in the published catalog): the same `src/game` and `src/sim`, run sandboxed by the shell's hosted adapter, with its own save and settings ([docs/first-game-walkthrough.md](../docs/first-game-walkthrough.md)) |
+| `catalog/` | Its built bundle: `npm run build:catalog` writes it, `npm run check:catalog` says when it is out of date (committed, so a release can be rebuilt from a commit) |
 | `scripts/autoplay.ts` | The headless bot behind `npm run autoplay` |
 | `test/*.test.ts` | Unit tests: the game, placement (with an overlap fuzz test) and scaling |
 

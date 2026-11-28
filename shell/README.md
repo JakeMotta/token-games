@@ -75,7 +75,7 @@ the hosted adapter (`src/page/hosted-shell.ts`), which runs the same `mountShell
 | `src/page/games-page.ts`, `games.html`, `games.css`, `src/main/games-window-preload.ts` | The Games window: a normal, resizable, always-dark window of its own (`openGames()` in `shell.ts`; `gamesWindowBounds` in `geometry.ts` centres it on the game's display, about 960 × 680, inside the work area, at least 640 × 480). Only one is ever open; Esc or Cmd+W closes it. Isolated and sandboxed like the shell's page; its bridge `window.tokenGames` has only the catalog calls (`games`, `gamesDo`, `onGames`, `boot`, `close`) |
 | `src/page/hosted-shell.ts`, `hosted-shell.css`, `src/hosted-game.ts` | The hosted adapter: a shell game run as a sandboxed catalog game |
 | `scripts/build-web.mjs` | Builds a game's catalog bundle (`<game>/catalog/`), or `--check`s the committed one matches its source |
-| `src/main/smoke-catalog.ts`, `smoke-registry.ts` | The smoke test's `catalog` and `catalog-game` runs and their signed test registry |
+| `src/main/smoke-catalog.ts`, `smoke-registry.ts` | The smoke test's `catalog`, `catalog-game` and `published` runs, and their signed test registry |
 
 ## Testing
 
@@ -84,7 +84,10 @@ corner, the pill, the card, dragging, hiding and the hotkey, pop out, docking, s
 game's. A third run, `catalog`, installs the sample Token Garden from a signed test
 registry through the Games window (an agent asks, the player approves there), proves it has no Node, files or network, feeds it a transcript line, lists a newer version and checks the update badge, the tray's count and the approved update, switches back and
 removes it (approved in the Settings window's Games section). A fourth, `catalog-game` (when the game has a `catalog/` bundle), does the same for the game's own bundle through the
-real `tokengames` CLI and checks it saves in its own slot. `node ../shell/scripts/smoke.mjs --only <run>` runs one.
+real `tokengames` CLI and checks it saves in its own slot (what to look for inside the game comes from its `GameSmoke.catalog`). `node ../shell/scripts/smoke.mjs --only <run>` runs one.
+`--only published [--expect <id,…>]`, never part of the default runs (it needs the network), checks the real public
+catalog from a clean profile: only those games listed, even with the developer switch on, and each installs, plays,
+feeds and saves in its own slot.
 Windows are never shown in the smoke test: showing and hiding only flip a flag there. `npm run perf` (`smoke.mjs
 --perf [--profile <folder>]`) is a single hidden run that measures what frames cost in each mode (`GameSmoke.perf`,
 `k.note`, `k.cpu`) and writes `perf.json`; `--profile` copies a profile's `*.json` (settings and save) into the temp

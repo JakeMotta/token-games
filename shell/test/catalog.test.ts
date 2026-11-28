@@ -157,6 +157,13 @@ test('a duplicate is a game named ant-farm-web or one whose pointer says duplica
   assert.equal(notApproved({ id: 'token-garden', tier: 'verified' }, { builtIn: b, approvedIndex: false }), 'from a developer or test catalog');
 });
 
+test('Ink Tower Defense from the catalog is approved beside the Ant Farm, and a copy only in its own app', () => {
+  const td = { id: 'tower-defense-web', tier: 'verified' as const };
+  assert.equal(notApproved(td, { builtIn: { id: 'ant-farm', name: 'Ant Farm', description: '', version: '1.0.0' }, approvedIndex: true }), '');
+  assert.equal(notApproved(td, { builtIn: { id: 'tower-defense', name: 'Ink Tower Defense', description: '', version: '0.1.0' }, approvedIndex: true }),
+    'a copy of the built-in Ink Tower Defense');
+});
+
 test('games from an index signed only by a developer key are trusted but not approved', async () => {
   const reg = testRegistry([{}]);
   const c = open(reg, { approvedKeys: [generateKeyPair().publicKey] });

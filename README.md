@@ -36,10 +36,11 @@ games: from the catalog signed with the catalog's own key, not blocked, not a co
 a sandboxed copy of a built-in game (a pointer's `duplicates` field, or an id like `ant-farm-web`). Everything else
 (test and developer catalogs, local folders, community games, copies) stays hidden until you turn on **Settings →
 Games → Show developer and unapproved games** (off by default); a game you already installed always shows, so you can
-remove it. `tokengames list` shows every game, with a NOTE for the hidden ones. The Ant Farm's own catalog build,
-**Ant Farm (web)** (`ant-farm-web`), is such a copy: published to prove the catalog, hidden in the app. Sample: [Token Garden](samples/token-garden/). How it works:
+remove it. `tokengames list` shows every game, with a NOTE for the hidden ones. The published catalog holds
+**Ink Tower Defense** (`tower-defense-web`), the tower defense game packed as a catalog game with its own save, so it
+plays beside the built-in Ant Farm. (Ant Farm (web), the Ant Farm's own catalog copy, is no longer published.) Sample: [Token Garden](samples/token-garden/). How it works:
 [docs/catalog.md](docs/catalog.md). Write one: [docs/publishing-a-game.md](docs/publishing-a-game.md). Every step of
-publishing the Ant Farm, from package to rollback: [docs/first-game-walkthrough.md](docs/first-game-walkthrough.md).
+publishing a shell game (Ink Tower Defense), from package to rollback: [docs/first-game-walkthrough.md](docs/first-game-walkthrough.md).
 
 Agents can ask too, never approve: the `tokengames` CLI (`list`, `install`, `use`, `remove`, `status`) and the
 `token-games-mcp` server for Claude Code or Cursor, both in [cli/](cli/):

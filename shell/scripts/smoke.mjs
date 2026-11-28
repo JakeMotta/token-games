@@ -7,6 +7,9 @@
 //   node ../shell/scripts/smoke.mjs                       (screenshots go to the temp folder)
 //   node ../shell/scripts/smoke.mjs --shots <dir>         (and are copied to <dir>)
 //   node ../shell/scripts/smoke.mjs --only catalog-game   (one run; full, reopen, catalog or catalog-game)
+//   node ../shell/scripts/smoke.mjs --only published [--expect <id,…>]
+//     the published catalog as a new player sees it, from the real public index (needs the network; never part of
+//     the default runs): lists only approved games (with --expect, exactly those), installs each, plays it, feeds it
 //   node ../shell/scripts/smoke.mjs --perf [--profile <dir>]
 //     only the game's perf run, which measures its frames; --profile starts it from COPIES of the files in <dir> (a
 //     settings.json and a save), so a real farm can be measured without ever touching it
@@ -20,6 +23,7 @@ const root = process.cwd();
 const electron = createRequire(path.join(root, 'package.json'))('electron');
 const shotsAt = process.argv.includes('--shots') ? path.resolve(process.argv[process.argv.indexOf('--shots') + 1]) : null;
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
+const expect = process.argv.includes('--expect') ? process.argv[process.argv.indexOf('--expect') + 1] : '';
 const name = path.basename(root);
 const perf = process.argv.includes('--perf');
 const profile = process.argv.includes('--profile') ? path.resolve(process.argv[process.argv.indexOf('--profile') + 1]) : null;
@@ -39,7 +43,7 @@ if (profile) {
 
 function run(mode) {
   return new Promise((resolve) => {
-    const env = { ...process.env, TG_SMOKE: out, TG_SMOKE_MODE: mode, TG_USER_DATA: userData, TG_CLAUDE_DIR: claude };
+    const env = { ...process.env, TG_SMOKE: out, TG_SMOKE_MODE: mode, TG_USER_DATA: userData, TG_CLAUDE_DIR: claude, TG_SMOKE_EXPECT: expect };
     delete env.ELECTRON_RUN_AS_NODE;
     delete env.TG_CATALOG_DIR; // the catalog stays in the temp profile: the player's own state.json is never touched
     const p = spawn(electron, [root], { env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -58,7 +62,7 @@ function run(mode) {
 
 let ok = true;
 const modes = ['full', 'reopen', 'catalog', ...(fs.existsSync(path.join(root, 'catalog', 'game.json')) ? ['catalog-game'] : [])];
-if (only && !modes.includes(only)) { console.error(`--only: one of ${modes.join(', ')}`); process.exit(1); }
+if (only && !modes.includes(only) && only !== 'published') { console.error(`--only: one of ${modes.join(', ')}, published`); process.exit(1); }
 for (const mode of perf ? ['perf'] : only ? [only] : modes) {
   const { result } = await run(mode);
   console.log(`\n${mode} run`);

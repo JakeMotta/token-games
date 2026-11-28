@@ -86,3 +86,7 @@
   .placing, .tip { font-size: 14px; }
   .tip { top: calc(var(--td-top, 0px) + 30px); max-width: calc(100% - 12px); left: 6px; }
 }
+
+/* as a catalog game (catalog/) the hosted adapter keeps its tools corner (the Settings gear) at the top right: the
+   controls sit just left of it instead of under it */
+body.tgh .ctrl { right: 40px; }

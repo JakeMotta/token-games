@@ -36,6 +36,9 @@ function freeSpot(): [number, number] {
 }
 
 export const gameSmoke: GameSmoke<Settings> = {
+  // its catalog bundle (catalog/, tower-defense-web), seen from inside the sandbox: the status line, the ink-colour
+  // chips of its settings, and a wave walking in once a fed transcript line has paid the ink for it
+  catalog: { line: /gold · \d+ towers/, settings: '!!document.getElementById("themes").children.length', fed: 'Number(document.getElementById("hWave").textContent) > 0' },
   async full(k) {
     const { check, until, js } = k;
     check('the game is ready', await until(async () => (await state(k)).ready, 10000));

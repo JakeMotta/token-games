@@ -23,6 +23,9 @@ function topFunctions(p: CpuProfile, frames: number, n = 10): Record<string, num
 }
 
 export const farmSmoke: GameSmoke<Settings> = {
+  // its catalog bundle (catalog/), seen from inside the sandbox: the status line, the palette previews of its
+  // settings, and the fed tokens in the farm's own readout
+  catalog: { line: /ants/, settings: '!!document.getElementById("pals").children.length', fed: '/tokens/.test(document.body.innerText)' },
   async full(k) {
     const { check, js, until, wait, shot } = k;
     await wait(1000);

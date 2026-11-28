@@ -13,6 +13,8 @@
     "test:smoke": "npm run build && node ../shell/scripts/smoke.mjs",
     "shots": "npm run build && node ../shell/scripts/smoke.mjs --shots shots",
     "perf": "npm run build && node ../shell/scripts/smoke.mjs --perf",
+    "build:catalog": "node ../shell/scripts/build-web.mjs",
+    "check:catalog": "node ../shell/scripts/build-web.mjs --check",
     "autoplay": "node ../shell/scripts/build-game.mjs --extra scripts/autoplay.ts:autoplay.js && node dist/autoplay.js"
   },
   "devDependencies": {

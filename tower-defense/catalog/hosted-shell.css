@@ -1,0 +1,17 @@
+/* A shell game run as a catalog game (hosted-shell.ts): its tools corner, its Settings sheet and a line for news,
+   inside the game's own view. Quiet like the shell around it; shell.css gives the sheet and its buttons. */
+body.tgh { background: var(--g-back); }
+.tgh-root { position: absolute; inset: 0; overflow: hidden; }
+.tgh-tools { position: absolute; top: 6px; right: 6px; z-index: 3; display: flex; gap: 2px; padding: 2px; border-radius: 5px;
+  background: var(--g-bar); opacity: 0.55; transition: opacity 0.2s; }
+.tgh-tools:hover, .tgh-tools:focus-within { opacity: 1; }
+.tgh-tools[hidden] { display: none; }
+.tgh-panel { width: min(100%, 280px); }
+.tgh-news { position: absolute; left: 8px; bottom: 6px; z-index: 3; max-width: 70%; padding: 1px 6px; border-radius: 4px;
+  background: var(--g-bar); color: var(--g-hot); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  opacity: 0; transition: opacity 0.4s; pointer-events: none; }
+.tgh-news.task { color: var(--g-task); }
+.tgh-news.show { opacity: 1; }
+body.tg-rm .tgh-news, body.tg-rm .tgh-tools { transition: none; }
+body[data-scale="mini"] .tgh-news { display: none; }
+.tgh-alone { margin: 16px; color: #888; font: 12px -apple-system, system-ui, sans-serif; }

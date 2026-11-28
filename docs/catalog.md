@@ -40,7 +40,7 @@ an agent cannot ask to install it. The reasons, in order:
 
 1. **A local folder** (`tier: local`).
 2. **A copy of a built-in game**: its pointer (and index entry) has `"duplicates": "<built-in id>"`, or its id is the
-   built-in id plus `-web` (`ant-farm-web`, the Ant Farm packed to prove the catalog). The rule lives in the app, so
+   built-in id plus `-web` (`ant-farm-web` in the Ant Farm app, `tower-defense-web` in the Ink Tower Defense app). The rule lives in the app, so
    the committed, signed index needs no change and no re-signing.
 3. **Blocked** by `blocklist.json`.
 4. **A community game**, not reviewed.
@@ -91,9 +91,11 @@ web game without a fork. `shell/scripts/build-web.mjs` bundles the game's own so
 pop out and dock, a gear for the game's own Settings, and `onHide` to save before it is closed. It tells the game the
 page is always visible, because shell games assume that and the view is hidden in the orb, not unloaded.
 
-The Ant Farm's bundle is `ant-farm/catalog/` (id `ant-farm-web`, since a catalog game can't take a built-in id; its
-own save slot, so it never touches the built-in farm's `colony.json`). `npm run build:catalog` makes it from
-`ant-farm/src/web/` and `npm run check:catalog` fails when the committed folder no longer matches the source. The
+Ink Tower Defense's bundle is `tower-defense/catalog/` (id `tower-defense-web`, since a catalog game can't take a
+built-in id; its own save slot and settings, so it plays beside the Ant Farm and never touches its `colony.json`), the
+one in the published index. The Ant Farm's is `ant-farm/catalog/` (`ant-farm-web`), no longer published, kept as a
+test bundle. `npm run build:catalog` makes a game's from its `src/web/` (and copies licence files at the game's root,
+like a font's `OFL.txt`); `npm run check:catalog` fails when the committed folder no longer matches the source. The
 whole path, from package to rollback: [first-game-walkthrough.md](first-game-walkthrough.md).
 
 ## Installing
@@ -234,9 +236,15 @@ radius (a pointer PR can never touch app code). The signing key and `REGISTRY_KE
   developer switch is on, then installs Token Garden from that local registry after approving the sheet, runs it sandboxed and
   checks it has no `require`, `process`, file access or network; feeds it a transcript line and checks its count;
   switches back to the Ant Farm and removes Token Garden. Screenshots: `catalog-*.png` in `shots/`.
-- The packaged Ant Farm (the `catalog-game` run): the same, but driven by the real `tokengames` CLI (list, install,
-  use, status, remove) against the built `ant-farm/catalog` bundle, or a real registry with `TG_REGISTRY_URL`. It
-  checks the bundle is hidden as a copy of the built-in farm (and `tokengames list` says so) until the switch is on.
-  checks the permission sheet, the sandbox, the farm drawing, the fed tokens reaching its own `save.json` (and the
-  built-in `colony.json` left alone), that it loads that save again, and that removing it keeps the save.
-  Screenshots: `catalog-game-*.png`.
+- A game's own bundle (the `catalog-game` run, for a game with `catalog/`): the same, but driven by the real
+  `tokengames` CLI (list, install, use, status, remove) against the built bundle, or a real registry with
+  `TG_REGISTRY_URL`. It checks the bundle is hidden as a copy of the built-in game (and `tokengames list` says so)
+  until the switch is on, then the permission sheet, the sandbox, the game drawing, the fed tokens reaching its own
+  `save.json` (and the built-in game's save left alone), that it loads that save again, and that removing it keeps
+  the save. What to look for inside the game (its status line, its settings, the fed tokens) comes from the game's
+  `GameSmoke.catalog`. Screenshots: `catalog-game-*.png`.
+- The published catalog (the `published` run, only with `--only published [--expect <id,…>]`; it needs the network):
+  from a clean profile and the real public index, trusting only the keys built into the app. It checks the Games
+  window lists exactly those games and nothing else even with the developer switch on, that `tokengames list` finds
+  them and `tokengames install` only asks, then installs each through the permission sheet, plays it sandboxed,
+  feeds it and checks its own save. Screenshots: `published-*.png`.

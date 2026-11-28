@@ -39,7 +39,7 @@ export interface GameRow {
 // and a verified game from an index signed by the catalog's own key (keys.ts), not blocked and not a copy of the
 // built-in game. A copy is a catalog game marked "duplicates": "<built-in id>" in the index, or one whose id is the
 // built-in id plus "-web", the name shell/scripts/build-web.mjs gives a shell game shipped as a catalog game (the
-// Ant Farm (web), ant-farm-web, beside the built-in ant-farm). Local folders, community games (no person read them),
+// tower-defense-web beside the built-in tower-defense; in any other app it is an ordinary game). Local folders, community games (no person read them),
 // and anything from a developer's or a test catalog (signed by another key) are developer games.
 export function notApproved(g: { id: string; tier: Tier; duplicates?: string; blocked?: string }, o: { builtIn: BuiltIn; approvedIndex: boolean }): string {
   if (g.tier === 'built-in') return '';

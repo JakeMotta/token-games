@@ -142,7 +142,7 @@ Resting in the orb it draws 2 frames a second (4 while tokens arrive, 1 with red
 - `src/main/` the Electron side: `main.ts` starts the shell with the farm's settings, menu-bar ant and save file (`colony.json`); `smoke.ts` adds the farm's checks to the shell's smoke test.
 - `src/shared/settings.ts` the farm's settings (palette, calm, fade, map size, seed), stored beside the shell's.
 - `game.json`, `icon.svg` the manifest ([../docs/manifest.md](../docs/manifest.md)).
-- `src/web/` the farm as a catalog game (`ant-farm-web`): the same `src/game` and `src/sim`, run sandboxed by the shell's hosted adapter. `npm run build:catalog` writes it to `catalog/` (committed; `npm run check:catalog` says when it is out of date). Its save is its own, never `colony.json` ([../docs/first-game-walkthrough.md](../docs/first-game-walkthrough.md)).
+- `src/web/` the farm as a catalog game (`ant-farm-web`, no longer in the published catalog; kept as the smoke test's and CLI tests' bundle): the same `src/game` and `src/sim`, run sandboxed by the shell's hosted adapter. `npm run build:catalog` writes it to `catalog/` (committed; `npm run check:catalog` says when it is out of date). Its save is its own, never `colony.json` ([../docs/first-game-walkthrough.md](../docs/first-game-walkthrough.md)).
 - The window, corner orb, tray, hotkey, settings file and Claude Code feed are the shell's ([../shell](../shell/README.md)).
 
 ## Tests

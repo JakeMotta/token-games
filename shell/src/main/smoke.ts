@@ -4,7 +4,8 @@
 // own checks, saves screenshots, writes result-<mode>.json and quits. shell/scripts/smoke.mjs starts it up to four
 // times: a full run, a 'reopen' run that checks everything survived the restart, a 'catalog' run, and for a game with
 // a catalog/ bundle a 'catalog-game' run (both in smoke-catalog.ts). With --perf it starts a single 'perf' run
-// instead: the game measures what its frames cost (GameSmoke.perf), still hidden.
+// instead: the game measures what its frames cost (GameSmoke.perf), still hidden. With --only published it starts a
+// 'published' run: the real, public catalog, fetched and installed from a clean profile (smoke-catalog.ts).
 import { app, BrowserWindow, nativeTheme, screen } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,7 +15,7 @@ import { shapeOf, type ShellEvent, type ShellState } from '../modes';
 import { orbCenter, orbWindowBounds, shapeRect, shapeSize, type OrbGeo, type Shape } from '../orb';
 import type { ShellSettings } from '../settings';
 import type { TrayAction, TrayItem } from '../tray';
-import { catalogGameSmoke, catalogSmoke, type CatalogSmoke } from './smoke-catalog';
+import { catalogGameSmoke, catalogSmoke, publishedSmoke, type CatalogGameChecks, type CatalogSmoke } from './smoke-catalog';
 import type { SettingsStore } from './store';
 
 export interface SmokeContext<S extends ShellSettings> {
@@ -61,25 +62,27 @@ export interface SmokeKit<S extends ShellSettings> extends SmokeContext<S> {
   cpu(ms: number): Promise<CpuUse>; // the app's CPU use over the next `ms`, per kind of process, in % of one core
 }
 
-export type SmokeMode = 'full' | 'reopen' | 'catalog' | 'catalog-game' | 'perf';
+export type SmokeMode = 'full' | 'reopen' | 'catalog' | 'catalog-game' | 'published' | 'perf';
 export interface CpuUse { main: number; renderer: number; gpu: number; other: number; total: number }
 
 // A game's own checks. full() runs popped out, in the small window at the bottom right; reset() after Reset to
 // defaults; leave() before the full run quits (change settings to look for after the restart, save); reopen() in the
 // second run, popped out. perf() is the whole of a perf run (smoke.mjs --perf), started in the corner as the settings say.
+// catalog says how to see the game playing once it is packed as a catalog game (catalog/, the catalog-game run).
 export interface GameSmoke<S extends ShellSettings> {
   full?(k: SmokeKit<S>): Promise<void>;
   reset?(k: SmokeKit<S>): Promise<void>;
   leave?(k: SmokeKit<S>): Promise<void>;
   reopen?(k: SmokeKit<S>): Promise<void>;
   perf?(k: SmokeKit<S>): Promise<void>;
+  catalog?: CatalogGameChecks;
 }
 
 interface Check { name: string; ok: boolean; detail?: string }
 
 export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game: GameSmoke<S> = {}): Promise<void> {
   const m = process.env.TG_SMOKE_MODE;
-  const mode: SmokeMode = m === 'reopen' || m === 'catalog' || m === 'catalog-game' || m === 'perf' ? m : 'full';
+  const mode: SmokeMode = m === 'reopen' || m === 'catalog' || m === 'catalog-game' || m === 'published' || m === 'perf' ? m : 'full';
   const checks: Check[] = [], notes: Record<string, unknown> = {};
   const check = (name: string, ok: unknown, detail?: unknown) => { checks.push({ name, ok: !!ok, detail: detail === undefined ? undefined : JSON.stringify(detail) }); };
   const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -179,8 +182,8 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
       return;
     }
 
-    if (mode === 'catalog' || mode === 'catalog-game') {
-      if (c.catalog) await (mode === 'catalog' ? catalogSmoke : catalogGameSmoke)(k, c.catalog);
+    if (mode === 'catalog' || mode === 'catalog-game' || mode === 'published') {
+      if (c.catalog) await (mode === 'catalog' ? catalogSmoke(k, c.catalog) : mode === 'catalog-game' ? catalogGameSmoke(k, c.catalog, game.catalog) : publishedSmoke(k, c.catalog));
       else check('the shell passes the catalog to the smoke test', false);
       return;
     }
