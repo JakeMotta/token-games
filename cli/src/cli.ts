@@ -10,7 +10,8 @@ export interface Io { out(s: string): void; err(s: string): void; call: Call }
 
 export const USAGE = `tokengames: ask the running Token Games app to change games. Installs and removals wait for the player to approve them in the app.
 
-  tokengames list [--refresh] [--json]   the games: built in, installed, and in the catalog (--refresh fetches the signed catalog first)
+  tokengames list [--refresh] [--json]   every game: built in, installed, and in the catalog (--refresh fetches the signed catalog first);
+                                         NOTE says which are not approved and hidden in the app's Games window
   tokengames status [--json]             what is playing, the catalog, and requests waiting for the player
   tokengames install <id>                ask the player to install a catalog game
   tokengames install --dir <folder>      ask the player to add a web game from a folder on this computer
@@ -28,10 +29,15 @@ export function socketCall(env: NodeJS.ProcessEnv = process.env): Call {
 export const rowState = (g: GameRow): string =>
   g.active ? 'playing' : g.blocked ? 'blocked' : g.update ? `update ${g.update}` : g.installed ? 'installed' : 'available';
 
+// The app's Games window lists only approved games unless "Show developer and unapproved games" is on; the CLI lists
+// everything and says which ones the window hides, and why.
+export const rowNote = (g: GameRow): string =>
+  !g.unapproved ? '' : g.hidden ? `hidden in the app: ${g.unapproved}` : `not approved: ${g.unapproved}`;
+
 export function table(rows: GameRow[]): string {
-  const cells = [['ID', 'NAME', 'VERSION', 'TIER', 'STATE'], ...rows.map((g) => [g.id, g.name, g.version, g.tier, rowState(g)])];
+  const cells = [['ID', 'NAME', 'VERSION', 'TIER', 'STATE', 'NOTE'], ...rows.map((g) => [g.id, g.name, g.version, g.tier, rowState(g), rowNote(g)])];
   const w = cells[0].map((_, i) => Math.max(...cells.map((r) => r[i].length)));
-  return cells.map((r) => r.map((c, i) => (i === r.length - 1 ? c : c.padEnd(w[i]))).join('  ')).join('\n');
+  return cells.map((r) => r.map((c, i) => (i === r.length - 1 ? c : c.padEnd(w[i]))).join('  ').trimEnd()).join('\n');
 }
 
 export const describeRequest = (r: PendingRequest): string =>

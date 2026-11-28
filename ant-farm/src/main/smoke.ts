@@ -86,26 +86,30 @@ export const farmSmoke: GameSmoke<Settings> = {
     check('a frame stays cheap on the Ridiculous map', st.drawMs < 16, { drawMs: +st.drawMs.toFixed(2), tickMs: +st.tickMs.toFixed(3) });
     await js('shellTest.key("a")');
 
-    // the farm's Settings sections, above the shell's Display section
+    // the farm's Settings sections, above the shell's Display section, in the centred Settings window
     await js('shellTest.key(",")');
-    check('Settings opens with ,', await until(async () => (await k.js('shellTest.state()')).panelOpen));
-    const grid = await js<{ n: number; w: number }>(
-      `(() => { const p = document.getElementById('tg-panel').getBoundingClientRect(), c = document.querySelector('.pal canvas').getBoundingClientRect();
+    check('Settings opens with , in its own window', await k.settingsReady() && (await k.js('shellTest.state()')).panelOpen);
+    check('the palette previews reach the window', await until(async () => (await k.sjs<{ images: number }>('settingsTest.look()')).images >= 7, 4000));
+    const grid = await k.sjs<{ n: number; w: number }>(
+      `(() => { const p = document.getElementById('sw-sheet').getBoundingClientRect(), c = document.querySelector('.pal img').getBoundingClientRect();
         return { n: document.querySelectorAll('.pal').length, w: c.width / p.width }; })()`);
     check('Settings shows small palette previews', grid.n === 7 && grid.w < 0.5, grid);
-    const text = (await js<string>('shellTest.text()')).toLowerCase(); // section titles are drawn in capitals
+    const text = (await k.sjs<string>('settingsTest.text()')).toLowerCase(); // section titles are drawn in capitals
     check('Settings shows the colony, the map size, calm and the display', ['ants', 'food stored', 'oldest ant', 'ridiculous', 'calm', 'display', 'reset to defaults'].every((w) => text.includes(w)), text.slice(-500));
-    check('the feed status shows in Settings', /Watching \d+ Claude Code transcripts/.test(await js<string>('gameTest.feed()')), await js('gameTest.feed()'));
-    await shot('window-settings');
-    await js('gameTest.clickPalette("graphite")');
-    check('picking Graphite applies and saves it', await until(async () => k.store.get().palette === 'graphite' && (await state(k)).palette === 'graphite'));
-    await js('shellTest.key("Escape")');
+    check('the feed status shows in Settings', /watching \d+ claude code transcripts/.test(text) && /Watching \d+ Claude Code transcripts/.test(await js<string>('gameTest.feed()')), await js('gameTest.feed()'));
+    await k.settingsShot('window-settings');
+    await k.sjs(`settingsTest.click('[data-pal="graphite"]')`);
+    check('picking Graphite in the window applies and saves it', await until(async () => k.store.get().palette === 'graphite' && (await state(k)).palette === 'graphite'));
+    await k.sjs('settingsTest.key("Escape")');
+    await until(() => !k.settingsWin());
 
     // the performance readout: off by default, a switch in Settings shows frames a second and ms in a corner of the farm
     check('the performance readout is off by default', !(await js<{ perf: string | false }>('gameTest.bounds()')).perf);
     await js('shellTest.key(",")');
-    await js('document.getElementById("perfReadout").click()');
-    await js('shellTest.key("Escape")');
+    await k.settingsReady();
+    await k.sjs('settingsTest.click("#perfReadout")');
+    await k.sjs('settingsTest.key("Escape")');
+    await until(() => !k.settingsWin());
     check('Show performance puts frames a second and ms on the farm', k.store.get().perfReadout && await until(async () => /\d+ fps · [\d.]+ ms/.test(String((await js<{ perf: string | false }>('gameTest.bounds()')).perf)), 3000),
       await js('gameTest.bounds()'));
     await shot('window-perf-readout');
@@ -231,7 +235,8 @@ export const farmSmoke: GameSmoke<Settings> = {
     await measure('window, large, zoomed out, camera moving', 6000);
     await js('clearInterval(window.__pan); shellTest.key("a")');
     await js('shellTest.key(",")');
+    await k.settingsReady();
     await measure('window, large, Settings open', 6000);
-    await js('shellTest.key("Escape")');
+    await k.sjs('settingsTest.key("Escape")').catch(() => undefined);
   },
 };

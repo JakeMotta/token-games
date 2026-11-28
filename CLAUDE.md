@@ -40,15 +40,16 @@ the **shell** (`shell/`); a game only draws itself and reacts to usage.
 |---|---|
 | `shell/` | The wrapper every game runs in ([shell/README.md](shell/README.md)). Version in `shell/package.json` and `SHELL_VERSION` (`shell/src/manifest.ts`); keep them equal |
 | `shell/src/main/shell.ts` | Electron main: windows, orb placement and dragging, modes, tray, hotkey, settings file, save file, feed |
-| `shell/src/page/shell-page.ts` | The page side: `mountShell(game)`, the orb, its pill and card, the window's title bar, the Games button (opens the Games window) and Settings (a sheet; closes on ×, Close, Esc or a click outside) |
+| `shell/src/page/shell-page.ts` | The page side: `mountShell(game)`, the orb, its pill and card, the window's title bar, the Games and Settings buttons (open the Games and Settings windows); the Settings sheet itself stays in the page, hidden, and the Settings window shows a copy of it |
 | `shell/src/game.ts` | The game interface: `Game`, `GameContext`, `GameStatusLine`, `Theme` |
 | `shell/src/orb.ts`, `modes.ts` | Orb corners, display choice and shapes; the mode state machine (pure, unit-tested) |
 | `shell/src/settings.ts` | Shared settings and `settingsKit` for a game's own settings schema |
 | `shell/src/manifest.ts` | `game.json` checker ([docs/manifest.md](docs/manifest.md)) |
-| `shell/src/catalog/` | The catalog: index, signatures and keys, zip and bundle checks, installer, permissions, control socket ([docs/catalog.md](docs/catalog.md)) |
+| `shell/src/catalog/` | The catalog: index, signatures and keys, zip and bundle checks, installer, permissions, control socket; `notApproved()` decides which games the app hides ([docs/catalog.md](docs/catalog.md)) |
 | `shell/src/main/catalog-host.ts`, `game-preload.ts`, `shell/src/hosted.ts` | Runs a catalog game sandboxed in a `WebContentsView`; `window.tokenGame` (version 2), its only bridge |
 | `shell/src/page/hosted-shell.ts`, `shell/src/hosted-game.ts`, `shell/scripts/build-web.mjs` | The hosted adapter and its build: a shell game shipped as a sandboxed catalog game, no fork ([docs/catalog.md](docs/catalog.md)) |
-| `shell/src/page/games-panel.ts` | The game picker in two layouts: `window` (the Games window: game cards, the Update available badge, permission sheets, Add local folder, the Community switch) and `summary` (Settings → Games: a line, waiting requests with Approve, Open Games…) |
+| `shell/src/page/games-panel.ts` | The game picker in two layouts: `window` (the Games window: game cards, the Update available badge, permission sheets, the Not approved tag, Add local folder with the developer switch on) and `summary` (Settings → Games: a line, the "Show developer and unapproved games" switch, waiting requests with Approve, Open Games…) |
+| `shell/src/page/settings-page.ts`, `settings.html`, `settings.css`, `mirror.ts`, `shell/src/main/settings-window-preload.ts` | The Settings window: centred like the Games window, the same size and window code (`centredWindow()` in `shell.ts`), opened by the Settings buttons, `,` and the tray's Settings…; one only, Esc closes it. It shows a copy of the page's hidden Settings sheet (`mirror.ts`) and sends clicks and values back, so a game's settings code never changes; its bridge `window.tokenSettings` |
 | `shell/src/page/games-page.ts`, `games.html`, `games.css`, `shell/src/main/games-window-preload.ts` | The Games window: a normal window of its own (`openGames()` in `shell.ts`, sized by `gamesWindowBounds` in `geometry.ts`), opened by the Games buttons and the tray's Games…; its bridge `window.tokenGames` has only the catalog calls |
 | `shell/scripts/build-game.mjs`, `smoke.mjs` | Build any game; run its hidden end-to-end smoke test |
 | `ant-farm/` | The first game ([ant-farm/README.md](ant-farm/README.md)); `ant-farm/catalog/` is its built catalog bundle, `ant-farm-web` ([docs/first-game-walkthrough.md](docs/first-game-walkthrough.md)) |

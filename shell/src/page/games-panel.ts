@@ -1,6 +1,7 @@
 // The game picker, in two layouts. 'window' fills the Games window (the Games buttons, the tray's Games…): every
-// game as a card, the built-in one, installed ones and what the signed catalog offers. 'summary' is Settings → Games
-// in the small card: a line about what is installed and a button that opens the Games window. Both show every request
+// game shown as a card: the built-in one, the approved games the signed catalog offers, and what is on this computer
+// (developer and unapproved games too only while "Show developer and unapproved games" is on). 'summary' is Settings →
+// Games: a line about what is installed, that switch, and a button that opens the Games window. Both show every request
 // waiting for the player (an install, update or removal they asked for, or one an agent asked for through the
 // tokengames CLI) as a permission sheet with Approve and Deny; approving is only possible in the app.
 // Everything from the catalog is shown as text (textContent), never as HTML.
@@ -92,6 +93,7 @@ export function gamesPanel(api: GamesApi, o: GamesPanelOptions): GamesPanel {
     const t = h('div', 'tg-gt');
     t.append(h('b', '', g.name), h('span', 'tg-ver', ' ' + g.version), h('span', 'tg-tier', TIER[g.tier] || g.tier));
     if (upd) t.append(h('span', 'tg-updtag', 'Update available'));
+    if (g.unapproved) t.append(h('span', 'tg-devtag', 'Not approved: ' + g.unapproved));
     info.append(t, h('div', 'tg-gd', g.blocked ? 'Blocked: ' + g.blocked : g.description));
     if (g.network.length) info.append(h('div', 'tg-gd', 'Reaches: ' + g.network.join(', ')));
     const acts = h('div', 'tg-chips');
@@ -122,6 +124,15 @@ export function gamesPanel(api: GamesApi, o: GamesPanelOptions): GamesPanel {
     const acts = h('div', 'tg-chips');
     acts.append(btn('Open Games…', 'open', () => o.openWindow?.()));
     el.append(acts);
+    // developer and unapproved games: local folders, community and test catalogs, copies of the built-in game
+    const lab = h('label', 'tg-row tg-devrow');
+    const cb = h('input');
+    cb.type = 'checkbox'; cb.id = 'tg-developer'; cb.checked = v.developer; cb.disabled = busy;
+    cb.onchange = () => void run({ op: 'developer', on: cb.checked });
+    lab.append(cb, ' Show developer and unapproved games');
+    el.append(lab, h('p', 'tg-note', v.developer
+      ? 'On: the Games window also lists local folders, community games, test catalogs and copies of the built-in game, and offers Add local folder….'
+      : 'Off: the Games window lists only the built-in game and approved games from the signed catalog' + (v.hiddenCount ? ` (${v.hiddenCount} hidden)` : '') + '.'));
   }
 
   function renderWindow(): void {
@@ -135,19 +146,16 @@ export function gamesPanel(api: GamesApi, o: GamesPanelOptions): GamesPanel {
     const bar = h('div', 'tg-gbar');
     const acts = h('div', 'tg-chips');
     acts.append(btn(busy ? 'Working…' : 'Check for games', 'refresh', () => void run({ op: 'refresh' }), 'tg-yes'));
-    if (v.canAddLocal) acts.append(btn('Add local folder…', 'add-local', () => void run({ op: 'add-local' })));
-    const lab = h('label', 'tg-row');
-    const cb = h('input');
-    cb.type = 'checkbox'; cb.id = 'tg-community'; cb.checked = v.allowCommunity; cb.disabled = busy;
-    cb.onchange = () => void run({ op: 'community', on: cb.checked });
-    lab.append(cb, ' Show community games (not reviewed)');
-    bar.append(acts, lab);
+    if (v.canAddLocal && v.developer) acts.append(btn('Add local folder…', 'add-local', () => void run({ op: 'add-local' })));
+    bar.append(acts);
+    if (v.developer) bar.append(h('span', 'tg-devtag', 'Showing developer and unapproved games (Settings → Games)'));
     el.append(bar);
     const c = v.catalog;
     const note = c.error ? 'The catalog could not be read: ' + c.error
       : c.fetchedAt ? `Catalog checked ${new Date(c.fetchedAt).toLocaleString()} · ${c.games} game${c.games === 1 ? '' : 's'}, signature verified`
       : 'The catalog is only fetched when you ask: Check for games.';
-    el.append(h('p', 'tg-note', note));
+    const hidden = v.hiddenCount ? ` · ${v.hiddenCount} not approved, hidden (Settings → Games shows them)` : '';
+    el.append(h('p', 'tg-note', note + hidden));
     if (error) el.append(h('p', 'tg-note tg-err', error));
     const list = h('div', 'tg-glist');
     for (const g of v.rows) list.append(gameRow(g));

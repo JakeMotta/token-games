@@ -1,0 +1,22 @@
+/* The Settings window: the Settings sheet (the game's own sections, Display, Games, Reset) in a normal window of its
+   own, with the Games window's look (games.css, loaded first) and room to breathe. A game's own stylesheet is loaded
+   too, before this one. */
+.sw-sheet { max-width: 760px; color: var(--g-ink); font-size: 14px; }
+.sw-sheet > *, .sw-sheet > div > section { margin: 0 0 14px; padding: 16px 18px; background: var(--g-card); border: 1px solid var(--g-line); border-radius: 3px; }
+.sw-sheet > div:has(> section) { padding: 0; background: none; border: 0; margin: 0; }
+.sw-sheet section + section { border-top: 1px solid var(--g-line); }
+.sw-sheet h4 { margin: 0 0 10px; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--g-hot); }
+.sw-sheet .tg-row { margin: 8px 0; min-height: 26px; color: var(--g-ink); }
+.sw-sheet .tg-row input[type=range] { flex: 1; min-width: 120px; max-width: 360px; height: 18px; width: auto; }
+.sw-sheet .tg-row output { width: 44px; text-align: right; color: var(--g-dim); font-variant-numeric: tabular-nums; }
+.sw-sheet .tg-row .tg-chips, .sw-sheet .tg-docks { margin-left: auto; }
+.sw-sheet .tg-chips button.on, .sw-sheet .tg-docks button.on { border-color: var(--g-hot); color: var(--g-hot); }
+.sw-sheet .tg-docks { display: flex; gap: 6px; }
+.sw-sheet .tg-docks button { font: inherit; font-size: 15px; color: var(--g-ink); background: var(--g-card); border: 1px solid var(--g-edge); border-radius: 3px;
+  min-width: 38px; min-height: 34px; padding: 3px 10px; cursor: pointer; }
+.sw-sheet .tg-docks button:hover { border-color: var(--g-dim); }
+.sw-sheet .tg-note { margin: 8px 0; }
+.sw-sheet .tg-games > .tg-chips { margin-top: 10px; }
+.sw-sheet .tg-foot .tg-chips { margin-bottom: 4px; }
+.sw-sheet .tg-keys { margin: 10px 0 0; font-size: 12.5px; }
+.sw-sheet section button:not(.tg-chips button):not(.tg-docks button) { font-size: 13px; }

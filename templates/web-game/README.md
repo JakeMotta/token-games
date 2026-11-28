@@ -9,7 +9,8 @@ Code spends. Replace `game.js` with your game.
 
 ## Try it
 
-There is no build step. Open Token Games, then **Settings → Games → Add local folder** and pick this folder. It shows
+There is no build step. Open Token Games, turn on **Settings → Games → Show developer and unapproved games**, then
+**Games → Add local folder** and pick this folder. It shows
 up as a Local game; press Play. The app reads it straight from this folder, so after an edit, switch to another game
 and back to see the change.
 

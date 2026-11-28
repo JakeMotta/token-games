@@ -36,6 +36,7 @@ export interface SmokeContext<S extends ShellSettings> {
   hide(): void;
   ignoresMouse(): boolean; // clicks pass through the window
   gamesWin(): BrowserWindow | null; // the Games window, while it is open
+  settingsWin(): BrowserWindow | null; // the Settings window, while it is open
   catalog?: CatalogSmoke; // for the catalog run
 }
 
@@ -51,6 +52,9 @@ export interface SmokeKit<S extends ShellSettings> extends SmokeContext<S> {
   gjs<T = any>(code: string): Promise<T>; // run in the Games window's page (rejects while it is closed)
   gamesReady(): Promise<boolean>; // the Games window is open and shows the games
   gamesShot(name: string): Promise<void>; // the Games window as it is (always dark)
+  sjs<T = any>(code: string): Promise<T>; // run in the Settings window's page (rejects while it is closed)
+  settingsReady(): Promise<boolean>; // the Settings window is open and shows the sheet
+  settingsShot(name: string): Promise<void>; // the Settings window as it is (always dark)
   docked(dock: 'tl' | 'tr' | 'bl' | 'br', w: number, h: number): boolean;
   transcript(usage: Record<string, number>, id: string): void; // append a real Claude Code transcript line
   note(key: string, value: unknown): void; // a measurement for the result file (the perf run prints them)
@@ -142,7 +146,17 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     const g = c.gamesWin();
     if (g) fs.writeFileSync(path.join(c.outDir, name + '.png'), (await g.webContents.capturePage()).toPNG());
   };
-  const k: SmokeKit<S> = { ...c, mode, check, wait, until, js, shot, shots, gjs, gamesReady, gamesShot, docked, transcript, note, cpu };
+  const sjs = <T = any>(code: string): Promise<T> => {
+    const w = c.settingsWin();
+    return w ? w.webContents.executeJavaScript(code) : Promise.reject(new Error('the Settings window is not open'));
+  };
+  const settingsReady = () => until(async () => !!c.settingsWin() && await sjs<boolean>('!!window.settingsTest && settingsTest.has("#tg-reducedMotion")').catch(() => false), 8000);
+  const settingsShot = async (name: string) => {
+    await wait(300);
+    const w = c.settingsWin();
+    if (w) fs.writeFileSync(path.join(c.outDir, name + '.png'), (await w.webContents.capturePage()).toPNG());
+  };
+  const k: SmokeKit<S> = { ...c, mode, check, wait, until, js, shot, shots, gjs, gamesReady, gamesShot, sjs, settingsReady, settingsShot, docked, transcript, note, cpu };
 
   // the window sits in the orb's corner and the page shows this shape at its size
   const inCorner = () => same(c.win.getBounds(), orbWindowBounds(c.geo()));
@@ -208,26 +222,20 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     check('open, the window takes the clicks', !c.ignoresMouse());
     check('the card shows the game big', (await page()).root.w > 380, (await page()).root);
     await shots('orb-expanded');
-    await js('shellTest.click("tg-set")');
-    check('Settings opens inside the card', await until(async () => (await page()).panelOpen));
-    const text = await js<string>('shellTest.text()');
-    check('Settings has the Display section with the corner', /In the corner/.test(text) && /Floating window/.test(text) && /Corner/.test(text), text.slice(0, 400));
-    await shot('orb-expanded-settings');
-    await js('shellTest.key("Escape")');
-    check('Esc closes Settings first', await until(async () => !(await page()).panelOpen) && c.state() === 'expanded');
+    await settingsWindow(k, 'the card', 'tg-set', 'settings-window');
     await gamesWindow(k, 'the card', 'tg-gamesbtn', 'games-window');
-    // Settings → Games in the card: a line about the games, any request waiting, and Open Games… for the window
+    // Settings → Games: a line about the games, the developer switch, any request waiting, and Open Games… for the window
     await js('shellTest.click("tg-set")');
-    await until(async () => (await page()).panelOpen);
-    const sum = await js<string>('shellTest.games().text');
-    check('Settings → Games sums the games up and offers Open Games…', /Playing/.test(sum) && /Open Games…/.test(sum) && !/Check for games/.test(sum), sum);
-    await js('shellTest.gamesClick("open")');
+    await k.settingsReady();
+    const sum = await k.sjs<string>('settingsTest.text()');
+    check('Settings → Games sums the games up, with the developer switch off, and offers Open Games…', /Playing/.test(sum) && /Open Games…/.test(sum) && !/Check for games/.test(sum)
+      && /Show developer and unapproved games/.test(sum) && (await k.sjs('settingsTest.value("#tg-developer")')) === false, sum);
+    await k.sjs(`settingsTest.click('[data-games="open"]')`);
     check('Open Games… opens the Games window', await k.gamesReady());
     await k.gjs('gamesTest.key("w", true)');
     check('Cmd+W closes the Games window', await until(() => !c.gamesWin()));
-    await js('shellTest.key("Escape")');
-    await until(async () => !(await page()).panelOpen);
-    await settingsCloses(k, 'the card', 'settings-card');
+    await k.sjs('settingsTest.key("Escape")');
+    await until(async () => !c.settingsWin() && !(await page()).panelOpen);
     await js('shellTest.click("tg-shrink")');
     check('– folds the card back into the orb', await shows('orb') && c.ignoresMouse());
 
@@ -292,7 +300,7 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     check('the tray offers the way back', items.includes('Back to the corner') && !items.includes('Pop out'), items);
     await shot('window-small');
     await gamesWindow(k, 'the window', 'tg-gamesw');
-    await settingsCloses(k, 'the window', 'settings-window');
+    await settingsWindow(k, 'the window', 'tg-gear');
 
     await game.full?.(k);
 
@@ -340,9 +348,11 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     c.dispatch('toggle');
     await shows('card');
     await js('shellTest.key(",")');
-    await until(async () => (await page()).panelOpen);
-    await js('document.querySelector(\'[data-pres="floating"]\').click()');
+    check(', opens the Settings window', await k.settingsReady());
+    await k.sjs(`settingsTest.click('[data-pres="floating"]')`);
     check('Settings → Floating window pops it out', await settled('popped') && c.store.get().presentation === 'floating');
+    await k.sjs('settingsTest.key("Escape")');
+    await until(() => !c.settingsWin());
     c.update({ reducedMotion: true } as Partial<S>);
     c.dispatch('dock');
     check('with reduced motion it docks at once', c.state() === 'orb');
@@ -354,12 +364,14 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     c.update({ corner: 'tl' } as Partial<S>);
     await until(async () => (await page()).shown === 'popped');
     await js('shellTest.key(",")');
-    await until(async () => (await page()).panelOpen);
-    await js('shellTest.click("tg-reset")');
+    await k.settingsReady();
+    await k.sjs('settingsTest.click("#tg-reset")');
     check('Reset to defaults brings the game home and the defaults back', await settled('orb') && await until(() => {
       const s = c.store.get();
       return s.presentation === 'orb' && s.corner === 'br' && s.display === null && s.size === 'small' && s.dock === 'br' && !s.reducedMotion && !s.clickThrough && s.opacity === 1;
     }) && await until(() => inCorner() && c.geo().corner === 'br'), c.store.get());
+    await k.sjs('settingsTest.key("Escape")').catch(() => undefined);
+    await until(() => !c.settingsWin());
     await game.reset?.(k);
 
     // ---------- leave it popped out, large, top left (the orb's corner top right) for the reopen run ----------
@@ -418,47 +430,67 @@ async function gamesWindow<S extends ShellSettings>(c: SmokeKit<S>, where: strin
   check(`${where}: Esc closes the Games window, the game still there`, await until(() => !c.gamesWin()) && c.state() === before.state && c.visible() === before.visible);
 }
 
-// Settings closes every way a sheet should, with real mouse input (not synthetic DOM events): its × at the top right,
-// a click outside it, and never a slider dragged past its edge and let go outside.
-async function settingsCloses<S extends ShellSettings>(c: SmokeKit<S>, where: string, shotName: string): Promise<void> {
-  const { check, js, until, wait } = c;
-  const open = async () => js<boolean>('shellTest.state().panelOpen');
-  const rect = (sel: string) => js<{ x: number; y: number; w: number; h: number } | null>(`shellTest.rect(${JSON.stringify(sel)})`);
-  const mouse = async (type: 'mouseDown' | 'mouseUp' | 'mouseMove', x: number, y: number) => {
-    c.win.webContents.sendInputEvent({ type, x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1 });
-    await wait(30);
-  };
-  const press = async (x: number, y: number, x2 = x, y2 = y) => {
-    await mouse('mouseMove', x, y); await mouse('mouseDown', x, y);
-    for (let i = 1; i <= 4; i++) await mouse('mouseMove', x + ((x2 - x) * i) / 4, y + ((y2 - y) * i) / 4);
-    await mouse('mouseUp', x2, y2);
-  };
-  const openIt = async () => { if (!(await open())) await js('shellTest.click("tg-set")'); return until(open); };
+// Settings (the button next to Games, the gear in the window's title bar, the , key, the tray's Settings…) opens in a
+// window of its own, centred like the Games window and the same size, showing the game page's Settings sheet in large
+// type. Clicks and sliders there change the real settings. Settings again brings the same window forward; Esc, Cmd+W,
+// its Close button and the sheet's own Close each close it. The game stays where it was.
+async function settingsWindow<S extends ShellSettings>(c: SmokeKit<S>, where: string, button: string, shotName?: string): Promise<void> {
+  const { check, until, js, sjs } = c;
+  const before = { state: c.state(), visible: c.visible(), bounds: c.win.getBounds() };
+  const open = () => js<boolean>('shellTest.state().panelOpen');
+  const stays = () => c.state() === before.state && c.visible() === before.visible && same(c.win.getBounds(), before.bounds);
+  const closed = () => until(async () => !c.settingsWin() && !(await open()), 3000);
+  check(`${where}: a Settings button sits next to Games`, await js<boolean>(`(() => { const e = document.getElementById(${JSON.stringify(button)}); return !!e && e.getClientRects().length > 0; })()`));
+  await js(`shellTest.click(${JSON.stringify(button)})`);
+  check(`${where}: Settings opens the Settings window`, await c.settingsReady() && await open());
+  const w = c.settingsWin();
+  if (!w) return;
+  const area = screen.getDisplayMatching(c.win.getBounds()).workArea, want = gamesWindowBounds(area), b = w.getBounds(), min = w.getMinimumSize();
+  check(`${where}: it is centred on the game's display, the Games window's size, inside the work area`, same(b, want), { bounds: b, want, area });
+  check(`${where}: a normal window: resizable, a minimum size, a title bar with its name`, w.isResizable() && min[0] === Math.min(GAMES_WINDOW.minWidth, area.width)
+    && min[1] === Math.min(GAMES_WINDOW.minHeight, area.height) && w.getContentBounds().height < b.height && /^Settings/.test(w.getTitle()),
+  { min, title: w.getTitle() });
+  const env = await sjs<Record<string, string>>(`({ require: typeof require, process: typeof process, module: typeof module, buffer: typeof Buffer,
+    shell: typeof window.tokenShell, games: typeof window.tokenGames, api: Object.keys(window.tokenSettings).sort().join(',') })`);
+  check(`${where}: its page is isolated and sandboxed, with only the Settings calls (window.tokenSettings)`, env.require === 'undefined' && env.process === 'undefined'
+    && env.module === 'undefined' && env.buffer === 'undefined' && env.shell === 'undefined' && env.games === 'undefined' && env.api === 'boot,close,input,onSnap', env);
+  const text = await sjs<string>('settingsTest.text()');
+  check(`${where}: it shows Display (the corner, the floating window), Games with the developer switch, and Reset`, /^Settings/.test(text.trim()) && /In the corner/.test(text)
+    && /Floating window/.test(text) && /Corner/.test(text) && /Show developer and unapproved games/.test(text) && /Reset to defaults/.test(text), text.slice(0, 600));
+  const look = await sjs<{ body: number; back: string; sections: number }>('settingsTest.look()');
+  check(`${where}: in large type on the Games window's dark page`, look.body >= 15 && look.back === 'rgb(23, 24, 27)' && look.sections >= 2, look);
+  check(`${where}: the game stays as it was: same mode, same place, still shown`, stays(), { state: c.state(), before });
 
-  check(`${where}: Settings opens again`, await openIt());
-  const x = await rect('#tg-x'), panel = await rect('.tg-panel');
-  check(`${where}: Settings has a × at the top right of its header`, !!x && !!panel && x.y < panel.y + 30 && x.x + x.w > panel.x + panel.w - 30, { x, panel });
-  if (!x || !panel) return;
-  await c.shots(shotName);
-  await press(x.x + x.w / 2, x.y + x.h / 2);
-  check(`${where}: × closes Settings`, await until(async () => !(await open()), 1500));
+  // what the player does in the window happens in the game's real settings, and the window follows
+  const rm = c.store.get().reducedMotion;
+  await sjs('settingsTest.click("#tg-reducedMotion")');
+  check(`${where}: a click on Reduced motion in the window changes the setting`, await until(async () => c.store.get().reducedMotion === !rm
+    && (await sjs('settingsTest.value("#tg-reducedMotion")')) === !rm, 3000), c.store.get().reducedMotion);
+  await sjs('settingsTest.click("#tg-reducedMotion")');
+  await until(() => c.store.get().reducedMotion === rm, 3000);
+  const op = c.store.get().opacity;
+  await sjs('settingsTest.slide("#tg-opacity", 60)');
+  check(`${where}: moving the Opacity slider in the window changes the setting`, await until(() => c.store.get().opacity === 0.6, 3000)
+    && await until(async () => /60%/.test(await sjs<string>('settingsTest.text()')), 3000), c.store.get().opacity);
+  await sjs(`settingsTest.slide("#tg-opacity", ${Math.round(op * 100)})`);
+  await until(() => c.store.get().opacity === op, 3000);
+  if (shotName) { await sjs('document.activeElement.blur(); scrollTo(0, 0)'); await c.settingsShot(shotName); }
 
-  await openIt();
-  await js(`document.querySelector('.tg-panel input[type=range]')?.scrollIntoView({ block: 'center' })`);
-  await wait(100);
-  const slider = await rect('.tg-panel input[type=range]');
-  if (slider) {
-    // press on the slider, drag it past the sheet's left edge, let go over the game
-    await press(slider.x + slider.w / 2, slider.y + slider.h / 2, Math.max(2, panel.x - 40), slider.y + slider.h / 2);
-    await wait(150);
-    check(`${where}: a slider let go outside the sheet does not close it`, await open());
-  } else check(`${where}: Settings has a slider to drag`, false);
-
-  // a click on the game beside the sheet: closes it, and only that (the game doesn't get the click)
-  await press(Math.max(4, panel.x / 2), panel.y + panel.h / 2);
-  check(`${where}: a click outside closes Settings`, await until(async () => !(await open()), 1500));
-
-  await openIt();
-  await js('shellTest.key("Escape")');
-  check(`${where}: Esc closes it too`, await until(async () => !(await open()), 1500));
+  await js(`shellTest.click(${JSON.stringify(button)})`);
+  await c.wait(300);
+  const all = BrowserWindow.getAllWindows().filter((x) => x.webContents.getURL().endsWith('/settings.html'));
+  check(`${where}: Settings again brings the same window forward, never a second one`, c.settingsWin()?.id === w.id && all.length === 1 && await open(), all.length);
+  await sjs('settingsTest.key("Escape")');
+  check(`${where}: Esc closes the Settings window, the game still there`, await closed() && stays());
+  for (const [how, code] of [['Cmd+W', 'settingsTest.key("w", true)'], ['its Close button', 'document.getElementById("gw-close").click()'],
+    ['the sheet\'s own Close', 'settingsTest.click("#tg-close")']] as const) {
+    await js('shellTest.key(",")');
+    await c.settingsReady();
+    await sjs(code);
+    check(`${where}: , opens it again and ${how} closes it`, await closed() && stays());
+  }
+  c.tray({ do: 'settings' });
+  check(`${where}: the tray's Settings… opens it too, the game where it was`, await c.settingsReady() && stays());
+  await sjs('settingsTest.key("Escape")');
+  await closed();
 }

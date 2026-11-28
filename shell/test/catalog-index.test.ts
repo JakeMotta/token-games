@@ -46,6 +46,9 @@ test('pointers are checked field by field', () => {
   assert.match(checkPointer({ ...pointer(), tier: 'built-in' }).join(), /tier must be/);
   assert.match(checkPointer({ ...pointer(), commit: 'main' }).join(), /full 40-character commit/);
   assert.match(checkPointer({ ...pointer(), path: '../x' }).join(), /path must be/);
+  assert.deepEqual(checkPointer({ ...pointer(), duplicates: 'ant-farm' }, 'token-garden'), [], 'a copy of a built-in game may say so');
+  assert.match(checkPointer({ ...pointer(), duplicates: 'token-garden' }).join(), /duplicates must be/);
+  assert.match(checkPointer({ ...pointer(), duplicates: 'Ant Farm!' }).join(), /duplicates must be/);
   assert.match(checkPointer({ ...pointer(), repository: 'https://github.com/a/b' }).join(), /owner\/repo/);
   assert.match(checkPointer({ ...pointer(), bundle: { url: 'http://example.com/a.zip', sha256: 'b'.repeat(64) } }).join(), /https/);
   assert.match(checkPointer({ ...pointer(), bundle: { url: pointer().bundle.url, sha256: 'B'.repeat(64) } }).join(), /sha256/);

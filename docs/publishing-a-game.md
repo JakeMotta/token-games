@@ -21,7 +21,8 @@ exactly that; every step from package to rollback is in [first-game-walkthrough.
 
 ## 2. Try it
 
-Open Token Games (`cd ant-farm && npm start` from this repo), then **Settings → Games → Add local folder…**, pick
+Open Token Games (`cd ant-farm && npm start` from this repo), turn on **Settings → Games → Show developer and unapproved games**, then
+**Games → Add local folder…**, pick
 your folder and approve the sheet. Press Play. The app reads it straight from your folder: switch to another game and
 back to see a change. From a terminal: `tokengames install --dir <folder>`, then approve it in the app.
 

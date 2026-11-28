@@ -15,7 +15,7 @@ const ASK = 'Nothing changes until the player approves it in the Token Games win
 export const TOOLS = [
   {
     name: 'list_games',
-    description: 'Lists the Token Games games: the built-in one, installed ones and what the signed catalog offers, with which one is playing.',
+    description: 'Lists the Token Games games: the built-in one, installed ones and what the signed catalog offers, with which one is playing; NOTE marks games that are not approved (hidden in the app unless the player shows developer games).',
     inputSchema: { type: 'object', properties: { refresh: { type: 'boolean', description: 'Fetch the signed catalog first' } }, additionalProperties: false },
     annotations: { title: 'List games', readOnlyHint: true, openWorldHint: false },
   },
