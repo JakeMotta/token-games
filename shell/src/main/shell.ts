@@ -18,7 +18,7 @@ import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage,
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { CH, type FeedStatus, type GameRect, type GamesOp, type GamesResult, type GamesView, type GameStatus, type HostedBoot, type ModeInfo, type OrbDrag, type ResizeDrag, type ShellBoot, type ShellCommand } from '../api';
+import { CH, type FeedStatus, type GameRect, type GamesOp, type GamesResult, type GamesView, type GameStatus, type HostedBoot, type ModeInfo, type OrbDrag, type ResizeDrag, type ShellBoot, type ShellCommand, updatesIn } from '../api';
 import { Catalog, type BuiltIn } from '../catalog/catalog';
 import { catalogCommands } from '../catalog/commands';
 import { defaultCatalogDir, serveControl, type ControlServer } from '../catalog/control';
@@ -26,7 +26,7 @@ import { DEFAULT_REGISTRY, REGISTRY_KEYS } from '../catalog/keys';
 import type { HostedEnv } from '../hosted';
 import { isGameId } from '../manifest';
 import { GameHost, iconDataUrl, registerGameScheme } from './catalog-host';
-import { smokeRegistry } from './smoke-registry';
+import { smokeRegistry, type SmokeRegistry } from './smoke-registry';
 import { normalizeEvent, type UsageEvent } from '../events';
 import { watchClaudeCode, type Feed } from '../feed/claude-code';
 import { boundsFor, clampToArea, gripCorner, nearestDock, resizeFromGrip, type Area } from '../geometry';
@@ -77,6 +77,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
   let orbDrag: { start: Bounds; x: number; y: number } | null = null;
   let ignoring = false; // clicks pass through the window
   let catalog: Catalog;
+  let smokeReg: SmokeRegistry | null = null; // the catalog smoke runs' own registry
   let builtIn: BuiltIn;
   let control: ControlServer | null = null;
   let activeId = ''; // the game the page runs: the built-in one, or a catalog game hosted in its place
@@ -320,7 +321,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     if (smokeMode === 'catalog' || (smokeMode === 'catalog-game' && !env.TG_REGISTRY_URL)) {
       // the smoke test's registry: the repo's sample game (or this app's own catalog bundle), signed with a key made
       // for this run and never saved. The catalog-game run with TG_REGISTRY_URL installs from that registry instead.
-      const reg = smokeMode === 'catalog'
+      const reg = smokeReg = smokeMode === 'catalog'
         ? smokeRegistry(path.join(SMOKE!, 'registry'), path.join(app.getAppPath(), '..', 'samples', 'token-garden'), 'samples/token-garden')
         : smokeRegistry(path.join(SMOKE!, 'registry'), path.join(app.getAppPath(), 'catalog'), `${path.basename(app.getAppPath())}/catalog`);
       keys = [reg.publicKey]; url = reg.url;
@@ -330,6 +331,7 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     hosted = hostedBoot();
     catalog.onChange(() => {
       send(CH.gamesChanged, gamesView());
+      refreshTray(); // the tray says when an update is waiting
       if (catalog.active() !== activeId) switchGame();
     });
     serveControl(dir, catalogCommands(catalog)).then((c) => { control = c; }, (e) => console.warn('Token Games: the control socket could not start:', (e as Error).message));
@@ -493,17 +495,17 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     });
   }
 
-  const trayItems = (): TrayItem[] => trayMenu(store.get(), { name: cfg.name, visible: visible(), state, shortcut: SHORTCUT });
+  const trayItems = (): TrayItem[] => trayMenu(store.get(), { name: cfg.name, visible: visible(), state, shortcut: SHORTCUT, updates: catalog ? updatesIn(catalog.list()) : 0 });
 
   function runAction(a: TrayAction): void {
     if (a.do === 'toggle-window') toggleWindow();
     else if (a.do === 'open') { showWindow(); dispatch('toggle'); }
     else if (a.do === 'pop') { showWindow(); dispatch('pop'); }
     else if (a.do === 'dock') { showWindow(); dispatch('dock'); }
-    else if (a.do === 'settings') {
+    else if (a.do === 'settings' || a.do === 'games') {
       showWindow(true);
       if (!floating() && state !== 'expanded') dispatch('toggle');
-      send(CH.command, 'settings' satisfies ShellCommand);
+      send(CH.command, a.do satisfies ShellCommand);
     } else if (a.do === 'fullscreen') { if (state === 'popped') { showWindow(true); setFullscreen(!fullPrev); } }
     else if (a.do === 'reset') resetAll();
     else if (a.do === 'quit') app.quit();
@@ -636,11 +638,11 @@ export function startShell<G extends object>(cfg: ShellConfig<G>): void {
     if (SMOKE) {
       runSmoke<S>({
         win: win!, store, outDir: SMOKE, claudeDir: CLAUDE_DIR, update: (p) => update(p), resize: onResizeDrag, orbDrag: onOrbDrag,
-        isFullscreen: () => !!fullPrev, dispatch, displays: onDisplays, state: () => state, geo: () => geo, trayItems, hotkey, status: () => status,
+        isFullscreen: () => !!fullPrev, dispatch, displays: onDisplays, state: () => state, geo: () => geo, trayItems, tray: runAction, hotkey, status: () => status,
         visible, show: () => showWindow(), hide: hideWindow, ignoresMouse: () => ignoring,
         catalog: {
           catalog: () => catalog, host: () => host, socket: () => control?.socket || '', builtIn: () => builtIn, saveFile: () => save.file,
-          bundleDir: () => path.join(app.getAppPath(), 'catalog'),
+          bundleDir: () => path.join(app.getAppPath(), 'catalog'), publish: (v) => smokeReg?.publish(v),
         },
       }, cfg.smoke);
       return;

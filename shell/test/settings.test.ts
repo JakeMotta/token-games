@@ -1,4 +1,4 @@
-// The shared settings, how a game adds its own, the settings file and the tray menu.
+// The shared settings, how a game adds its own, the settings file and the tray menu (with its Games… entry).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -7,6 +7,8 @@ import path from 'node:path';
 import { num, oneOf, settingsKit, shellDefaults, type GameSettingsSchema } from '../src/settings';
 import { SaveFile, SettingsStore } from '../src/main/store';
 import { trayMenu, type TrayItem } from '../src/tray';
+import { updatesIn } from '../src/api';
+import type { GameRow } from '../src/catalog/catalog';
 
 // a game with a colour and a seed it keeps on reset
 interface G { colour: 'red' | 'blue'; speed: number; seed: number }
@@ -119,6 +121,24 @@ test('the tray in the corner: open the game, pop out, move the orb, settings, re
   assert.deepEqual(find(m, 'Reset to defaults')!.action, { do: 'reset' });
   assert.equal(find(trayMenu(kit.defaults(1), { name: 'Demo', visible: true, state: 'expanded', shortcut: '' }), 'Close Demo')!.action!.do, 'open');
   assert.equal(trayMenu(kit.defaults(1), { name: 'Demo', visible: false, state: 'orb', shortcut: '' })[0].label, 'Show Demo');
+});
+
+test('the tray opens the Games view, right above Settings, and says when an update is waiting', () => {
+  const m = trayMenu(kit.defaults(1), { name: 'Demo', visible: true, state: 'orb', shortcut: '' });
+  const labels = m.map((i) => i.label);
+  assert.deepEqual(find(m, 'Games…')!.action, { do: 'games' });
+  assert.deepEqual(find(m, 'Settings…')!.action, { do: 'settings' });
+  assert.equal(labels.indexOf('Games…') + 1, labels.indexOf('Settings…'));
+  assert.ok(find(trayMenu(kit.defaults(1), { name: 'Demo', visible: true, state: 'popped', shortcut: '', updates: 0 }), 'Games…'), 'popped out too');
+  assert.deepEqual(find(trayMenu(kit.defaults(1), { name: 'Demo', visible: true, state: 'orb', shortcut: '', updates: 1 }), 'Games… (1 update)')!.action, { do: 'games' });
+  assert.ok(find(trayMenu(kit.defaults(1), { name: 'Demo', visible: true, state: 'orb', shortcut: '', updates: 2 }), 'Games… (2 updates)'));
+});
+
+test('updatesIn counts installed games with a newer version that may run', () => {
+  const row = (id: string, o: Partial<GameRow>): GameRow => ({ id, name: id, description: '', version: '1.0.0', tier: 'verified', installed: true, active: false, network: [], ...o });
+  assert.equal(updatesIn([]), 0);
+  assert.equal(updatesIn([row('a', { tier: 'built-in' }), row('b', {}), row('c', { installed: false })]), 0);
+  assert.equal(updatesIn([row('a', { update: '1.0.1' }), row('b', { update: '2.0.0', blocked: 'pulled' }), row('c', { installed: false, update: '1.1.0' })]), 1);
 });
 
 test('the tray popped out: back to the corner, the window\'s settings, the shortcut on click-through', () => {

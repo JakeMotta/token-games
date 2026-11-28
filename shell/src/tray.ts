@@ -5,13 +5,13 @@ import { CORNERS, type Corner } from './orb';
 import { DOCKS, type Dock, type ShellSettings } from './settings';
 
 export type TrayAction =
-  | { do: 'toggle-window' } | { do: 'open' } | { do: 'pop' } | { do: 'dock' } | { do: 'settings' } | { do: 'fullscreen' }
+  | { do: 'toggle-window' } | { do: 'open' } | { do: 'pop' } | { do: 'dock' } | { do: 'settings' } | { do: 'games' } | { do: 'fullscreen' }
   | { do: 'reset' } | { do: 'quit' }
   | { do: 'set'; patch: Partial<ShellSettings> };
 
 export interface TrayItem { label?: string; type?: 'normal' | 'checkbox' | 'radio' | 'separator' | 'submenu'; checked?: boolean; enabled?: boolean; accelerator?: string; action?: TrayAction; submenu?: TrayItem[] }
 
-export interface TrayContext { name: string; visible: boolean; state: ShellState; shortcut: string }
+export interface TrayContext { name: string; visible: boolean; state: ShellState; shortcut: string; updates?: number } // updates: installed games with a newer version
 
 const DOCK_LABEL: Record<Dock, string> = { tl: 'Top left', tr: 'Top right', bl: 'Bottom left', br: 'Bottom right', free: 'Where I drop it' };
 const CORNER_LABEL: Record<Corner, string> = { tl: 'Top left', tr: 'Top right', bl: 'Bottom left', br: 'Bottom right' };
@@ -24,6 +24,7 @@ export function trayMenu(s: ShellSettings, c: TrayContext): TrayItem[] {
       ? { label: 'Back to the corner', action: { do: 'dock' } }
       : { label: open ? 'Close ' + c.name : 'Open ' + c.name, accelerator: c.shortcut, action: { do: 'open' } },
     ...(floating ? [] : [{ label: 'Pop out', action: { do: 'pop' } } as TrayItem]),
+    { label: 'Games…' + (c.updates ? ` (${c.updates} update${c.updates === 1 ? '' : 's'})` : ''), action: { do: 'games' } },
     { label: 'Settings…', action: { do: 'settings' } },
     { type: 'separator' },
     {

@@ -15,7 +15,7 @@ orb ──hover──▶ hover (pill) ──click──▶ expanded (card) ─�
 |---|---|---|
 | orb | A 64 px round orb in a corner of the screen: the game's tiny live view in its eye, a count on a small badge, and a quiet ring that turns warm when the game needs the player (`GameStatusLine.warm`) | `mini` |
 | hover | Pointing at it grows a pill (250 × 64) out of the orb with the game's name, its count and its status line | `mini` |
-| expanded | A click opens a card (440 × 330) out of the same corner: the game large, its status, **Pop out ↗**, **Settings** and **–** | `expanded` |
+| expanded | A click opens a card (440 × 330) out of the same corner: the game large, its status, **Pop out ↗**, **Games**, **Settings** and **–** | `expanded` |
 | popped | A small frameless window (320 × 180 or 640 × 360, 16:9) docked to a corner; nothing stays in the orb's corner | `window` |
 
 The orb, the pill and the card are one shape that grows out of the orb's corner, so the card opens down from a top
@@ -42,11 +42,12 @@ setting reads as `orb`), and Settings → Display sets it.
 ## Never without a way back
 
 - The menu-bar (tray) icon is always there: show or hide, open the card or **Back to the corner**, **Pop out**,
-  Settings, Presentation, Corner, the floating window's size, full screen, click-through, always on top and dock
+  **Games…** (with the number of updates waiting), Settings, Presentation, Corner, the floating window's size, full screen, click-through, always on top and dock
   corner, Reduced motion, **Reset to defaults**, Quit.
 - **Alt+Cmd+T** (Alt+Ctrl+T): shows a hidden game; in the corner, opens or closes the card; popped out, switches
   click-through (so a click-through window can always be grabbed again).
-- Settings is a sheet over the game: its **×** (top right), **Close**, Esc or a click outside closes it. A press that
+- The **Games** button sits next to Settings in the card and in the popped-out window's title bar; it opens the same
+  sheet on its Games view (the games only). Settings is a sheet over the game: its **×** (top right), **Close**, Esc or a click outside closes it. A press that
   starts inside it (dragging a slider past its edge) never closes it, and the click outside only closes it, it
   doesn't reach the game. Nothing traps the keyboard focus.
 - Keys while focused: Esc closes, `,` Settings, `O` pop out / back to the corner, `H` hide; popped out: `1` small,

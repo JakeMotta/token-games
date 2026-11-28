@@ -31,7 +31,8 @@ export interface ShellBoot<S extends ShellSettings = ShellSettings> {
 // The catalog game the shell hosts in place of its own (docs/catalog.md).
 export interface HostedBoot { id: string; name: string; version: string; tier: Tier; icon: string } // icon: a data: URL or ''
 
-// The Games section of Settings: what is installed, what the catalog offers, and requests waiting for the player.
+// The Games view (the Games button, the tray's Games…, Settings → Games): what is installed, what the catalog offers,
+// and requests waiting for the player.
 export interface GamesView {
   rows: GameRow[];
   pending: PendingRequest[];
@@ -39,6 +40,9 @@ export interface GamesView {
   catalog: { fetchedAt: string | null; games: number; error: string | null; signed: boolean };
   canAddLocal: boolean; // a folder picker is available (not in the smoke test)
 }
+// How many installed games the catalog has a newer version of (the Games button's dot, the tray's "Games… (1 update)").
+export const updatesIn = (rows: GameRow[]): number => rows.filter((r) => r.installed && !!r.update && !r.blocked).length;
+
 export type GamesOp =
   | { op: 'refresh' } | { op: 'request'; action: 'install' | 'update' | 'remove'; id: string } | { op: 'add-local' }
   | { op: 'approve'; requestId: string } | { op: 'deny'; requestId: string } | { op: 'use'; id: string } | { op: 'community'; on: boolean };
@@ -48,7 +52,7 @@ export interface GameRect { x: number; y: number; width: number; height: number;
 export interface FeedStatus { watching: boolean; files: number; root: string; error?: string }
 
 // Commands the main process sends the page (tray menu, global shortcut, window changes).
-export type ShellCommand = 'settings' | 'fullscreen-on' | 'fullscreen-off';
+export type ShellCommand = 'settings' | 'games' | 'fullscreen-on' | 'fullscreen-off';
 
 export interface ResizeDrag { phase: 'start' | 'move' | 'end'; x: number; y: number } // screen coordinates
 export type OrbDrag = ResizeDrag; // the orb dragged to another corner, the same way
