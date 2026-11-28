@@ -110,7 +110,9 @@ delete `~/Library/Application Support/Token Games/saves/ant-farm-web/`.
 ## 5. Update
 
 Release a newer version (steps 1 to 5 of Publish with a higher `version`) and change the pointer's `commit`, `tag` and
-`bundle`. Players see **Update** in Settings → Games after Check for games, and approve it like an install. The save
+`bundle`. Players see **Update available** and **Update to …** in the Games view
+once their app has the new index (Check for games), a dot on the Games button and **Games… (1 update)** in the tray,
+and approve it like an install. The save
 carries over. A released zip is never replaced: `release-bundle.yml` refuses an existing tag.
 
 ## 6. Roll back

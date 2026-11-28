@@ -19,6 +19,7 @@ export interface CatalogSmoke {
   builtIn(): BuiltIn;
   saveFile(): string; // the built-in game's save
   bundleDir(): string; // the app's own catalog bundle (catalog/, built by build-web.mjs), for the catalog-game run
+  publish(version: string): void; // list the game in the run's test registry again at a newer version
 }
 
 const GAME = 'token-garden';
@@ -64,6 +65,28 @@ export async function catalogSmoke<S extends ShellSettings>(k: SmokeKit<S>, c: C
   check('catalog: installing does not switch games', c.catalog().active() === c.builtIn().id && !c.host());
   await showGames();
   await k.shots('catalog-picker');
+
+  // an update: the registry lists a newer version; the Games view says so, and updating waits for Approve
+  const was = (await row(GAME))?.version as string, next = was.replace(/\d+$/, (n) => String(Number(n) + 1));
+  check('catalog: no update is shown while the catalog has the same version', !(await row(GAME))?.update && !(await page())?.update);
+  c.publish(next);
+  await sj('shellTest.click("tg-gamesw")');
+  check('catalog: the Games button opens the Games view', await until(async () => (await page())?.view === 'games' && !!(await page())?.panelOpen));
+  await click('refresh');
+  check('catalog: a newer version in the catalog shows "Update available" and an Update button', await until(async () => (await row(GAME))?.update === next)
+    && await until(async () => /Update available/i.test((await games())?.text || '') && ((await games())?.text || '').includes('Update to ' + next)), (await games())?.text);
+  check('catalog: the Games buttons get a dot', !!(await page())?.update);
+  check('catalog: the tray says an update is waiting', await until(() => k.trayItems().some((i) => i.label === 'Games… (1 update)')), k.trayItems().map((i) => i.label));
+  await k.shots('catalog-update');
+  await click('update:' + GAME);
+  const upd = await until(async () => ((await games())?.view?.pending || []).some((r: any) => r.action === 'update' && r.version === next));
+  check('catalog: Update asks first, nothing changes yet', upd && (await row(GAME))?.version === was);
+  await k.shots('catalog-update-sheet');
+  const uid = ((await games())?.view?.pending || []).find((r: any) => r.action === 'update')?.requestId;
+  await click('approve:' + uid);
+  check('catalog: approving the update installs the new version', await until(async () => (await row(GAME))?.version === next && !(await row(GAME))?.update)
+    && JSON.parse(fs.readFileSync(path.join(gameDir, 'game.json'), 'utf8')).version === next);
+  check('catalog: the dot and the tray\'s count go once it is up to date', await until(async () => !(await page())?.update) && k.trayItems().some((i) => i.label === 'Games…'));
 
   // switch: the page starts again around the catalog game
   await click('use:' + GAME);

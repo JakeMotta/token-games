@@ -1,6 +1,7 @@
 # The game catalog
 
-Other people can write Token Games games, and players can install them from inside the app: **Settings → Games**.
+Other people can write Token Games games, and players can install them from inside the app: the **Games** button next to Settings (in the open card and the popped-out
+window's title bar), the menu-bar icon's **Games…**, or **Settings → Games**.
 This page is how it works as built. The original proposal, with diagrams and a clickable mock, is
 [game-catalog.html](game-catalog.html) and [game-catalog-design.md](game-catalog-design.md). Writing a game for the
 catalog: [publishing-a-game.md](publishing-a-game.md).
@@ -167,12 +168,20 @@ app shows the permission sheet and the agent tells you to approve it there.
 choices, `tokengames install <id>` to ask, then it tells the player to approve in the app, and `tokengames status
 --json` for something to say about the active game. It never approves.
 
-## Settings → Games
+## The Games view
 
-The Games section of the shell's Settings (`shell/src/page/games-panel.ts`) lists the built-in game, installed,
+The **Games** button (next to Settings in the open card and in the popped-out window's title bar) and the tray's
+**Games…** open the Settings sheet on its Games view: just the games, full width, with larger text and buttons;
+Settings switches to the whole sheet and Games again closes it. Settings → Games is the same list. The view
+(`shell/src/page/games-panel.ts`) lists the built-in game, installed,
 local and available games with their tier and state; Play, Install, Update, Remove; "Check for games"; "Add local
 folder…"; the Community switch; and pending requests with Approve and Deny. When an agent asks, the orb's pill says
-so ("An agent asked: see Settings → Games"), and opening Settings scrolls to the waiting request.
+so ("An agent asked: see Games"), and opening Settings scrolls to the waiting request.
+
+**Update available.** When the cached index lists a newer version of an installed game (and it is not blocked), its
+row gets an **Update available** tag and an **Update to <version>** button, the Games buttons get a small dot, and the
+tray says **Games… (1 update)**. Updating asks like an install: the permission sheet, then Approve. The index is
+still only fetched when the player presses "Check for games" (or an agent asks); the badge reads the cached one.
 
 ## A separate registry repo (option)
 

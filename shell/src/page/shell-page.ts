@@ -74,12 +74,14 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   pill.append(pillName, pillLine);
   const card = el('div', 'tg-card'), big = el('div', 'tg-big'), cardBar = el('div', 'tg-cbar');
   const popBtn = el<HTMLButtonElement>('button', 'tg-pill', 'Pop out ↗'), setBtn = el<HTMLButtonElement>('button', 'tg-pill', 'Settings');
+  const gamesBtn = el<HTMLButtonElement>('button', 'tg-pill tg-gamesbtn', 'Games');
   const shrinkBtn = el<HTMLButtonElement>('button', 'tg-pill tg-shrink', '–');
   popBtn.id = 'tg-pop'; popBtn.title = 'Pop out into a floating window (O)';
   setBtn.id = 'tg-set'; setBtn.title = 'Settings (,)';
+  gamesBtn.id = 'tg-gamesbtn'; gamesBtn.title = 'Games: switch, install and update games';
   shrinkBtn.id = 'tg-shrink'; shrinkBtn.title = 'Back to the orb (Esc)';
   const cardLine = el('span', 'tg-line');
-  cardBar.append(cardLine, el('span', 'tg-sp'), popBtn, setBtn, shrinkBtn);
+  cardBar.append(cardLine, el('span', 'tg-sp'), popBtn, gamesBtn, setBtn, shrinkBtn);
   card.append(big, cardBar);
   shape.append(card, pill, orb);
 
@@ -93,7 +95,9 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   const dockBtn = wbtn('tg-dock', 'Back to the corner (O)', '↩ Corner');
   dockBtn.classList.add('tg-text');
   const fullBtn = wbtn('tg-full', 'Full screen (F; Esc leaves)', FULL), gearBtn = wbtn('tg-gear', 'Settings (,)', GEAR), hideBtn = wbtn('tg-hide', 'Hide to the menu bar (H)', HIDE);
-  wbtns.append(...(game.barButtons || []), dockBtn, fullBtn, gearBtn, hideBtn);
+  const gamesWBtn = wbtn('tg-gamesw', 'Games: switch, install and update games', 'Games');
+  gamesWBtn.classList.add('tg-text', 'tg-gamesbtn');
+  wbtns.append(...(game.barButtons || []), dockBtn, fullBtn, gamesWBtn, gearBtn, hideBtn);
   bar.append(pulseDot, name, meter, evt, wbtns);
   const host = el('div', 'tg-host'), grip = el('div', 'tg-grip br'), sizetag = el('div', 'tg-sizetag');
   grip.title = 'Drag to resize (keeps 16:9)';
@@ -104,11 +108,11 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   panel.hidden = true;
   const ownSettings = game.settingsPanel ? Array.from(game.settingsPanel.children) : [];
   if (game.settingsPanel) { game.settingsPanel.hidden = false; panel.append(...ownSettings); }
-  const games = gamesPanel(api, (r) => pulse(`${r.action === 'remove' ? 'Remove' : 'Install'} ${r.name}? An agent asked: see Settings → Games`, 'task'));
+  const games = gamesPanel(api, (r) => pulse(`${r.action === 'remove' ? 'Remove' : 'Install'} ${r.name}? An agent asked: see Games`, 'task'), showUpdates);
   const display = el('section', 'tg-display', DISPLAY_HTML);
-  const foot = el('section', '', '<div class="tg-chips"><button id="tg-reset">Reset to defaults</button><button id="tg-close">Close</button></div><p class="tg-note tg-keys" id="tg-keys"></p>');
+  const foot = el('section', 'tg-foot', '<div class="tg-chips"><button id="tg-reset">Reset to defaults</button><button id="tg-close">Close</button></div><p class="tg-note tg-keys" id="tg-keys"></p>');
   // the sheet's header stays in view as it scrolls: its name, and × to close it
-  const phead = el('div', 'tg-phead', '<h3>Settings</h3><button class="tg-x" id="tg-x" title="Close (Esc)" aria-label="Close settings">'
+  const phead = el('div', 'tg-phead', '<h3 id="tg-ptitle">Settings</h3><button class="tg-x" id="tg-x" title="Close (Esc)" aria-label="Close settings">'
     + '<svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 2l6 6M8 2 2 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>');
   panel.prepend(phead);
   panel.append(games.el, display, foot);
@@ -126,6 +130,8 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   let shown: ShellState = 'orb'; // the layout on screen (lags the state by the fade while flying)
   let scale: Scale = 'mini', flyT = 0, evtT = 0, sizeT = 0, grab = false, started = false;
   let hosted: HostedBoot | null = null, placeRaf = 0;
+  // the sheet shows either all of Settings or only the Games view (the Games button, the tray's Games…)
+  let sheetView: 'settings' | 'games' = 'settings';
   const status = { count: '', title: '', lead: '', line: '', warm: false };
 
   const topInset = (): number => (scale === 'window' ? (full ? BAR_FULL : BAR) : 0);
@@ -342,14 +348,36 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
     for (const id of ['alwaysOnTop', 'clickThrough', 'reducedMotion'] as const) $<HTMLInputElement>('tg-' + id).checked = S[id];
   }
 
-  function togglePanel(open = panel.hidden): void {
+  function togglePanel(open = panel.hidden, view = sheetView): void {
     if (open && scale === 'mini') { intent('toggle'); open = true; } // open the card first
+    if (open) {
+      sheetView = view;
+      panel.dataset.view = view;
+      $('tg-ptitle').textContent = view === 'games' ? 'Games' : 'Settings';
+    }
     panel.hidden = !open;
     body.classList.toggle('tg-open', open);
     renderPanel();
-    if (open) { games.refresh(); if (games.view()?.pending.length) games.el.scrollIntoView({ block: 'start' }); } // a request waits: show it
+    if (open) {
+      games.refresh();
+      if (view === 'games') panel.scrollTop = 0;
+      else if (games.view()?.pending.length) games.el.scrollIntoView({ block: 'start' }); // a request waits: show it
+    }
     placeHosted();
     game.onPanel?.(open);
+  }
+
+  // The Settings and Games buttons: open that view, switch to it from the other one, or close it when it shows.
+  function sheet(view: 'settings' | 'games'): void {
+    if (!panel.hidden && sheetView === view) togglePanel(false);
+    else togglePanel(true, view);
+  }
+
+  // An installed game has a newer version in the catalog: a dot on the Games buttons.
+  function showUpdates(n: number): void {
+    body.classList.toggle('tg-update', n > 0);
+    const t = n ? `Games: ${n === 1 ? 'an update is' : n + ' updates are'} available` : 'Games: switch, install and update games';
+    gamesBtn.title = gamesWBtn.title = t;
   }
 
   function toggleFull(on = !full): void {
@@ -396,10 +424,12 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
   shape.addEventListener('pointercancel', (e) => release(e, true));
   shrinkBtn.onclick = (e) => { e.stopPropagation(); intent('escape'); };
   popBtn.onclick = (e) => { e.stopPropagation(); intent('pop'); };
-  setBtn.onclick = (e) => { e.stopPropagation(); togglePanel(); };
+  setBtn.onclick = (e) => { e.stopPropagation(); sheet('settings'); };
+  gamesBtn.onclick = (e) => { e.stopPropagation(); sheet('games'); };
   dockBtn.onclick = () => intent('dock');
   fullBtn.onclick = () => toggleFull();
-  gearBtn.onclick = () => togglePanel();
+  gearBtn.onclick = () => sheet('settings');
+  gamesWBtn.onclick = () => sheet('games');
   hideBtn.onclick = () => hideWindow();
 
   // Settings closes like any sheet: ×, Close, Esc, or a click anywhere outside it. Only a press that started outside
@@ -420,7 +450,7 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
 
   window.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'q') { api.quit(); return; }
-    if ((e.metaKey || e.ctrlKey) && e.key === ',') { togglePanel(); return; }
+    if ((e.metaKey || e.ctrlKey) && e.key === ',') { sheet('settings'); return; }
     if (e.metaKey || e.ctrlKey || e.altKey || !S) return;
     const tgt = e.target as HTMLInputElement;
     if (tgt.tagName === 'INPUT' && tgt.type === 'range' && e.key.startsWith('Arrow')) return;
@@ -429,7 +459,7 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
       if (!panel.hidden) togglePanel(false);
       else if (full) toggleFull(false);
       else if (shown === 'expanded' || shown === 'hover') intent('escape');
-    } else if (k === ',') togglePanel();
+    } else if (k === ',') sheet('settings');
     else if (k === 'o') intent(inWin ? 'dock' : 'pop');
     else if (k === 'h') hideWindow();
     else if (inWin && k === '1') set({ size: 'small' } as Partial<S>);
@@ -482,7 +512,7 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
     api.onEvent((ev) => game.onEvent(ev));
     api.onFeed((f) => { feed = f; game.onFeed?.(f); });
     api.onCommand((c: ShellCommand) => {
-      if (c === 'settings') togglePanel(true);
+      if (c === 'settings' || c === 'games') togglePanel(true, c);
       else setFull(c === 'fullscreen-on');
     });
     api.onMode((m) => { mode = m; showMode(); });
@@ -497,7 +527,7 @@ export function mountShell<S extends ShellSettings>(builtIn: Game<S>): void {
       shape.dispatchEvent(new PointerEvent(type, { pointerId: 7, button: 0, screenX: x, screenY: y, bubbles: true }));
     window.shellTest = {
       state: () => ({
-        state: mode.state, shown, scale, corner: body.dataset.corner, panelOpen: !panel.hidden, full, thru: body.classList.contains('tg-thru'),
+        state: mode.state, shown, scale, corner: body.dataset.corner, panelOpen: !panel.hidden, view: sheetView, update: body.classList.contains('tg-update'), full, thru: body.classList.contains('tg-thru'),
         shape: { w: shape.offsetWidth, h: shape.offsetHeight }, root: { w: game.root.clientWidth, h: game.root.clientHeight },
         rootIn: game.root.parentElement?.className || '', count: badge.textContent, line: cardLine.textContent, topInset: topInset(),
         warm: orb.classList.contains('warm'), pill: pill.innerText,

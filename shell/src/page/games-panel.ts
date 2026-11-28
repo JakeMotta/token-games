@@ -1,8 +1,9 @@
-// Settings → Games: the game picker. It lists the built-in game, installed games and what the signed catalog offers,
+// The Games view: the game picker, opened by the Games button (in the card and the window's title bar), the tray's
+// Games… and Settings → Games. It lists the built-in game, installed games and what the signed catalog offers,
 // and shows every request waiting for the player (an install, update or removal they asked for, or one an agent asked
 // for through the tokengames CLI) as a permission sheet with Approve and Deny. Approving is only possible here.
 // Everything from the catalog is shown as text (textContent), never as HTML.
-import type { GamesOp, GamesView, ShellApi } from '../api';
+import { updatesIn, type GamesOp, type GamesView, type ShellApi } from '../api';
 import type { GameRow, PendingRequest } from '../catalog/catalog';
 
 const TIER: Record<string, string> = { 'built-in': 'built in', verified: 'verified', community: 'community', local: 'local folder' };
@@ -14,7 +15,8 @@ export interface GamesPanel {
   view(): GamesView | null;
 }
 
-export function gamesPanel(api: ShellApi<any>, onAgentRequest: (r: PendingRequest) => void): GamesPanel {
+// onUpdates: how many installed games have a newer version, each time the view changes (the Games buttons' dot)
+export function gamesPanel(api: ShellApi<any>, onAgentRequest: (r: PendingRequest) => void, onUpdates: (n: number) => void = () => {}): GamesPanel {
   const el = document.createElement('section');
   el.className = 'tg-games';
   el.id = 'tg-games';
@@ -40,6 +42,7 @@ export function gamesPanel(api: ShellApi<any>, onAgentRequest: (r: PendingReques
     try {
       const r = await api.gamesDo(op);
       v = r.view;
+      onUpdates(updatesIn(v.rows));
       error = r.ok ? '' : r.error || 'that did not work';
     } catch (e) { error = (e as Error).message; }
     busy = false;
@@ -64,18 +67,20 @@ export function gamesPanel(api: ShellApi<any>, onAgentRequest: (r: PendingReques
   }
 
   function gameRow(g: GameRow): HTMLElement {
-    const row = h('div', 'tg-game' + (g.active ? ' on' : ''));
+    const upd = g.installed && !!g.update && !g.blocked;
+    const row = h('div', 'tg-game' + (g.active ? ' on' : '') + (upd ? ' upd' : ''));
     row.dataset.game = g.id;
     const info = h('div', 'tg-gi');
     const t = h('div', 'tg-gt');
     t.append(h('b', '', g.name), h('span', 'tg-ver', ' ' + g.version), h('span', 'tg-tier', TIER[g.tier] || g.tier));
+    if (upd) t.append(h('span', 'tg-updtag', 'Update available'));
     info.append(t, h('div', 'tg-gd', g.blocked ? 'Blocked: ' + g.blocked : g.description));
     if (g.network.length) info.append(h('div', 'tg-gd', 'Reaches: ' + g.network.join(', ')));
     const acts = h('div', 'tg-chips');
     if (g.active) acts.append(h('span', 'tg-playing', 'Playing'));
     else if (g.installed && !g.blocked) acts.append(btn('Play', 'use:' + g.id, () => void run({ op: 'use', id: g.id })));
     if (!g.installed && !g.blocked) acts.append(btn('Install', 'install:' + g.id, () => void run({ op: 'request', action: 'install', id: g.id })));
-    if (g.installed && g.update && !g.blocked) acts.append(btn('Update to ' + g.update, 'update:' + g.id, () => void run({ op: 'request', action: 'update', id: g.id })));
+    if (upd) acts.append(btn('Update to ' + g.update, 'update:' + g.id, () => void run({ op: 'request', action: 'update', id: g.id }), 'tg-yes'));
     if (g.installed && g.tier !== 'built-in') acts.append(btn('Remove', 'remove:' + g.id, () => void run({ op: 'request', action: 'remove', id: g.id })));
     row.append(info, acts);
     return row;
@@ -109,6 +114,7 @@ export function gamesPanel(api: ShellApi<any>, onAgentRequest: (r: PendingReques
 
   function take(next: GamesView): void {
     v = next;
+    onUpdates(updatesIn(next.rows));
     for (const r of next.pending) {
       if (seen.has(r.requestId)) continue;
       seen.add(r.requestId);

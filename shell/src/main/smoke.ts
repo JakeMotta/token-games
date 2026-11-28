@@ -13,7 +13,7 @@ import { dockPoint } from '../geometry';
 import { shapeOf, type ShellEvent, type ShellState } from '../modes';
 import { orbCenter, orbWindowBounds, shapeRect, shapeSize, type OrbGeo, type Shape } from '../orb';
 import type { ShellSettings } from '../settings';
-import type { TrayItem } from '../tray';
+import type { TrayAction, TrayItem } from '../tray';
 import { catalogGameSmoke, catalogSmoke, type CatalogSmoke } from './smoke-catalog';
 import type { SettingsStore } from './store';
 
@@ -28,6 +28,7 @@ export interface SmokeContext<S extends ShellSettings> {
   state(): ShellState;
   geo(): OrbGeo;
   trayItems(): TrayItem[];
+  tray(a: TrayAction): void; // as if that tray menu item was chosen
   hotkey(): void;
   status(): GameStatus;
   visible(): boolean;
@@ -200,6 +201,7 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     await shot('orb-expanded-settings');
     await js('shellTest.key("Escape")');
     check('Esc closes Settings first', await until(async () => !(await page()).panelOpen) && c.state() === 'expanded');
+    await gamesView(k, 'the card', 'tg-gamesbtn', 'games-card');
     await settingsCloses(k, 'the card', 'settings-card');
     await js('shellTest.click("tg-shrink")');
     check('– folds the card back into the orb', await shows('orb') && c.ignoresMouse());
@@ -212,6 +214,15 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     await shows('card');
     await js('shellTest.key("Escape")');
     check('Esc folds the card', await shows('orb'));
+
+    // the tray's Games… opens the card on the Games view
+    check('the tray offers Games… next to Settings…', labels(c.trayItems()).join('|').includes('Games…|Settings…'), labels(c.trayItems()));
+    c.tray({ do: 'games' });
+    check('the tray\'s Games… opens the card on the Games view', await shows('card') && await until(async () => { const p = await page(); return p.panelOpen && p.view === 'games'; }), await page());
+    await js('shellTest.key("Escape")');
+    await until(async () => !(await page()).panelOpen);
+    await js('shellTest.key("Escape")');
+    await shows('orb');
 
     // never stuck without a way back: hidden, the shortcut and the tray bring it back
     c.hide();
@@ -257,6 +268,7 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
     items = labels(c.trayItems());
     check('the tray offers the way back', items.includes('Back to the corner') && !items.includes('Pop out'), items);
     await shot('window-small');
+    await gamesView(k, 'the window', 'tg-gamesw', 'games-window');
     await settingsCloses(k, 'the window', 'settings-window');
 
     await game.full?.(k);
@@ -343,6 +355,31 @@ export async function runSmoke<S extends ShellSettings>(c: SmokeContext<S>, game
 
 const same = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) =>
   a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+
+// The Games button next to Settings (in the card, or the window's title bar) opens the Games view: the same sheet with
+// only the game picker in it, the built-in game listed. Settings switches to the whole sheet; Games again closes it.
+async function gamesView<S extends ShellSettings>(c: SmokeKit<S>, where: string, button: string, shotName: string): Promise<void> {
+  const { check, until, js } = c;
+  const view = async () => js<{ panelOpen: boolean; view: string }>('shellTest.state()');
+  const shown = (sel: string) => js<boolean>(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); return !!e && e.getClientRects().length > 0; })()`);
+  check(`${where}: a Games button sits next to Settings`, await shown('#' + button) && await js<boolean>(`document.getElementById(${JSON.stringify(button)}).textContent === 'Games'`));
+  await js(`shellTest.click(${JSON.stringify(button)})`);
+  check(`${where}: Games opens the Games view`, await until(async () => { const v = await view(); return v.panelOpen && v.view === 'games'; }), await view());
+  const text = await js<string>('document.getElementById("tg-panel").innerText');
+  check(`${where}: the Games view lists the games (the built-in one playing) and Check for games, and nothing else`,
+    /^Games/.test(text.trim()) && /Playing/.test(text) && /built in/i.test(text) && /Check for games/.test(text) && !/In the corner/.test(text) && !/Reset to defaults/.test(text), text.slice(0, 400));
+  const rows = await js<{ w: number; panel: number; font: number }>(`(() => { const p = document.getElementById('tg-panel'), b = p.querySelector('.tg-games .tg-chips button');
+    return { w: p.getBoundingClientRect().width, panel: p.parentElement.getBoundingClientRect().width, font: b ? parseFloat(getComputedStyle(b).fontSize) : 0 }; })()`);
+  check(`${where}: the Games view takes the whole width, with larger buttons`, rows.w >= rows.panel - 2 && rows.font >= 12, rows);
+  await c.shots(shotName);
+  await js(`shellTest.click(${JSON.stringify(where === 'the card' ? 'tg-set' : 'tg-gear')})`);
+  check(`${where}: Settings switches to the whole sheet, Games still in it`, await until(async () => { const v = await view(); return v.panelOpen && v.view === 'settings'; })
+    && /In the corner/.test(await js<string>('document.getElementById("tg-panel").innerText')) && await shown('#tg-games'));
+  await js(`shellTest.click(${JSON.stringify(button)})`);
+  await until(async () => (await view()).view === 'games');
+  await js(`shellTest.click(${JSON.stringify(button)})`);
+  check(`${where}: Games again closes it`, await until(async () => !(await view()).panelOpen, 1500));
+}
 
 // Settings closes every way a sheet should, with real mouse input (not synthetic DOM events): its × at the top right,
 // a click outside it, and never a slider dragged past its edge and let go outside.
