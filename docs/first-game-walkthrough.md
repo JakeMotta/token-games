@@ -206,7 +206,13 @@ Done:
   zip sha256 `25e9299a…6d290aa5`), installed from the public index in a hidden run. It proved the catalog, but in the
   Ant Farm app it is a copy of the built-in game and stays hidden there. Its pointer and index entry were removed on
   2026-11-27; both GitHub Releases are kept (delete them only if nobody needs them).
-- **Ink Tower Defense:** see the next section.
+- **Ink Tower Defense:** packaged as `tower-defense-web` 1.0.0 from commit `8ad79ee`, released as
+  `tower-defense-web-v1.0.0` (zip sha256 `fa64c1f4…5a6660db`, the same packed locally and in CI), its pointer in
+  `registry/games/` and the index signed on Jake's Mac, in the same index that dropped Ant Farm (web), so the published
+  catalog holds only this game. Checked from a clean profile against the public index (`--only published --expect
+  tower-defense-web` in the Ant Farm app): listed alone, also with the developer switch on; `tokengames list` and
+  `install` find it; the permission sheet asks only for token counts; it installs, plays sandboxed, feeds and saves
+  in its own slot, with `colony.json` untouched.
 
 Left for Jake:
 

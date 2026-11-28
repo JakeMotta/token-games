@@ -1,0 +1,12 @@
+{
+  "id": "tower-defense-web",
+  "tier": "verified",
+  "repository": "JakeMotta/token-games",
+  "path": "tower-defense/catalog",
+  "commit": "8ad79ee88a1b477dbe7634e1a0527c86638debee",
+  "tag": "tower-defense-web-v1.0.0",
+  "bundle": {
+    "url": "https://github.com/JakeMotta/token-games/releases/download/tower-defense-web-v1.0.0/tower-defense-web-1.0.0.zip",
+    "sha256": "fa64c1f4d2a2c272209a7952597c0ac65bbc1b4007b173ee071bfd1d5a6660db"
+  }
+}
