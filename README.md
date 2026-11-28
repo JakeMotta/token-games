@@ -17,6 +17,10 @@ it stays there. See [docs/presentation.md](docs/presentation.md).
 
 Planned: a tower defense where tokens queue the waves.
 
+In the lab (browser prototypes, not shipped yet): Creatures (Hatchery), a pet that hatches from an egg and grows from
+Claude usage, made with the generative-creature technique. Prototypes, design and the v1/v2/v3 compare page:
+[creatures](creatures/).
+
 ## More games: the catalog
 
 Anyone can write a game for Token Games, and players install them inside the app, in the **Games window**: a
